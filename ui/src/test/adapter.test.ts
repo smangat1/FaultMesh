@@ -93,10 +93,29 @@ describe('FixtureAdapter', () => {
 
     // Total nodes in graph must match stats
     expect(graph.nodes.length).toBe(run!.stats.totalNodes);
-    expect(run!.stats.totalNodes).toBe(15);
+    expect(run!.stats.totalNodes).toBe(54);
     expect(run!.stats.modifiedNodes).toBe(1);
-    expect(run!.stats.addedNodes).toBe(4);
-    expect(run!.stats.totalChangedNodes).toBe(5);
+    expect(run!.stats.addedNodes).toBe(14);
+    expect(run!.stats.totalChangedNodes).toBe(15);
+
+    // Verify 8 file clusters
+    expect(graph.files).toBeDefined();
+    expect(graph.files?.length).toBe(8);
+    const tokensFile = graph.files?.find((f) => f.file === 'auth/tokens.py');
+    expect(tokensFile).toBeDefined();
+    expect(tokensFile?.symbolCount).toBe(8);
+
+    // Verify grounded descriptions on code nodes
+    const nodeWithDesc = graph.nodes.find((n) => n.id === 'auth/tokens.py::validate_token');
+    expect(nodeWithDesc?.description).toBeDefined();
+    expect(nodeWithDesc?.description).toContain('Validates JWT signature');
+
+    // Verify two-layer separation: static edges have NO testIds
+    const staticEdges = graph.edges.filter((e) => e.category === 'static_call' || e.category === 'static_import');
+    expect(staticEdges.length).toBeGreaterThan(0);
+    for (const edge of staticEdges) {
+      expect(edge.testIds).toBeUndefined();
+    }
 
     // parse_public_key must be in failing test's exercisedNodeIds
     const failingTest = tests.find(

@@ -42,8 +42,10 @@ export interface TestItem {
   failureMessage?: string;
   traceback?: string;
   rerunHistory: RerunRecord[];
-  exercisedNodeIds: string[];
+  exercisedNodeIds: string[]; // Coverage (executed symbols)
+  observedEdgeIds?: string[]; // Explicit observed runtime call edges
   unresolvedReferences?: string[];
+  callTracingAvailable?: boolean;
 }
 
 export interface CodeNode {
@@ -57,8 +59,26 @@ export interface CodeNode {
   sourceSnippet: string;
   gitDiff?: string;
   parentModule: string;
+  description?: string; // Grounded plain-English role explanation (sample)
   isUnresolved?: boolean;
   complexity?: number;
+}
+
+export interface FileCluster {
+  file: string; // e.g. "auth/tokens.py"
+  name: string; // e.g. "tokens.py"
+  symbolCount: number;
+  changeStatus: ChangeStatus;
+  lineCount: number;
+}
+
+export interface PinnedSymbol {
+  id: string;
+  name: string;
+  file: string;
+  kind: NodeKind;
+  changeStatus: ChangeStatus;
+  description?: string;
 }
 
 export interface GraphEdge {
@@ -89,6 +109,7 @@ export interface GraphData {
   edges: GraphEdge[];
   unresolvedReferences: UnresolvedReference[];
   parseErrors: ParseError[];
+  files?: FileCluster[];
 }
 
 export interface RunSummary {

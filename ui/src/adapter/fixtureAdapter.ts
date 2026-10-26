@@ -58,6 +58,7 @@ export class FixtureAdapter implements FaultMeshAdapter {
       edges: [...graph.edges],
       unresolvedReferences: [...graph.unresolvedReferences],
       parseErrors: [...graph.parseErrors],
+      files: graph.files ? [...graph.files] : [],
     });
   }
 
