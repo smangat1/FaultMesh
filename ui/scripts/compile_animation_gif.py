@@ -1,4 +1,5 @@
 import os
+
 from PIL import Image
 
 SCREENSHOTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../docs/screenshots'))
@@ -51,7 +52,8 @@ def main():
             loop=0,
             optimize=True,
         )
-        print(f"Successfully compiled animated demo: {OUTPUT_GIF_PATH} ({os.path.getsize(OUTPUT_GIF_PATH)} bytes)")
+        size_bytes = os.path.getsize(OUTPUT_GIF_PATH)
+        print(f"Successfully compiled animated demo: {OUTPUT_GIF_PATH} ({size_bytes} bytes)")
 
 if __name__ == '__main__':
     main()
