@@ -13,6 +13,8 @@ from faultmesh.analysis import ProjectAnalyzer
 from faultmesh.api import AnalysisOptions, analyze_repository, reproduce_incident
 from faultmesh.config import FaultMeshConfig
 from faultmesh.evidence import EvidenceStore
+from faultmesh.project_runner import RunOutcome, RunStore, run_project_tests
+from faultmesh.project_runner.config import load_run_config
 from faultmesh.telemetry import configure_json_logging
 
 app = typer.Typer(
@@ -127,6 +129,43 @@ def report(
         typer.echo(Path(incident.artifacts.incident_json).read_text(encoding="utf-8"))
     else:
         raise typer.BadParameter("format must be 'markdown' or 'json'")
+
+
+@app.command("run-tests")
+def run_tests(
+    config: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
+    ],
+) -> None:
+    """Run an existing pytest suite in its configured Docker environment."""
+    try:
+        result = run_project_tests(config)
+    except Exception as exc:
+        typer.secho(f"FaultMesh test run failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+    if result.outcome == RunOutcome.FAILED:
+        raise typer.Exit(code=1)
+    if result.outcome != RunOutcome.PASSED:
+        raise typer.Exit(code=2)
+
+
+@app.command("test-run")
+def test_run(
+    run_id: Annotated[str, typer.Argument()],
+    config: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
+    ],
+) -> None:
+    """Print one durable project test run without executing it again."""
+    try:
+        resolved = load_run_config(config)
+        with RunStore(resolved.artifact_root / "runs.sqlite3") as store:
+            result = store.get(run_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh run lookup failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
 
 
 @app.command()

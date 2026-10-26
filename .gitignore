@@ -8,6 +8,7 @@ __pycache__/
 .coverage
 htmlcov/
 .faultmesh/
+.faultmesh-v1/
 dist/
 build/
 *.egg-info/
