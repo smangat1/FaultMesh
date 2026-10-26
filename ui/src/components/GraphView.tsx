@@ -1,27 +1,72 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import cytoscape, { Core, EventObject } from 'cytoscape';
-import type { GraphData, TestItem } from '../types';
-import { DiffViewer } from './DiffViewer';
+import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
 import {
   ZoomIn,
   ZoomOut,
   Maximize2,
   Search,
-  Code2,
-  X,
-  GitCommit,
-  Info,
 } from 'lucide-react';
 
-interface GraphViewProps {
+export interface GraphViewProps {
   graphData: GraphData;
   tests: TestItem[];
   selectedTestId: string | null;
   onSelectTest?: (testId: string | null) => void;
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string | null) => void;
+  selectedFile?: string | null;
+  onSelectFile?: (file: string | null) => void;
+  pinnedSymbolIds?: string[];
+  collapsedFiles?: Set<string>;
+  onToggleCollapseFile?: (file: string) => void;
   runStatus?: string;
   errorMessage?: string;
+}
+
+/**
+ * Deterministically computes (x, y) coordinates for all files and their child symbols.
+ * Guarantees 0ms layout jitter, 100% repeatability across runs and environments.
+ */
+export function computeDeterministicPositions(
+  files: FileCluster[],
+  nodes: CodeNode[]
+): Record<string, { x: number; y: number }> {
+  const positions: Record<string, { x: number; y: number }> = {};
+  const COLS = 3;
+  const COL_WIDTH = 380;
+  const ROW_HEIGHT = 280;
+  const ORIGIN_X = 220;
+  const ORIGIN_Y = 160;
+
+  // Group nodes by file
+  const nodesByFile: Record<string, CodeNode[]> = {};
+  for (const n of nodes) {
+    if (!nodesByFile[n.file]) nodesByFile[n.file] = [];
+    nodesByFile[n.file].push(n);
+  }
+
+  files.forEach((fileCluster, fIdx) => {
+    const col = fIdx % COLS;
+    const row = Math.floor(fIdx / COLS);
+    const fileCenterX = ORIGIN_X + col * COL_WIDTH;
+    const fileCenterY = ORIGIN_Y + row * ROW_HEIGHT;
+
+    // Position compound parent node
+    positions[`file:${fileCluster.file}`] = { x: fileCenterX, y: fileCenterY };
+
+    // Position internal child symbols in 3-column subgrid inside file cluster
+    const fileNodes = nodesByFile[fileCluster.file] || [];
+    fileNodes.forEach((node, sIdx) => {
+      const symCol = sIdx % 3;
+      const symRow = Math.floor(sIdx / 3);
+      const symX = fileCenterX - 75 + symCol * 75;
+      const symY = fileCenterY - 45 + symRow * 45;
+      positions[node.id] = { x: symX, y: symY };
+    });
+  });
+
+  return positions;
 }
 
 export const GraphView: React.FC<GraphViewProps> = ({
@@ -30,6 +75,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   selectedTestId,
   selectedNodeId,
   onSelectNode,
+  selectedFile,
+  onSelectFile,
+  pinnedSymbolIds = [],
+  collapsedFiles = new Set(),
+  onToggleCollapseFile,
   runStatus,
   errorMessage,
 }) => {
@@ -38,29 +88,38 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [includeStaticContext, setIncludeStaticContext] = useState(false);
-  const [localSelectedNodeId, setLocalSelectedNodeId] = useState<string | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
-  // Active selected node: prioritize prop, fallback to local selection
-  const activeNodeId = selectedNodeId !== undefined ? selectedNodeId : localSelectedNodeId;
+  // Compute file clusters from graphData.files or dynamically from nodes
+  const fileClusters: FileCluster[] = useMemo(() => {
+    if (graphData.files && graphData.files.length > 0) {
+      return graphData.files;
+    }
+    const fileMap = new Map<string, { count: number; changeStatus: CodeNode['changeStatus'] }>();
+    graphData.nodes.forEach((n) => {
+      const existing = fileMap.get(n.file) || { count: 0, changeStatus: 'unchanged' };
+      existing.count += 1;
+      if (n.changeStatus === 'modified') existing.changeStatus = 'modified';
+      else if (n.changeStatus === 'added' && existing.changeStatus !== 'modified') {
+        existing.changeStatus = 'added';
+      }
+      fileMap.set(n.file, existing);
+    });
+    return Array.from(fileMap.entries()).map(([file, info]) => ({
+      file,
+      name: file.split('/').pop() || file,
+      symbolCount: info.count,
+      changeStatus: info.changeStatus,
+      lineCount: 100,
+    }));
+  }, [graphData.files, graphData.nodes]);
 
   const activeTest = useMemo(() => {
     return tests.find((t) => t.id === selectedTestId) || null;
   }, [tests, selectedTestId]);
 
-  // Selected Node data
-  const selectedNode = useMemo(() => {
-    return graphData.nodes.find((n) => n.id === activeNodeId) || null;
-  }, [graphData.nodes, activeNodeId]);
-
-  // Edges related to selected node
-  const relatedEdges = useMemo(() => {
-    if (!activeNodeId) return [];
-    return graphData.edges.filter(
-      (e) => e.source === activeNodeId || e.target === activeNodeId
-    );
-  }, [graphData.edges, activeNodeId]);
-
-  // Compute bounded graph elements for this test (or full graph if no test selected)
+  // Compute Cytoscape elements with deterministic preset positions
   const elements = useMemo(() => {
     const nodes: cytoscape.NodeDefinition[] = [];
     const edges: cytoscape.EdgeDefinition[] = [];
@@ -69,258 +128,435 @@ export const GraphView: React.FC<GraphViewProps> = ({
       return { nodes, edges };
     }
 
-    // Determine relevant nodes
-    let relevantNodeIds: Set<string>;
-    if (activeTest) {
-      relevantNodeIds = new Set(activeTest.exercisedNodeIds);
-      relevantNodeIds.add(activeTest.id);
+    const positions = computeDeterministicPositions(fileClusters, graphData.nodes);
 
-      // If static context is enabled, include 1-hop static neighbors
-      if (includeStaticContext) {
-        graphData.edges.forEach((e) => {
-          if (e.category === 'static_call' || e.category === 'static_import') {
-            if (relevantNodeIds.has(e.source)) relevantNodeIds.add(e.target);
-            if (relevantNodeIds.has(e.target)) relevantNodeIds.add(e.source);
-          }
+    // 1. Add File Clusters (compound parents or summary nodes if collapsed)
+    fileClusters.forEach((fc) => {
+      const fileId = `file:${fc.file}`;
+      const isCollapsed = collapsedFiles.has(fc.file);
+      const pos = positions[fileId] || { x: 200, y: 200 };
+
+      if (isCollapsed) {
+        // Collapsed file shows as single summary node
+        nodes.push({
+          data: {
+            id: fileId,
+            label: `${fc.name} (${fc.symbolCount})`,
+            file: fc.file,
+            isFileCluster: true,
+            isCollapsed: true,
+            symbolCount: fc.symbolCount,
+            changeStatus: fc.changeStatus,
+          },
+          position: pos,
+        });
+      } else {
+        // Expanded file cluster (compound parent)
+        nodes.push({
+          data: {
+            id: fileId,
+            label: fc.name,
+            file: fc.file,
+            isFileCluster: true,
+            isCollapsed: false,
+            symbolCount: fc.symbolCount,
+            changeStatus: fc.changeStatus,
+          },
         });
       }
-    } else {
-      relevantNodeIds = new Set(graphData.nodes.map((n) => n.id));
-    }
+    });
 
-    // Add nodes
+    // 2. Add Symbol child nodes (only for uncollapsed files)
     graphData.nodes.forEach((n) => {
-      if (!relevantNodeIds.has(n.id)) return;
+      if (collapsedFiles.has(n.file)) return;
 
+      const fileId = `file:${n.file}`;
+      const pos = positions[n.id] || { x: 200, y: 200 };
+      const isTestItem = tests.some((t) => t.id === n.id);
       const testItem = tests.find((t) => t.id === n.id);
+
       nodes.push({
         data: {
           id: n.id,
+          parent: fileId,
           label: n.name,
-          name: n.name,
+          shortLabel: n.name.length > 20 ? `${n.name.substring(0, 18)}…` : n.name,
           kind: n.kind,
           file: n.file,
           changeStatus: n.changeStatus,
           status: testItem ? testItem.status : 'neutral',
-          isTest: Boolean(testItem),
+          isTest: isTestItem,
+          description: n.description || '',
+          lineStart: n.lineStart,
+          lineEnd: n.lineEnd,
         },
+        position: pos,
       });
     });
 
     const activeNodeIdSet = new Set(nodes.map((n) => n.data.id));
 
-    // Add edges
+    // 3. Add Edges (re-routing to collapsed file node if child is collapsed)
     graphData.edges.forEach((e) => {
-      if (!activeNodeIdSet.has(e.source) || !activeNodeIdSet.has(e.target)) return;
+      let sourceId = e.source;
+      let targetId = e.target;
 
-      if (e.category === 'runtime_observed') {
-        // Require explicit per-test edge provenance
-        if (activeTest && (!e.testIds || !e.testIds.includes(activeTest.id))) {
+      // Find file if node is inside a collapsed file
+      const sourceNode = graphData.nodes.find((n) => n.id === sourceId);
+      const targetNode = graphData.nodes.find((n) => n.id === targetId);
+
+      if (sourceNode && collapsedFiles.has(sourceNode.file)) {
+        sourceId = `file:${sourceNode.file}`;
+      }
+      if (targetNode && collapsedFiles.has(targetNode.file)) {
+        targetId = `file:${targetNode.file}`;
+      }
+
+      // Avoid self-loops when nodes in same collapsed file connect
+      if (sourceId === targetId) return;
+
+      if (!activeNodeIdSet.has(sourceId) || !activeNodeIdSet.has(targetId)) return;
+
+      // Filter static edges if toggled off
+      if (!includeStaticContext && (e.category === 'static_call' || e.category === 'static_import')) {
+        return;
+      }
+
+      // Per-test observed edges require explicit provenance for the active test
+      if (e.category === 'runtime_observed' && activeTest) {
+        if (!e.testIds || !e.testIds.includes(activeTest.id)) {
           return;
         }
-        edges.push({
-          data: {
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            category: e.category,
-            provenance: e.provenance,
-            observedCount: e.observedCount,
-            testIds: e.testIds || [],
-          },
-        });
-      } else if (includeStaticContext) {
-        // Static edges only when opted in
-        edges.push({
-          data: {
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            category: e.category,
-            provenance: e.provenance,
-          },
-        });
       }
+
+      edges.push({
+        data: {
+          id: e.id,
+          source: sourceId,
+          target: targetId,
+          category: e.category,
+          provenance: e.provenance,
+          observedCount: e.observedCount,
+          testIds: e.testIds || [],
+        },
+      });
     });
 
     return { nodes, edges };
-  }, [graphData, tests, activeTest, includeStaticContext]);
+  }, [graphData, fileClusters, collapsedFiles, tests, includeStaticContext]);
 
-  // Handle node selection
-  const handleSelectNode = useCallback(
-    (nodeId: string | null) => {
-      setLocalSelectedNodeId(nodeId);
-      onSelectNode?.(nodeId);
-    },
-    [onSelectNode]
-  );
+  // Priority set for label collision prevention:
+  // selected > pinned > failing > changed > hovered > others
+  const priorityNodeIds = useMemo(() => {
+    const set = new Set<string>();
+    if (selectedNodeId) set.add(selectedNodeId);
+    pinnedSymbolIds.forEach((id) => set.add(id));
+    if (hoveredNodeId) set.add(hoveredNodeId);
+    tests.forEach((t) => {
+      if (t.status === 'fail' || t.status === 'error') set.add(t.id);
+    });
+    graphData.nodes.forEach((n) => {
+      if (n.changeStatus === 'modified' || n.changeStatus === 'added') set.add(n.id);
+    });
+    return set;
+  }, [selectedNodeId, pinnedSymbolIds, hoveredNodeId, tests, graphData.nodes]);
 
-  // Initialize and maintain Cytoscape
+  // Initialize Cytoscape with preset deterministic layout and quiet Obsidian-like styling
   useEffect(() => {
     if (!containerRef.current || elements.nodes.length === 0) return;
 
     const cy = cytoscape({
       container: containerRef.current,
       elements: [...elements.nodes, ...elements.edges],
+      boxSelectionEnabled: false,
+      autounselectify: false,
       style: [
-        // Base Node: Clean circular dot with readable label
+        // --- Compound Parent Nodes (File Clusters) ---
         {
-          selector: 'node',
+          selector: 'node[?isFileCluster]',
           style: {
-            shape: 'ellipse',
-            width: 14,
-            height: 14,
-            'background-color': '#202632',
-            'border-width': 1.5,
-            'border-color': '#334155',
+            shape: 'roundrectangle',
+            'background-color': '#111722',
+            'background-opacity': 0.6,
+            'border-width': 1,
+            'border-color': '#212d3d',
+            'border-style': 'solid',
+            'corner-radius': '6px',
+            padding: '26px',
             label: 'data(label)',
             'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             'font-size': '11px',
+            'font-weight': 'bold',
+            'text-valign': 'top',
+            'text-halign': 'left',
+            'text-margin-x': 10,
+            'text-margin-y': 10,
+            color: '#8b949e',
+            'z-index': 1,
+          },
+        },
+        // Collapsed file summary node
+        {
+          selector: 'node[?isCollapsed]',
+          style: {
+            shape: 'roundrectangle',
+            width: 140,
+            height: 36,
+            'background-color': '#161f2e',
+            'background-opacity': 0.9,
+            'border-width': 1,
+            'border-color': '#33445c',
+            'border-style': 'dashed',
+            'corner-radius': '6px',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'font-size': '11px',
+            color: '#94a3b8',
+            'z-index': 10,
+          },
+        },
+        // --- Child Symbol Nodes (Functions / Classes / Methods) ---
+        {
+          selector: 'node[!isFileCluster]',
+          style: {
+            shape: 'ellipse',
+            width: 8,
+            height: 8,
+            'background-color': '#64748b',
+            'border-width': 0,
+            label: '',
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            'font-size': '10px',
             'text-valign': 'bottom',
             'text-halign': 'center',
-            'text-margin-y': 5,
-            color: '#94a3b8',
-            'text-max-width': '160px',
+            'text-margin-y': 4,
+            color: '#cbd5e1',
+            'text-max-width': '120px',
             'text-wrap': 'ellipsis',
-            'text-background-color': '#0e1117',
+            'text-background-color': '#0d1117',
             'text-background-opacity': 0.85,
             'text-background-padding': '2px',
             'text-background-shape': 'roundrectangle',
+            'z-index': 15,
+          },
+        },
+        // Class nodes: subtle rounded square
+        {
+          selector: 'node[kind = "class"]',
+          style: {
+            shape: 'roundrectangle',
+            'corner-radius': '2px',
+            width: 9,
+            height: 9,
           },
         },
         // Modified Code Node: Amber
         {
           selector: 'node[changeStatus = "modified"]',
           style: {
-            'background-color': '#f59e0b',
-            'border-color': '#fbbf24',
-            'border-width': 2.5,
-            width: 18,
-            height: 18,
-            color: '#fbbf24',
-            'font-weight': 'bold',
-            'z-index': 100,
+            'background-color': '#d29922',
+            'border-width': 1.5,
+            'border-color': '#e3b341',
+            width: 10,
+            height: 10,
+            'z-index': 25,
           },
         },
-        // Added Code Node: Cyan
+        // Added Code Node: Emerald
         {
           selector: 'node[changeStatus = "added"]',
           style: {
-            'background-color': '#06b6d4',
-            'border-color': '#22d3ee',
-            'border-width': 2.5,
-            width: 18,
-            height: 18,
-            color: '#22d3ee',
-            'font-weight': 'bold',
-            'z-index': 100,
+            'background-color': '#2ea043',
+            'border-width': 1.5,
+            'border-color': '#3fb950',
+            width: 10,
+            height: 10,
+            'z-index': 25,
           },
         },
-        // Failing Test Node: Red
+        // Failing Test Node: Crimson
         {
           selector: 'node[status = "fail"]',
           style: {
-            'background-color': '#ef4444',
-            'border-color': '#fca5a5',
-            'border-width': 3,
-            width: 20,
-            height: 20,
-            color: '#f87171',
-            'font-weight': 'bold',
-            'z-index': 110,
-          },
-        },
-        // Passing Test Node: Green
-        {
-          selector: 'node[status = "pass"]',
-          style: {
-            'background-color': '#10b981',
-            'border-color': '#6ee7b7',
+            'background-color': '#f85149',
             'border-width': 2,
-            width: 14,
-            height: 14,
-            color: '#a7f3d0',
+            'border-color': '#ff7b72',
+            width: 12,
+            height: 12,
+            'z-index': 30,
           },
         },
         // Error Test Node: Orange
         {
           selector: 'node[status = "error"]',
           style: {
-            'background-color': '#f97316',
-            'border-color': '#fdba74',
-            'border-width': 2.5,
-            width: 18,
-            height: 18,
-            color: '#fb923c',
-            'font-weight': 'bold',
+            'background-color': '#db6d28',
+            'border-width': 1.5,
+            'border-color': '#f0883e',
+            width: 10,
+            height: 10,
+            'z-index': 30,
           },
         },
-        // Base Edges
+        // Passing Test Node: Green
+        {
+          selector: 'node[status = "pass"]',
+          style: {
+            'background-color': '#238636',
+            width: 8,
+            height: 8,
+          },
+        },
+        // --- Structural Edges (1px muted, no arrows until hover/select) ---
         {
           selector: 'edge',
           style: {
-            width: 1.5,
-            'line-color': '#475569',
+            width: 1,
+            'line-color': '#283548',
             'curve-style': 'bezier',
-            'target-arrow-shape': 'chevron',
-            'arrow-scale': 0.7,
-            'target-arrow-color': '#475569',
+            'target-arrow-shape': 'none',
+            'arrow-scale': 0.8,
+            'target-arrow-color': '#3b82f6',
+            'z-index': 5,
           },
         },
-        // Runtime Observed Edges: Clear solid cyan/blue
-        {
-          selector: 'edge[category = "runtime_observed"]',
-          style: {
-            'line-color': '#38bdf8',
-            'target-arrow-color': '#38bdf8',
-            width: 2,
-          },
-        },
-        // Static Call/Import Edges: Muted dashed
         {
           selector: 'edge[category = "static_call"], edge[category = "static_import"]',
           style: {
-            'line-color': '#475569',
-            'line-style': 'dashed',
-            'line-dash-pattern': [4, 4],
+            'line-color': '#212c3d',
+            'line-style': 'solid',
             width: 1,
-            'target-arrow-shape': 'none',
+          },
+        },
+        // --- Observed Edges for selected test: solid cyan ---
+        {
+          selector: 'edge.observed-for-test',
+          style: {
+            'line-color': '#38bdf8',
+            'target-arrow-color': '#38bdf8',
+            'target-arrow-shape': 'chevron',
+            width: 2,
+            opacity: 1.0,
+            'z-index': 40,
+          },
+        },
+        // --- Test Dimming Classes (dims unexercised without removing) ---
+        {
+          selector: 'node.dimmed',
+          style: {
+            opacity: 0.28,
+          },
+        },
+        {
+          selector: 'node.exercised',
+          style: {
+            opacity: 1.0,
+            'border-width': 1.5,
+            'border-color': '#38bdf8',
+          },
+        },
+        {
+          selector: 'edge.dimmed',
+          style: {
+            opacity: 0.12,
           },
         },
         // Selected node focus
         {
-          selector: '.selected-node',
+          selector: 'node.selected-node',
           style: {
-            'border-color': '#3b82f6',
-            'border-width': 3.5,
+            'border-color': '#38bdf8',
+            'border-width': 2.5,
+            width: 12,
+            height: 12,
             'z-index': 999,
-            color: '#ffffff',
+          },
+        },
+        // Show label class (driven by semantic zoom and collision prevention)
+        {
+          selector: 'node.show-label',
+          style: {
+            label: 'data(shortLabel)',
+          },
+        },
+        // Hovered element
+        {
+          selector: 'node.hovered',
+          style: {
+            'border-color': '#60a5fa',
+            'border-width': 2,
+            'z-index': 500,
+          },
+        },
+        {
+          selector: 'edge.hovered',
+          style: {
+            'line-color': '#60a5fa',
+            width: 2,
+            'target-arrow-shape': 'chevron',
+            'target-arrow-color': '#60a5fa',
+            'z-index': 100,
           },
         },
       ],
       layout: {
-        name: 'cose',
-        animate: false,
+        name: 'preset',
         fit: true,
         padding: 50,
-        componentSpacing: 100,
-        boundingBox: { x1: 0, y1: 0, w: 800, h: 600 },
-        nodeRepulsion: () => 10000,
-        idealEdgeLength: () => 100,
-        edgeElasticity: () => 0.45,
-        gravity: 0.3,
-        numIter: 800,
       },
     });
 
-    cy.on('tap', 'node', (evt: EventObject) => {
-      handleSelectNode(evt.target.id());
+    // Zoom listener for semantic zoom
+    cy.on('zoom', () => {
+      const z = cy.zoom();
+      if (z < 0.65) setZoomLevel('far');
+      else if (z < 1.15) setZoomLevel('mid');
+      else setZoomLevel('close');
     });
 
+    // Tap handlers
+    cy.on('tap', 'node', (evt: EventObject) => {
+      const target = evt.target;
+      if (target.data('isFileCluster')) {
+        onSelectFile?.(target.data('file'));
+      } else {
+        onSelectNode?.(target.id());
+      }
+    });
+
+    // Double tap on file cluster to toggle expand/collapse
+    cy.on('dbltap', 'node[?isFileCluster]', (evt: EventObject) => {
+      const file = evt.target.data('file');
+      if (file && onToggleCollapseFile) {
+        onToggleCollapseFile(file);
+      }
+    });
+
+    // Tap on background to deselect
     cy.on('tap', (evt: EventObject) => {
       if (evt.target === cy) {
-        handleSelectNode(null);
+        onSelectNode?.(null);
+        onSelectFile?.(null);
       }
+    });
+
+    // Mouseover / Mouseout
+    cy.on('mouseover', 'node', (evt: EventObject) => {
+      setHoveredNodeId(evt.target.id());
+      evt.target.addClass('hovered');
+    });
+
+    cy.on('mouseout', 'node', (evt: EventObject) => {
+      setHoveredNodeId(null);
+      evt.target.removeClass('hovered');
+    });
+
+    cy.on('mouseover', 'edge', (evt: EventObject) => {
+      evt.target.addClass('hovered');
+    });
+
+    cy.on('mouseout', 'edge', (evt: EventObject) => {
+      evt.target.removeClass('hovered');
     });
 
     cyRef.current = cy;
@@ -329,20 +565,78 @@ export const GraphView: React.FC<GraphViewProps> = ({
       cy.destroy();
       cyRef.current = null;
     };
-  }, [elements, handleSelectNode]);
+  }, [elements, onSelectNode, onSelectFile, onToggleCollapseFile]);
 
-  // Update selection class on activeNodeId change without recreating graph
+  // Update selection highlight & test dimming dynamically WITHOUT re-running layout
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
 
     cy.batch(() => {
+      // 1. Clear selection styling
       cy.nodes().removeClass('selected-node');
-      if (activeNodeId) {
-        cy.getElementById(activeNodeId).addClass('selected-node');
+      if (selectedNodeId) {
+        cy.getElementById(selectedNodeId).addClass('selected-node');
+      } else if (selectedFile) {
+        cy.getElementById(`file:${selectedFile}`).addClass('selected-node');
       }
+
+      // 2. Test Selection Highlight (Dim unexercised nodes/edges, highlight exercised)
+      if (activeTest) {
+        const exercisedSet = new Set(activeTest.exercisedNodeIds);
+        exercisedSet.add(activeTest.id);
+
+        cy.nodes().forEach((n) => {
+          if (n.data('isFileCluster')) {
+            // Keep file clusters visible
+            n.removeClass('dimmed');
+            return;
+          }
+          if (exercisedSet.has(n.id())) {
+            n.addClass('exercised');
+            n.removeClass('dimmed');
+          } else {
+            n.removeClass('exercised');
+            n.addClass('dimmed');
+          }
+        });
+
+        cy.edges().forEach((e) => {
+          const isObserved =
+            e.data('category') === 'runtime_observed' &&
+            Boolean(e.data('testIds')?.includes(activeTest.id));
+
+          if (isObserved) {
+            e.addClass('observed-for-test');
+            e.removeClass('dimmed');
+          } else {
+            e.removeClass('observed-for-test');
+            e.addClass('dimmed');
+          }
+        });
+      } else {
+        // No test selected: restore full contrast
+        cy.nodes().removeClass('dimmed').removeClass('exercised');
+        cy.edges().removeClass('dimmed').removeClass('observed-for-test');
+      }
+
+      // 3. Semantic Zoom & Collision-Managed Labels
+      cy.nodes().removeClass('show-label');
+
+      if (zoomLevel === 'close') {
+        // Zoomed in: show all symbol labels inside clusters
+        cy.nodes('[!isFileCluster]').addClass('show-label');
+      } else if (zoomLevel === 'mid') {
+        // Mid zoom: show labels only for priority nodes (selected > pinned > failing > changed > hovered)
+        cy.nodes().forEach((n) => {
+          if (!n.data('isFileCluster') && priorityNodeIds.has(n.id())) {
+            n.addClass('show-label');
+          }
+        });
+      }
+      // Far zoom: labels remain hidden on symbols, only file names shown on clusters
     });
-  }, [activeNodeId]);
+  }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds]);
 
   // ResizeObserver to handle container size changes cleanly
   useEffect(() => {
@@ -356,7 +650,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // Search handler
+  // Search handler: pans & zooms camera to target symbol without re-layout
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     const cy = cyRef.current;
@@ -378,10 +672,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       cy.animate({
         center: { eles: matched.first() },
-        zoom: 1.4,
-        duration: prefersReducedMotion ? 0 : 250,
+        zoom: 1.3,
+        duration: prefersReducedMotion ? 0 : 200,
       });
-      handleSelectNode(matched.first().id());
+      onSelectNode?.(matched.first().id());
     }
   };
 
@@ -391,15 +685,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   const handleZoomIn = () => {
     const cy = cyRef.current;
-    if (cy) cy.zoom(cy.zoom() * 1.25);
+    if (cy) cy.zoom(cy.zoom() * 1.3);
   };
 
   const handleZoomOut = () => {
     const cy = cyRef.current;
-    if (cy) cy.zoom(cy.zoom() * 0.8);
+    if (cy) cy.zoom(cy.zoom() * 0.75);
   };
 
-  // Diagnostic empty / error state checks
+  // Diagnostic states for empty / failed harness
   if (runStatus === 'empty') {
     return (
       <div
@@ -466,35 +760,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
         }}
       >
         <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-          No Evidence Graph Available
+          No Project Map Available
         </div>
         <div style={{ fontSize: '12px', maxWidth: '420px', lineHeight: '1.5' }}>
-          No graph nodes or runtime traces are recorded for this run.
-        </div>
-      </div>
-    );
-  }
-
-  if (activeTest && activeTest.exercisedNodeIds.length === 0) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          padding: '40px',
-          color: 'var(--text-muted)',
-          textAlign: 'center',
-          backgroundColor: 'var(--bg-app)',
-        }}
-      >
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-          No Coverage Recorded for {activeTest.name}
-        </div>
-        <div style={{ fontSize: '12px', maxWidth: '420px', lineHeight: '1.5' }}>
-          This test executed without recording any runtime coverage nodes or trace edges.
+          No graph nodes or source files are recorded for this run.
         </div>
       </div>
     );
@@ -503,327 +772,157 @@ export const GraphView: React.FC<GraphViewProps> = ({
   return (
     <div
       style={{
-        display: 'grid',
-        gridTemplateColumns: selectedNode ? 'minmax(0, 1fr) minmax(300px, 340px)' : '1fr',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
         height: '100%',
         position: 'relative',
         overflow: 'hidden',
         backgroundColor: 'var(--bg-app)',
       }}
     >
-      {/* Center Graph Canvas */}
+      {/* Calm Obsidian/Zotero Toolbar */}
       <div
         style={{
           display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          position: 'relative',
-          minWidth: 0,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 14px',
+          backgroundColor: 'var(--bg-surface)',
+          borderBottom: '1px solid var(--border-default)',
+          gap: '12px',
+          flexWrap: 'nowrap',
+          zIndex: 10,
+          minHeight: '38px',
         }}
       >
-        {/* Compact Evidence Map Toolbar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 14px',
-            backgroundColor: 'var(--bg-surface)',
-            borderBottom: '1px solid var(--border-default)',
-            gap: '12px',
-            flexWrap: 'wrap',
-            zIndex: 10,
-          }}
-        >
-          {/* Scope indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {activeTest ? `Evidence for ${activeTest.name}` : 'Full Repository Topology'}
-            </span>
-            <span
-              style={{
-                fontSize: '11px',
-                color: 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              ({elements.nodes.length} nodes, {elements.edges.length} edges)
-            </span>
-          </div>
-
-          {/* Controls: Static context toggle, Search, Zoom */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label
-              style={{
-                fontSize: '11px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                cursor: 'pointer',
-                color: includeStaticContext ? 'var(--text-primary)' : 'var(--text-secondary)',
-              }}
-              title="Show surrounding static AST calls and imports (clearly dashed)"
-            >
-              <input
-                type="checkbox"
-                checked={includeStaticContext}
-                onChange={(e) => setIncludeStaticContext(e.target.checked)}
-              />
-              Include Static Context
-            </label>
-
-            {/* Search Box */}
-            <div style={{ position: 'relative', width: '160px' }}>
-              <Search
-                size={12}
-                style={{
-                  position: 'absolute',
-                  left: '7px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-muted)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Find symbol..."
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                style={{
-                  width: '100%',
-                  backgroundColor: 'var(--bg-app)',
-                  border: '1px solid var(--border-default)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '3px 8px 3px 24px',
-                  color: 'var(--text-primary)',
-                  fontSize: '11px',
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                }}
-                aria-label="Find symbol in evidence map"
-              />
-            </div>
-
-            {/* Fit & Zoom Buttons */}
-            <div style={{ display: 'flex', gap: '2px' }}>
-              <button onClick={handleZoomIn} className="btn-ghost btn-sm" title="Zoom In" aria-label="Zoom in">
-                <ZoomIn size={13} />
-              </button>
-              <button onClick={handleZoomOut} className="btn-ghost btn-sm" title="Zoom Out" aria-label="Zoom out">
-                <ZoomOut size={13} />
-              </button>
-              <button onClick={handleFit} className="btn-ghost btn-sm" title="Fit to View" aria-label="Fit to view">
-                <Maximize2 size={13} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Cytoscape Container */}
-        <div
-          ref={containerRef}
-          style={{
-            flex: 1,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'var(--bg-app)',
-          }}
-        />
-      </div>
-
-      {/* Right Column: Node Details Inspector Drawer */}
-      {selectedNode && (
-        <div
-          style={{
-            borderLeft: '1px solid var(--border-default)',
-            backgroundColor: 'var(--bg-surface)',
-            height: '100%',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {/* Header */}
-          <div
+        {/* Left: Scope / Highlighting Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+            {activeTest ? `Highlighting: ${activeTest.name}` : 'Whole Project Map'}
+          </span>
+          <span
             style={{
-              padding: '12px 14px',
-              borderBottom: '1px solid var(--border-default)',
-              backgroundColor: 'var(--bg-raised)',
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              whiteSpace: 'nowrap',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '4px',
-              }}
-            >
-              <span className={`badge-change ${selectedNode.changeStatus}`}>
-                {selectedNode.changeStatus}
-              </span>
-              <button
-                onClick={() => handleSelectNode(null)}
-                className="btn-ghost btn-sm"
-                aria-label="Close symbol inspector"
-              >
-                <X size={13} />
-              </button>
-            </div>
+            ({graphData.nodes.length} nodes, {elements.edges.length} edges)
+          </span>
 
-            <div
+          {activeTest && !activeTest.callTracingAvailable && (
+            <span
               style={{
-                fontSize: '13px',
-                fontWeight: 700,
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--text-primary)',
-                wordBreak: 'break-all',
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'rgba(210, 153, 34, 0.15)',
+                color: '#d29922',
+                border: '1px solid rgba(210, 153, 34, 0.3)',
               }}
+              title="Coverage recorded without runtime call-edge tracing"
             >
-              {selectedNode.name}
-            </div>
-            <div
+              Coverage only
+            </span>
+          )}
+        </div>
+
+        {/* Right: Static Context Toggle, Search, Zoom Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <label
+            style={{
+              fontSize: '11px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              cursor: 'pointer',
+              color: includeStaticContext ? 'var(--text-primary)' : 'var(--text-secondary)',
+              userSelect: 'none',
+            }}
+            title="Toggle static structure relationships (imports and static AST calls)"
+          >
+            <input
+              type="checkbox"
+              checked={includeStaticContext}
+              onChange={(e) => setIncludeStaticContext(e.target.checked)}
+              aria-label="Include Static Context"
+            />
+            <span>Static Context</span>
+          </label>
+
+          {/* Quick Search */}
+          <div style={{ position: 'relative', width: '140px' }}>
+            <Search
+              size={11}
               style={{
-                fontSize: '11px',
+                position: 'absolute',
+                left: '6px',
+                top: '50%',
+                transform: 'translateY(-50%)',
                 color: 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)',
-                marginTop: '2px',
+                pointerEvents: 'none',
               }}
-            >
-              {selectedNode.file}:{selectedNode.lineStart}-{selectedNode.lineEnd}
-            </div>
+            />
+            <input
+              type="text"
+              placeholder="Find symbol..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              style={{
+                width: '100%',
+                backgroundColor: 'var(--bg-app)',
+                border: '1px solid var(--border-default)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '2px 6px 2px 22px',
+                color: 'var(--text-primary)',
+                fontSize: '11px',
+                outline: 'none',
+                fontFamily: 'inherit',
+              }}
+              aria-label="Find symbol in map"
+            />
           </div>
 
-          {/* Inspector Body */}
-          <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* Git Diff if changed */}
-            {selectedNode.gitDiff && (
-              <div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    color: 'var(--change-modified)',
-                    marginBottom: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                >
-                  <GitCommit size={11} /> Unified Git Diff
-                </div>
-                <DiffViewer diff={selectedNode.gitDiff} />
-              </div>
-            )}
+          {/* Zoom Level Indicator */}
+          <span
+            style={{
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            {zoomLevel}
+          </span>
 
-            {/* Source Snippet */}
-            <div>
-              <div
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  color: 'var(--text-secondary)',
-                  marginBottom: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                <Code2 size={11} /> Source Snippet (L{selectedNode.lineStart}-{selectedNode.lineEnd})
-              </div>
-              <DiffViewer
-                source={selectedNode.sourceSnippet}
-                lineStart={selectedNode.lineStart}
-              />
-            </div>
-
-            {/* Connected Relationships */}
-            <div>
-              <div
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  color: 'var(--text-secondary)',
-                  marginBottom: '6px',
-                }}
-              >
-                Connected Relationships ({relatedEdges.length})
-              </div>
-
-              {relatedEdges.length === 0 ? (
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  No connections recorded for this symbol.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {relatedEdges.map((e) => {
-                    const isOutbound = e.source === selectedNode.id;
-                    const counterpart = isOutbound ? e.target : e.source;
-                    return (
-                      <button
-                        key={e.id}
-                        onClick={() => handleSelectNode(counterpart)}
-                        style={{
-                          backgroundColor: 'var(--bg-app)',
-                          border: '1px solid var(--border-default)',
-                          borderRadius: 'var(--radius-sm)',
-                          padding: '6px 8px',
-                          fontSize: '11px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          textAlign: 'left',
-                          gap: '2px',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                          <span
-                            style={{
-                              color: e.category === 'runtime_observed' ? 'var(--accent)' : 'var(--text-muted)',
-                              fontWeight: 600,
-                              fontSize: '10px',
-                              textTransform: 'uppercase',
-                            }}
-                          >
-                            {isOutbound ? '→ Calls' : '← Called by'} ({e.category.replace('_', ' ')})
-                          </span>
-                          {e.observedCount && (
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                              {e.observedCount}x observed
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            color: 'var(--text-primary)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {counterpart}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Causality Note */}
-            <div className="notice-honest">
-              <Info size={12} style={{ color: 'var(--change-modified)', flexShrink: 0, marginTop: '2px' }} />
-              <div>
-                <strong>Observed trace:</strong> Edge connections represent recorded execution calls or AST structures.
-              </div>
-            </div>
+          {/* Zoom Buttons */}
+          <div style={{ display: 'flex', gap: '2px' }}>
+            <button onClick={handleZoomIn} className="btn-ghost btn-sm" title="Zoom In" aria-label="Zoom in">
+              <ZoomIn size={12} />
+            </button>
+            <button onClick={handleZoomOut} className="btn-ghost btn-sm" title="Zoom Out" aria-label="Zoom out">
+              <ZoomOut size={12} />
+            </button>
+            <button onClick={handleFit} className="btn-ghost btn-sm" title="Fit to View" aria-label="Fit to view">
+              <Maximize2 size={12} />
+            </button>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* Cytoscape Canvas */}
+      <div
+        ref={containerRef}
+        style={{
+          flex: 1,
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#0a0d13',
+        }}
+      />
     </div>
   );
 };

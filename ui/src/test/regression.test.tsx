@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import { TestDetailsPane } from '../components/TestDetailsPane';
-import { GraphView } from '../components/GraphView';
+import { GraphView, computeDeterministicPositions } from '../components/GraphView';
 import type { FaultMeshAdapter } from '../adapter';
 import type { RunSummary, TestItem, GraphData, CodeNode } from '../types';
 import { FIXTURE_RUNS, FIXTURE_TESTS, FIXTURE_GRAPH } from '../fixtures';
@@ -369,8 +369,65 @@ describe('Regression: Scalability & Bounded Rendering', () => {
       />
     );
 
-    // Verify bounded scope: Only the 5 exercised symbols are rendered, not 500 nodes!
-    expect(screen.getByText(/5 nodes, 1 edges/i)).toBeDefined();
-    expect(screen.getByText(/Evidence for test_target_scale/i)).toBeDefined();
+    // Verify whole-project map: All 500 project nodes remain in the map, with the test highlighted!
+    expect(screen.getByText(/500 nodes, 1 edges/i)).toBeDefined();
+    expect(screen.getByText(/Highlighting: test_target_scale/i)).toBeDefined();
+  });
+});
+
+describe('Holistic Project Map & Semantic Zoom', () => {
+  const graph = FIXTURE_GRAPH['run-auth-regression'];
+  const tests = FIXTURE_TESTS['run-auth-regression'];
+
+  it('computes deterministic positions with 100% repeatability', () => {
+    const pos1 = computeDeterministicPositions(graph.files || [], graph.nodes);
+    const pos2 = computeDeterministicPositions(graph.files || [], graph.nodes);
+
+    expect(Object.keys(pos1).length).toBe(Object.keys(pos2).length);
+    for (const key of Object.keys(pos1)) {
+      expect(pos1[key].x).toBe(pos2[key].x);
+      expect(pos1[key].y).toBe(pos2[key].y);
+    }
+  });
+
+  it('keeps all project nodes and files in map when test is selected', () => {
+    const failingTest = tests.find((t) => t.status === 'fail')!;
+
+    render(
+      <GraphView
+        graphData={graph}
+        tests={tests}
+        selectedTestId={failingTest.id}
+      />
+    );
+
+    // All 54 nodes are present, test highlighted
+    expect(screen.getByText(new RegExp(`Highlighting: ${failingTest.name}`, 'i'))).toBeDefined();
+    expect(screen.getByText(/54 nodes/i)).toBeDefined();
+  });
+
+  it('handles file cluster collapse and uncollapse dynamically', () => {
+    const { rerender } = render(
+      <GraphView
+        graphData={graph}
+        tests={tests}
+        selectedTestId={null}
+        collapsedFiles={new Set()}
+      />
+    );
+
+    expect(screen.getByText(/Whole Project Map/i)).toBeDefined();
+
+    // Rerender with tokens.py collapsed
+    rerender(
+      <GraphView
+        graphData={graph}
+        tests={tests}
+        selectedTestId={null}
+        collapsedFiles={new Set(['auth/tokens.py'])}
+      />
+    );
+
+    expect(screen.getByText(/Whole Project Map/i)).toBeDefined();
   });
 });
