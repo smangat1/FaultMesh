@@ -171,7 +171,7 @@ async function main() {
 
     // Phase 0: Diagnosing
     await page.evaluate(() => {
-      const step0Btn = document.querySelector('button[aria-label="Step 1: Diagnose"]');
+      const step0Btn = document.querySelector('button[aria-label^="Step 1:"]');
       if (step0Btn) step0Btn.click();
     });
     await new Promise((r) => setTimeout(r, 700));
@@ -179,7 +179,7 @@ async function main() {
 
     // Phase 1: Tracing
     await page.evaluate(() => {
-      const step1Btn = document.querySelector('button[aria-label="Step 2: Trace"]');
+      const step1Btn = document.querySelector('button[aria-label^="Step 2:"]');
       if (step1Btn) step1Btn.click();
     });
     await new Promise((r) => setTimeout(r, 700));
@@ -187,15 +187,30 @@ async function main() {
 
     // Phase 2: Inspecting (Candidate Defect Site)
     await page.evaluate(() => {
-      const step2Btn = document.querySelector('button[aria-label="Step 3: Inspect"]');
+      const step2Btn = document.querySelector('button[aria-label^="Step 3:"]');
       if (step2Btn) step2Btn.click();
     });
     await new Promise((r) => setTimeout(r, 700));
     await captureState(page, `08_agent_phase2_inspecting_${res.name}.png`, res.width, res.height);
 
+    // Expand the "Why this step?" popup to capture full 5-section rationale
+    await page.evaluate(() => {
+      const whyBtn = document.querySelector('button[aria-label="Why this step?"]');
+      if (whyBtn) whyBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    await captureState(page, `08_agent_phase2_expanded_explanation_${res.name}.png`, res.width, res.height);
+
+    // Collapse back so subsequent stages are clean
+    await page.evaluate(() => {
+      const collapseBtn = document.querySelector('button[aria-label="Collapse step explanation"]');
+      if (collapseBtn) collapseBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 300));
+
     // Phase 3: Patching (Candidate Patch formulation & live diff viewer)
     await page.evaluate(() => {
-      const step3Btn = document.querySelector('button[aria-label="Step 4: Patch"]');
+      const step3Btn = document.querySelector('button[aria-label^="Step 4:"]');
       if (step3Btn) step3Btn.click();
     });
     await new Promise((r) => setTimeout(r, 700));
@@ -203,7 +218,7 @@ async function main() {
 
     // Phase 4: Verifying (Pytest trial replay)
     await page.evaluate(() => {
-      const step4Btn = document.querySelector('button[aria-label="Step 5: Verify"]');
+      const step4Btn = document.querySelector('button[aria-label^="Step 5:"]');
       if (step4Btn) step4Btn.click();
     });
     await new Promise((r) => setTimeout(r, 700));
@@ -211,7 +226,7 @@ async function main() {
 
     // Phase 5: Resolved (Emerald confirmation, 0 regressions, full resolution summary)
     await page.evaluate(() => {
-      const step5Btn = document.querySelector('button[aria-label="Step 6: Resolved"]');
+      const step5Btn = document.querySelector('button[aria-label^="Step 6:"]');
       if (step5Btn) step5Btn.click();
     });
     await new Promise((r) => setTimeout(r, 700));

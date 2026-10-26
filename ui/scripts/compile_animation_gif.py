@@ -8,6 +8,7 @@ PHASE_FILES = [
     '08_agent_phase0_diagnosing_1440x920.png',
     '08_agent_phase1_tracing_1440x920.png',
     '08_agent_phase2_inspecting_1440x920.png',
+    '08_agent_phase2_expanded_explanation_1440x920.png',
     '08_agent_phase3_patching_1440x920.png',
     '08_agent_phase4_verifying_1440x920.png',
     '08_agent_phase5_resolved_1440x920.png',
@@ -16,7 +17,8 @@ PHASE_FILES = [
 DURATIONS_MS = [
     2400, # Phase 0: Diagnosing
     2500, # Phase 1: Tracing
-    3200, # Phase 2: Inspecting
+    2800, # Phase 2: Inspecting (collapsed)
+    3400, # Phase 2: Inspecting (expanded explanation popup)
     3400, # Phase 3: Patching
     2800, # Phase 4: Verifying
     4000, # Phase 5: Resolved

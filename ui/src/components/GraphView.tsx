@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useMemo, useState } from 'react';
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
 import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp, Bot } from 'lucide-react';
-import type { AgentPhase } from '../agent/agentSimulation';
-import { AgentPlaybackControls } from './AgentPlaybackControls';
+import type { AgentPhase, AgentSimulationStep } from '../agent/agentSimulation';
+import { AGENT_SIMULATION_STEPS } from '../agent/agentSimulation';
+import { InvestigationReplayBar } from './InvestigationReplayBar';
+import { StepExplanationPopup } from './StepExplanationPopup';
 
 export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 
@@ -44,6 +46,9 @@ interface GraphViewProps {
   onJumpAgentStep?: (step: number) => void;
   agentSpeed?: number;
   onChangeAgentSpeed?: (speed: number) => void;
+  currentAgentStep?: AgentSimulationStep | null;
+  isExplanationExpanded?: boolean;
+  onToggleExplanationExpand?: () => void;
 }
 
 interface HoverTagInfo {
@@ -172,6 +177,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
   onJumpAgentStep,
   agentSpeed = 1,
   onChangeAgentSpeed,
+  currentAgentStep,
+  isExplanationExpanded: propExplanationExpanded,
+  onToggleExplanationExpand,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
@@ -185,6 +193,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const [hoverTag, setHoverTag] = useState<HoverTagInfo | null>(null);
   const [agentScreenPos, setAgentScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [isCameraTrackingPaused, setIsCameraTrackingPaused] = useState(false);
+  const [localExplanationExpanded, setLocalExplanationExpanded] = useState(false);
+
+  const isExplanationExpanded =
+    propExplanationExpanded !== undefined ? propExplanationExpanded : localExplanationExpanded;
+  const toggleExplanationExpand =
+    onToggleExplanationExpand || (() => setLocalExplanationExpanded((p) => !p));
+
+  const resolvedAgentStep =
+    currentAgentStep ||
+    (isAgentMode && agentStepIndex !== undefined ? AGENT_SIMULATION_STEPS[agentStepIndex] : null);
+
+  const agentCheckpoints = useMemo(
+    () =>
+      AGENT_SIMULATION_STEPS.map((s, idx) => ({
+        index: idx,
+        label: s.checkpointLabel || s.phaseLabel,
+        phase: s.phase,
+        phaseName: s.phaseLabel,
+      })),
+    []
+  );
 
   useEffect(() => {
     if (propViewMode && propViewMode !== currentViewMode) {
@@ -766,8 +795,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
           {
             selector: 'node.agent-focused',
             style: {
-              'border-color': '#38bdf8',
-              'border-width': 2.2,
+              width: 10,
+              height: 10,
+              'background-color': '#38bdf8',
+              'border-color': '#ffffff',
+              'border-width': 1.5,
               'border-opacity': 1.0,
               'z-index': 999,
             },
@@ -775,8 +807,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
           {
             selector: 'node.agent-editing',
             style: {
-              'border-color': '#f59e0b',
-              'border-width': 2.5,
+              width: 11,
+              height: 11,
+              'background-color': '#f59e0b',
+              'border-color': '#ffffff',
+              'border-width': 2,
               'border-opacity': 1.0,
               'z-index': 999,
             },
@@ -784,8 +819,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
           {
             selector: 'node.agent-resolved',
             style: {
-              'border-color': '#10b981',
-              'border-width': 2.5,
+              width: 10,
+              height: 10,
+              'background-color': '#10b981',
+              'border-color': '#ffffff',
+              'border-width': 1.5,
               'border-opacity': 1.0,
               'z-index': 999,
             },
@@ -1262,6 +1300,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
             if (patchTarget.length > 0) {
               patchTarget.addClass('agent-resolved').addClass('show-label');
             }
+            const testTarget = cy.getElementById('tests/test_auth.py::test_login_expired_token');
+            if (testTarget.length > 0) {
+              testTarget.addClass('agent-resolved').addClass('show-label');
+            }
           } else if (agentPhase === 'inspecting') {
             agentTarget.addClass('agent-editing').addClass('show-label');
           } else {
@@ -1334,7 +1376,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const cy = cyRef.current;
     if (!cy || !isAgentMode || !agentActiveNodeId || isCameraTrackingPaused) return;
 
-    const targetNode = cy.getElementById(agentActiveNodeId);
+    let targetNode = cy.getElementById(agentActiveNodeId);
+    if (!targetNode || targetNode.length === 0) {
+      const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
+      if (file) {
+        targetNode = cy.getElementById(`file:${file}`);
+      }
+    }
     if (!targetNode || targetNode.length === 0) return;
 
     const modelPos = targetNode.position();
@@ -1346,7 +1394,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const drawerWidth = typeof window !== 'undefined' && window.innerWidth < 1200 ? 330 : 400;
     const rightInset = isInspectorOpen ? drawerWidth : 0;
     const visibleCenterX = (containerW - rightInset) / 2;
-    const visibleCenterY = containerH / 2;
+    const bottomInset = isAgentMode ? 65 : 0;
+    const visibleCenterY = (containerH - bottomInset) / 2;
 
     const targetPanX = visibleCenterX - modelPos.x * targetZoom;
     const targetPanY = visibleCenterY - modelPos.y * targetZoom;
@@ -1354,6 +1403,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const prefersReducedMotion =
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    const syncPos = () => {
+      let node = cy.getElementById(agentActiveNodeId);
+      if (!node || node.length === 0) {
+        const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
+        if (file) {
+          node = cy.getElementById(`file:${file}`);
+        }
+      }
+      if (node && node.length > 0) {
+        setAgentScreenPos(node.renderedPosition());
+      }
+    };
+
+    let animFrameId: number;
+    const trackMovingNode = () => {
+      syncPos();
+      if (cy.animated()) {
+        animFrameId = requestAnimationFrame(trackMovingNode);
+      }
+    };
 
     cy.stop();
     cy.animate(
@@ -1364,9 +1434,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
       {
         duration: prefersReducedMotion ? 0 : 550,
         easing: 'ease-in-out-cubic',
+        complete: () => {
+          syncPos();
+        },
       }
     );
-  }, [agentActiveNodeId, isAgentMode, agentZoomTarget, isCameraTrackingPaused, isInspectorOpen]);
+
+    animFrameId = requestAnimationFrame(trackMovingNode);
+
+    return () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+    };
+  }, [agentActiveNodeId, isAgentMode, agentZoomTarget, isCameraTrackingPaused, isInspectorOpen, graphData.nodes]);
 
   // Detect manual user pan/zoom during agent mode to pause camera tracking
   useEffect(() => {
@@ -1394,7 +1473,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
 
     const updateAgentPos = () => {
-      const node = cy.getElementById(agentActiveNodeId);
+      let node = cy.getElementById(agentActiveNodeId);
+      if (!node || node.length === 0) {
+        const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
+        if (file) {
+          node = cy.getElementById(`file:${file}`);
+        }
+      }
       if (node && node.length > 0) {
         setAgentScreenPos(node.renderedPosition());
       } else {
@@ -1403,12 +1488,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
 
     updateAgentPos();
-    cy.on('pan zoom render', updateAgentPos);
+    cy.on('pan zoom render position', updateAgentPos);
 
     return () => {
-      cy.removeListener('pan zoom render', updateAgentPos);
+      cy.removeListener('pan zoom render position', updateAgentPos);
     };
-  }, [agentActiveNodeId, elements]);
+  }, [agentActiveNodeId, isAgentMode, elements, graphData.nodes]);
 
   // ResizeObserver to handle container size changes cleanly
   useEffect(() => {
@@ -1863,179 +1948,207 @@ export const GraphView: React.FC<GraphViewProps> = ({
         </div>
       </div>
 
-      {/* Floating Glassmorphic Tag Card on Hover */}
-      {hoverTag && (
-        <div
-          style={{
-            position: 'absolute',
-            left: `${
-              hoverTag.x + 310 > (containerRef.current?.clientWidth || 800)
-                ? Math.max(10, hoverTag.x - 300)
-                : hoverTag.x + 14
-            }px`,
-            top: `${
-              hoverTag.y + 140 > (containerRef.current?.clientHeight || 600)
-                ? Math.max(10, hoverTag.y - 120)
-                : hoverTag.y + 14
-            }px`,
-            pointerEvents: 'none',
-            zIndex: 1000,
-            backgroundColor: 'rgba(15, 23, 42, 0.95)',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            boxShadow: '0 10px 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05)',
-            borderRadius: '6px',
-            padding: '8px 12px',
-            maxWidth: '320px',
-            backdropFilter: 'blur(10px)',
-            color: '#f8fafc',
-            fontFamily:
-              '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
-            fontSize: '11px',
-            lineHeight: 1.4,
-            animation: 'fadeIn 0.1s ease',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
-            {hoverTag.badge && (
-              <span
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: hoverTag.badge.color,
-                  display: 'inline-block',
-                  flexShrink: 0,
-                }}
-              />
-            )}
-            <span
-              style={{
-                fontWeight: 600,
-                color: '#ffffff',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                wordBreak: 'break-word',
-              }}
-            >
-              {hoverTag.title}
-            </span>
-            {hoverTag.badge && (
-              <span
-                style={{
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  color: hoverTag.badge.color,
-                  backgroundColor: hoverTag.badge.bg,
-                  border: `1px solid ${hoverTag.badge.color}40`,
-                  padding: '1px 5px',
-                  borderRadius: '3px',
-                  marginLeft: 'auto',
-                  flexShrink: 0,
-                }}
-              >
-                {hoverTag.badge.text}
-              </span>
-            )}
-          </div>
-          {hoverTag.subtitle && (
-            <div style={{ fontSize: '11px', color: '#93c5fd', marginBottom: '4px' }}>
-              {hoverTag.subtitle}
-            </div>
-          )}
-          {hoverTag.meta && hoverTag.meta.length > 0 && (
-            <div
-              style={{
-                fontSize: '10px',
-                color: '#94a3b8',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px',
-                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                paddingTop: '4px',
-                marginTop: '2px',
-              }}
-            >
-              {hoverTag.meta.map((m, i) => (
-                <div key={i}>{m}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Cytoscape Canvas */}
+      {/* Canvas Area Container - Relative Anchor for Cytoscape and its Overlays */}
       <div
-        ref={containerRef}
         style={{
           flex: 1,
           width: '100%',
           height: '100%',
-          backgroundColor: '#101114',
+          position: 'relative',
+          overflow: 'hidden',
         }}
-      />
-
-      {/* Agent Investigation Compact Playback Controls */}
-      {isAgentMode && onToggleAgentMode && (
-        <AgentPlaybackControls
-          currentStepIndex={agentStepIndex}
-          totalSteps={totalAgentSteps}
-          currentPhase={agentPhase || 'idle'}
-          phaseLabel={agentPhaseLabel || ''}
-          isPlaying={isAgentPlaying}
-          onTogglePlay={onToggleAgentPlay || (() => {})}
-          onPrevStep={onPrevAgentStep || (() => {})}
-          onNextStep={onNextAgentStep || (() => {})}
-          onRestart={onRestartAgent || (() => {})}
-          onJumpToStep={onJumpAgentStep || (() => {})}
-          speed={agentSpeed}
-          onChangeSpeed={onChangeAgentSpeed || (() => {})}
-          isCameraTrackingPaused={isCameraTrackingPaused}
-          onResumeTracking={() => setIsCameraTrackingPaused(false)}
-          onClose={onToggleAgentMode}
-          isInspectorOpen={isInspectorOpen}
-        />
-      )}
-
-      {/* Refined Obsidian-Style Agent Active Node Aura & Action Tag */}
-      {agentScreenPos && agentActiveNodeId && (
+      >
+        {/* Cytoscape Canvas */}
         <div
+          ref={containerRef}
           style={{
-            position: 'absolute',
-            left: `${agentScreenPos.x}px`,
-            top: `${agentScreenPos.y}px`,
-            pointerEvents: 'none',
-            zIndex: 250,
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#101114',
           }}
-        >
-          <div className={`agent-aura-ring ${agentPhase || ''}`} />
+        />
+
+        {/* Floating Glassmorphic Tag Card on Hover */}
+        {hoverTag && (
           <div
-            className="agent-floating-target-tag"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (agentActiveNodeId && onSelectNode) onSelectNode(agentActiveNodeId);
+            style={{
+              position: 'absolute',
+              left: `${
+                hoverTag.x + 310 > (containerRef.current?.clientWidth || 800)
+                  ? Math.max(10, hoverTag.x - 300)
+                  : hoverTag.x + 14
+              }px`,
+              top: `${
+                hoverTag.y + 140 > (containerRef.current?.clientHeight || 600)
+                  ? Math.max(10, hoverTag.y - 120)
+                  : hoverTag.y + 14
+              }px`,
+              pointerEvents: 'none',
+              zIndex: 1000,
+              backgroundColor: 'rgba(15, 23, 42, 0.95)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 10px 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+              borderRadius: '6px',
+              padding: '8px 12px',
+              maxWidth: '320px',
+              backdropFilter: 'blur(10px)',
+              color: '#f8fafc',
+              fontFamily:
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              fontSize: '11px',
+              lineHeight: 1.4,
+              animation: 'fadeIn 0.1s ease',
             }}
-            title="Click to inspect active code, evidence, and remediation"
           >
-            <Bot
-              size={11}
-              style={{
-                color:
-                  agentPhase === 'patching' || agentPhase === 'inspecting'
-                    ? '#f59e0b'
-                    : agentPhase === 'resolved'
-                    ? '#10b981'
-                    : agentPhase === 'verifying'
-                    ? '#a855f7'
-                    : '#38bdf8',
-              }}
-            />
-            <span>{agentActionPill || agentPhaseLabel || 'Agent Focus'}</span>
-            <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '2px' }}>• Inspect</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+              {hoverTag.badge && (
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    backgroundColor: hoverTag.badge.color,
+                    display: 'inline-block',
+                    flexShrink: 0,
+                  }}
+                />
+              )}
+              <span
+                style={{
+                  fontWeight: 600,
+                  color: '#ffffff',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {hoverTag.title}
+              </span>
+              {hoverTag.badge && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: hoverTag.badge.color,
+                    backgroundColor: hoverTag.badge.bg,
+                    border: `1px solid ${hoverTag.badge.color}40`,
+                    padding: '1px 5px',
+                    borderRadius: '3px',
+                    marginLeft: 'auto',
+                    flexShrink: 0,
+                  }}
+                >
+                  {hoverTag.badge.text}
+                </span>
+              )}
+            </div>
+            {hoverTag.subtitle && (
+              <div style={{ fontSize: '11px', color: '#93c5fd', marginBottom: '4px' }}>
+                {hoverTag.subtitle}
+              </div>
+            )}
+            {hoverTag.meta && hoverTag.meta.length > 0 && (
+              <div
+                style={{
+                  fontSize: '10px',
+                  color: '#94a3b8',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                  paddingTop: '4px',
+                  marginTop: '2px',
+                }}
+              >
+                {hoverTag.meta.map((m, i) => (
+                  <div key={i}>{m}</div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Expandable Step Explanation Popup (Docked above Replay Bar) */}
+        {isAgentMode && resolvedAgentStep && (
+          <StepExplanationPopup
+            currentStepIndex={agentStepIndex}
+            totalSteps={totalAgentSteps}
+            currentPhase={agentPhase || 'idle'}
+            phaseLabel={agentPhaseLabel || ''}
+            checkpointLabel={resolvedAgentStep.checkpointLabel || agentPhaseLabel || ''}
+            targetNodeId={resolvedAgentStep.targetNodeId}
+            explanation={resolvedAgentStep.explanation}
+            isExpanded={isExplanationExpanded}
+            onToggleExpand={toggleExplanationExpand}
+            isInspectorOpen={isInspectorOpen}
+          />
+        )}
+
+        {/* Minimalist Investigation Replay Bar (Docked at Bottom of Canvas) */}
+        {isAgentMode && onToggleAgentMode && (
+          <InvestigationReplayBar
+            currentStepIndex={agentStepIndex}
+            totalSteps={totalAgentSteps}
+            currentPhase={agentPhase || 'idle'}
+            checkpoints={agentCheckpoints}
+            isPlaying={isAgentPlaying}
+            onTogglePlay={onToggleAgentPlay || (() => {})}
+            onPrevStep={onPrevAgentStep || (() => {})}
+            onNextStep={onNextAgentStep || (() => {})}
+            onRestart={onRestartAgent || (() => {})}
+            onJumpToStep={onJumpAgentStep || (() => {})}
+            speed={agentSpeed}
+            onChangeSpeed={onChangeAgentSpeed || (() => {})}
+            isCameraTrackingPaused={isCameraTrackingPaused}
+            onResumeTracking={() => setIsCameraTrackingPaused(false)}
+            onClose={onToggleAgentMode}
+            isInspectorOpen={isInspectorOpen}
+          />
+        )}
+
+        {/* Refined Obsidian-Style Agent Active Node Aura & Action Tag */}
+        {agentScreenPos && agentActiveNodeId && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${Math.round(agentScreenPos.x)}px`,
+              top: `${Math.round(agentScreenPos.y)}px`,
+              width: 0,
+              height: 0,
+              pointerEvents: 'none',
+              zIndex: 250,
+            }}
+          >
+            <div className={`agent-aura-ring ${agentPhase || ''}`} />
+            <div
+              className="agent-floating-target-tag"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (agentActiveNodeId && onSelectNode) onSelectNode(agentActiveNodeId);
+              }}
+              title="Click to inspect active code, evidence, and remediation"
+            >
+              <Bot
+                size={11}
+                style={{
+                  color:
+                    agentPhase === 'patching' || agentPhase === 'inspecting'
+                      ? '#f59e0b'
+                      : agentPhase === 'resolved'
+                      ? '#10b981'
+                      : agentPhase === 'verifying'
+                      ? '#a855f7'
+                      : '#38bdf8',
+                }}
+              />
+              <span>{agentActionPill || agentPhaseLabel || 'Agent Focus'}</span>
+              <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '2px' }}>• Inspect</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

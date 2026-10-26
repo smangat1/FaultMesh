@@ -100,19 +100,18 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
     });
   });
 
-  it('supports compact playback controls: stepping, jumping, speed toggles, and pause', async () => {
+  it('supports investigation replay bar with bidirectional time travel', async () => {
     render(<App initialScreen="workspace" />);
 
     // Toggle agent mode
     const toolbarBtn = await screen.findByRole('button', { name: /agent auto-repair/i });
     fireEvent.click(toolbarBtn);
 
-    // Verify compact playback controls bar rendered
-    expect(screen.getByRole('region', { name: /agent playback controls/i })).toBeDefined();
-    expect(screen.getByText(/SAMPLE PLAYBACK/i)).toBeDefined();
+    // Verify investigation replay bar rendered
+    expect(screen.getByRole('region', { name: /investigation replay bar/i })).toBeDefined();
 
-    // Verify initial phase step pill (Diagnose) is highlighted
-    const step1Btn = screen.getByRole('button', { name: /Step 1: Diagnose/i });
+    // Verify initial checkpoint (Failure detected) is rendered
+    const step1Btn = screen.getByRole('button', { name: /Step 1: Failure detected/i });
     expect(step1Btn).toBeDefined();
 
     // Verify Play/Pause toggle button
@@ -121,15 +120,15 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
     fireEvent.click(playPauseBtn);
     expect(screen.getByRole('button', { name: /Play Investigation/i })).toBeDefined();
 
-    // Verify next step navigation
+    // Step forward using Next Step button
     const nextBtn = screen.getByRole('button', { name: /Next Step/i });
-    fireEvent.click(nextBtn); // moves to Step 2: Trace
+    fireEvent.click(nextBtn); // moves to Step 2: Execution evidence traced
     await waitFor(() => {
-      expect(screen.getByText(/Tracing Call Flow/i)).toBeDefined();
+      expect(screen.getByText(/Execution evidence traced/i)).toBeDefined();
     });
 
-    // Verify direct jumping to Step 4 (Patch)
-    const patchStepBtn = screen.getByRole('button', { name: /Step 4: Patch/i });
+    // Jump directly forward to Step 4 (Candidate fix examined)
+    const patchStepBtn = screen.getByRole('button', { name: /Step 4: Candidate fix examined/i });
     fireEvent.click(patchStepBtn);
     await waitFor(() => {
       expect(screen.getByText(/Candidate Patch Formulation/i)).toBeDefined();
@@ -140,12 +139,68 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
     fireEvent.click(speed2xBtn);
     expect(speed2xBtn.style.fontWeight).toBe('700');
 
-    // Verify jump to final step (Resolved)
-    const resolvedStepBtn = screen.getByRole('button', { name: /Step 6: Resolved/i });
-    fireEvent.click(resolvedStepBtn);
+    // Jump backward to Step 2 (Execution evidence traced) - TIME TRAVEL REVERT!
+    const step2Btn = screen.getByRole('button', { name: /Step 2: Execution evidence traced/i });
+    fireEvent.click(step2Btn);
+    await waitFor(() => {
+      expect(screen.getByText(/Guided Exploration of Recorded Trace/i)).toBeDefined();
+    });
+
+    // Jump forward to Step 6 (Investigation concluded)
+    const concludedStepBtn = screen.getByRole('button', { name: /Step 6: Investigation concluded/i });
+    fireEvent.click(concludedStepBtn);
     await waitFor(() => {
       expect(screen.getByText(/Sample Investigation Resolution Summary/i)).toBeDefined();
     });
+
+    // Jump backward all the way back to Step 1 (Failure detected)
+    fireEvent.click(step1Btn);
+    await waitFor(() => {
+      expect(screen.getByText(/Recorded Failure Evidence/i)).toBeDefined();
+    });
+  });
+
+  it('provides expandable explanation popup with 5 grounded sections and persistent state across steps', async () => {
+    render(<App initialScreen="workspace" />);
+
+    // Toggle agent mode
+    const toolbarBtn = await screen.findByRole('button', { name: /agent auto-repair/i });
+    fireEvent.click(toolbarBtn);
+
+    // Verify popup rendered in collapsed state with concise summary
+    expect(screen.getByRole('region', { name: /investigation step explanation/i })).toBeDefined();
+    expect(screen.getByText(/FaultMesh isolated a failing test assertion/i)).toBeDefined();
+
+    // Click "Why this step?" button to expand
+    const whyBtn = screen.getByRole('button', { name: /Why this step\?/i });
+    expect(whyBtn).toBeDefined();
+    fireEvent.click(whyBtn);
+
+    // Verify all 5 structured sections are displayed
+    await waitFor(() => {
+      expect(screen.getByText(/What happened\?/i)).toBeDefined();
+      expect(screen.getByText(/Why did it do this\?/i)).toBeDefined();
+      expect(screen.getByText(/What evidence supported the decision\?/i)).toBeDefined();
+      expect(screen.getByText(/What changed\?/i)).toBeDefined();
+      expect(screen.getByText(/What was the outcome\?/i)).toBeDefined();
+    });
+
+    // While remaining expanded, jump to Step 3: Suspicious function inspected
+    const step3Btn = screen.getByRole('button', { name: /Step 3: Suspicious function inspected/i });
+    fireEvent.click(step3Btn);
+
+    // Verify popup remains expanded and smoothly updates content for Step 3
+    await waitFor(() => {
+      expect(screen.getByText(/The investigator expanded auth\/tokens\.py and inspected signature verification/i)).toBeDefined();
+      expect(screen.getByText(/The traceback pointed to line 49 of tokens\.py/i)).toBeDefined();
+    });
+
+    // Click "Collapse" to collapse it back
+    const collapseBtn = screen.getByRole('button', { name: /Collapse step explanation/i });
+    fireEvent.click(collapseBtn);
+
+    // Verify collapsed summary for Step 3 is visible
+    expect(screen.getByText(/Identified recently modified token validation logic/i)).toBeDefined();
   });
 
   it('progressively discloses evidence across diagnosing, tracing, inspecting, patching, and verification', async () => {
@@ -164,16 +219,16 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
       expect(screen.getAllByText(/InvalidClaimError/i).length).toBeGreaterThan(0);
     });
 
-    // Jump to Step 3: Inspecting
-    const inspectBtn = screen.getByRole('button', { name: /Step 3: Inspect/i });
+    // Jump to Step 3: Suspicious function inspected
+    const inspectBtn = screen.getByRole('button', { name: /Step 3: Suspicious function inspected/i });
     fireEvent.click(inspectBtn);
     await waitFor(() => {
       expect(screen.getByText(/Candidate Defect Hypothesis/i)).toBeDefined();
       expect(screen.getByText(/Suspect Site/i)).toBeDefined();
     });
 
-    // Jump to Step 5: Verifying
-    const verifyBtn = screen.getByRole('button', { name: /Step 5: Verify/i });
+    // Jump to Step 5: Verification performed
+    const verifyBtn = screen.getByRole('button', { name: /Step 5: Verification performed/i });
     fireEvent.click(verifyBtn);
     await waitFor(() => {
       expect(screen.getByText(/Replay Verification Trial/i)).toBeDefined();

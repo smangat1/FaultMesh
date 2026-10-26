@@ -8,7 +8,11 @@ import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
-import { AGENT_SIMULATION_STEPS, type AgentLogEntry } from './agent/agentSimulation';
+import {
+  AGENT_SIMULATION_STEPS,
+  AGENT_ORIGINAL_SNIPPET,
+  type AgentLogEntry,
+} from './agent/agentSimulation';
 import './styles/theme.css';
 
 const DEFAULT_ADAPTER = new FixtureAdapter(0);
@@ -53,6 +57,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   const [agentStepIndex, setAgentStepIndex] = useState<number>(0);
   const [isAgentPlaying, setIsAgentPlaying] = useState<boolean>(false);
   const [agentSpeed, setAgentSpeed] = useState<number>(1);
+  const [isExplanationExpanded, setIsExplanationExpanded] = useState<boolean>(false);
   const [, setAgentLogs] = useState<AgentLogEntry[]>([]);
   const agentTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -235,18 +240,24 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
 
     setAgentStepIndex(idx);
 
-    // Target node selection & unfolding: track active target without jarring drawer open/close layout shifts
+    // 1. Target node selection: track active target without jarring drawer open/close layout shifts
     setSelectedNodeId(step.targetNodeId);
     setSelectedFile(null);
 
-    // Unfold target file locally so active node is visible without opening unrelated files
-    setCollapsedFiles((prev) => {
-      const next = new Set(prev);
-      next.delete(step.targetFile);
-      return next;
-    });
+    // 2. Unfold target files deterministically (Time-Travel across files)
+    if (step.unfoldedFiles && step.unfoldedFiles.length > 0) {
+      setCollapsedFiles(() => {
+        const next = new Set<string>();
+        graphData.files?.forEach((f) => {
+          if (!step.unfoldedFiles.includes(f.file)) {
+            next.add(f.file);
+          }
+        });
+        return next;
+      });
+    }
 
-    // Active test status update
+    // 3. Test Status Time-Travel (revert to fail if jumping back to steps 0..3)
     if (step.activeTestStatus) {
       setTests((prev) =>
         prev.map((t) =>
@@ -257,7 +268,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
       );
     }
 
-    // Patched snippet & diff update
+    // 4. Code Mutation State Time-Travel (revert code to original if jumping back to steps 0..2)
     if (step.patchedSnippet && step.patchedDiff) {
       setGraphData((prev) => ({
         ...prev,
@@ -267,19 +278,23 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
             : n
         ),
       }));
-    }
-
-    // When the agent reaches 'resolved', switch to 'changes' mode so the modified changes are prominently highlighted!
-    if (step.phase === 'resolved') {
-      setViewMode('changes');
+    } else {
+      // Revert code snippet and diff back to original pre-patch state when jumping backward!
       setGraphData((prev) => ({
         ...prev,
         nodes: prev.nodes.map((n) =>
-          n.id === 'auth/tokens.py::validate_token' || n.id === 'auth/tokens.py'
-            ? { ...n, changeStatus: 'modified' }
+          n.id === 'auth/tokens.py::validate_token'
+            ? { ...n, sourceSnippet: AGENT_ORIGINAL_SNIPPET, gitDiff: undefined, changeStatus: 'modified' }
             : n
         ),
       }));
+    }
+
+    // 5. View Mode Time-Travel (Structure mode in steps 0..4, Changes mode in step 5)
+    if (step.phase === 'resolved') {
+      setViewMode('changes');
+    } else {
+      setViewMode('structure');
     }
 
     // Append to agent thought logs
@@ -502,16 +517,26 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     totalAgentSteps={AGENT_SIMULATION_STEPS.length}
                     isAgentPlaying={isAgentPlaying}
                     onToggleAgentPlay={() => setIsAgentPlaying((prev) => !prev)}
-                    onPrevAgentStep={() => applyAgentStep(Math.max(0, agentStepIndex - 1))}
-                    onNextAgentStep={() =>
+                    onPrevAgentStep={() => {
+                      setIsAgentPlaying(false);
+                      applyAgentStep(Math.max(0, agentStepIndex - 1));
+                    }}
+                    onNextAgentStep={() => {
+                      setIsAgentPlaying(false);
                       applyAgentStep(
                         Math.min(AGENT_SIMULATION_STEPS.length - 1, agentStepIndex + 1)
-                      )
-                    }
+                      );
+                    }}
                     onRestartAgent={startAgentSimulation}
-                    onJumpAgentStep={(idx) => applyAgentStep(idx)}
+                    onJumpAgentStep={(idx) => {
+                      setIsAgentPlaying(false);
+                      applyAgentStep(idx);
+                    }}
                     agentSpeed={agentSpeed}
                     onChangeAgentSpeed={setAgentSpeed}
+                    currentAgentStep={currentAgentStep}
+                    isExplanationExpanded={isExplanationExpanded}
+                    onToggleExplanationExpand={() => setIsExplanationExpanded((prev) => !prev)}
                   />
                 </div>
 

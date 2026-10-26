@@ -290,26 +290,39 @@ button:disabled {
 @keyframes agentAuraPulseCyan {
   0%, 100% {
     transform: translate(-50%, -50%) scale(1.0);
-    opacity: 0.6;
-    box-shadow: 0 0 8px rgba(56, 189, 248, 0.35);
+    opacity: 0.75;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
   }
   50% {
-    transform: translate(-50%, -50%) scale(1.22);
-    opacity: 0.85;
-    box-shadow: 0 0 14px rgba(56, 189, 248, 0.55);
+    transform: translate(-50%, -50%) scale(1.25);
+    opacity: 0.95;
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.65);
+  }
+}
+
+@keyframes agentAuraPulseRed {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1.0);
+    opacity: 0.75;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.25);
+    opacity: 0.95;
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.7);
   }
 }
 
 @keyframes agentAuraPulseAmber {
   0%, 100% {
     transform: translate(-50%, -50%) scale(1.0);
-    opacity: 0.7;
-    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+    opacity: 0.8;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
   }
   50% {
-    transform: translate(-50%, -50%) scale(1.2);
-    opacity: 0.95;
-    box-shadow: 0 0 14px rgba(245, 158, 11, 0.6);
+    transform: translate(-50%, -50%) scale(1.25);
+    opacity: 1.0;
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.75);
   }
 }
 
@@ -320,35 +333,41 @@ button:disabled {
     box-shadow: 0 0 8px rgba(168, 85, 247, 0.4);
   }
   50% {
-    transform: translate(-50%, -50%) scale(1.2);
+    transform: translate(-50%, -50%) scale(1.25);
     opacity: 0.9;
-    box-shadow: 0 0 14px rgba(168, 85, 247, 0.6);
+    box-shadow: 0 0 16px rgba(168, 85, 247, 0.65);
   }
 }
 
 @keyframes agentAuraPulseEmerald {
   0% {
     transform: translate(-50%, -50%) scale(1.0);
-    opacity: 0.9;
+    opacity: 0.95;
     box-shadow: 0 0 16px rgba(16, 185, 129, 0.7);
   }
   100% {
-    transform: translate(-50%, -50%) scale(1.15);
-    opacity: 0.75;
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0.8;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.45);
   }
 }
 
 .agent-aura-ring {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 16px;
-  height: 16px;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   border: 1.5px solid #38bdf8;
   pointer-events: none;
+  transform: translate(-50%, -50%);
   animation: agentAuraPulseCyan 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.agent-aura-ring.diagnosing {
+  border-color: #ef4444;
+  animation: agentAuraPulseRed 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .agent-aura-ring.inspecting,
@@ -370,7 +389,7 @@ button:disabled {
 .agent-floating-target-tag {
   position: absolute;
   top: -26px;
-  left: 50%;
+  left: 0;
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
