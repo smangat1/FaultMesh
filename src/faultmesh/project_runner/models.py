@@ -10,8 +10,10 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-RUN_CONFIG_VERSION: Literal["1.0"] = "1.0"
-RUN_RECORD_VERSION: Literal["1.0"] = "1.0"
+RUN_CONFIG_VERSION: Literal["2.0"] = "2.0"
+RUN_RECORD_VERSION: Literal["2.0"] = "2.0"
+TEST_RECORD_VERSION: Literal["2.0"] = "2.0"
+EXPORT_VERSION: Literal["2.0"] = "2.0"
 
 _PIN = re.compile(r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[A-Za-z0-9_.+!-]+$")
 _IMAGE = re.compile(r"^[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}$")
@@ -95,6 +97,7 @@ class RunLimits(StrictModel):
     cpus: Annotated[float, Field(gt=0, le=8)] = 1.0
     pids: Annotated[int, Field(ge=16, le=1024)] = 128
     max_output_bytes: Annotated[int, Field(ge=1024, le=10_000_000)] = 1_000_000
+    max_evidence_bytes: Annotated[int, Field(ge=1024, le=50_000_000)] = 10_000_000
 
     @field_validator("memory")
     @classmethod
@@ -105,7 +108,7 @@ class RunLimits(StrictModel):
 
 
 class ProjectRunConfig(StrictModel):
-    schema_version: Literal["1.0"] = RUN_CONFIG_VERSION
+    schema_version: Literal["1.0", "2.0"] = RUN_CONFIG_VERSION
     target_root: str
     revision: str
     artifact_root: str = ".faultmesh-v1"
@@ -180,6 +183,7 @@ class EnvironmentIdentity(StrictModel):
     resolved_image_id: str | None = None
     registry_digest: str | None = None
     dependency_pins: list[str]
+    installed_packages: list[str] | None = None
     docker_server_version: str | None = None
 
 
@@ -191,10 +195,157 @@ class RunArtifacts(StrictModel):
     stderr: str
     pytest_report: str | None = None
     dockerfile: str
+    tests: str | None = None
+    observation_report: str | None = None
+    source_snapshot: str | None = None
+
+
+class TestPhase(StrEnum):
+    SETUP = "setup"
+    CALL = "call"
+    TEARDOWN = "teardown"
+
+
+class TestOutcome(StrEnum):
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    ERROR = "ERROR"
+    SKIPPED = "SKIPPED"
+    XFAILED = "XFAILED"
+    XPASSED = "XPASSED"
+    UNKNOWN = "UNKNOWN"
+
+
+class ObservationStatus(StrEnum):
+    COMPLETE = "COMPLETE"
+    NOT_REQUESTED = "NOT_REQUESTED"
+    INCOMPLETE = "INCOMPLETE"
+    INSTRUMENTATION_ERROR = "INSTRUMENTATION_ERROR"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class MappingStatus(StrEnum):
+    MAPPED = "MAPPED"
+    UNMAPPED = "UNMAPPED"
+    OUTSIDE_ROOT = "OUTSIDE_ROOT"
+    PARSE_ERROR = "PARSE_ERROR"
+    UNKNOWN_CONTEXT = "UNKNOWN_CONTEXT"
+
+
+class TestPhaseResult(StrictModel):
+    phase: TestPhase
+    outcome: TestOutcome
+    duration_ms: Annotated[float, Field(ge=0)] = 0.0
+    failure_text: str | None = None
+    failure_truncated: bool = False
+
+
+class ObservedLine(StrictModel):
+    line: Annotated[int, Field(ge=1)]
+    phases: list[TestPhase] = Field(min_length=1)
+
+    @field_validator("phases")
+    @classmethod
+    def unique_phases(cls, value: list[TestPhase]) -> list[TestPhase]:
+        if len(value) != len(set(value)):
+            raise ValueError("observed line phases must be unique")
+        return value
+
+
+class ObservedFile(StrictModel):
+    path: str
+    content_sha256: str
+    lines: list[ObservedLine]
+    mapping_status: MappingStatus = MappingStatus.MAPPED
+
+    @field_validator("path")
+    @classmethod
+    def relative_path(cls, value: str) -> str:
+        return _safe_relative(value, "observed path")
+
+
+class ObservedSymbol(StrictModel):
+    evidence_type: Literal["TEST_EXECUTED_SYMBOL"] = "TEST_EXECUTED_SYMBOL"
+    path: str
+    content_sha256: str
+    qualified_name: str
+    start_line: Annotated[int, Field(ge=1)]
+    end_line: Annotated[int, Field(ge=1)]
+    executed_lines: list[Annotated[int, Field(ge=1)]]
+    phases: list[TestPhase]
+
+    @field_validator("path")
+    @classmethod
+    def relative_path(cls, value: str) -> str:
+        return _safe_relative(value, "symbol path")
+
+
+class TestObservation(StrictModel):
+    status: ObservationStatus
+    instrumentation_version: str
+    source_revision: str
+    source_content_sha256: str
+    files: list[ObservedFile] = Field(default_factory=list)
+    symbols: list[ObservedSymbol] = Field(default_factory=list)
+    unmapped: list[ObservedFile] = Field(default_factory=list)
+    outside_root_files: int = Field(default=0, ge=0)
+    unknown_contexts: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
+class TestCaseRecord(StrictModel):
+    schema_version: Literal["2.0"] = TEST_RECORD_VERSION
+    run_id: str
+    node_id: str = Field(min_length=1, max_length=4096)
+    outcome: TestOutcome
+    phases: list[TestPhaseResult]
+    duration_ms: Annotated[float, Field(ge=0)] = 0.0
+    failure_text: str | None = None
+    failure_truncated: bool = False
+    failure_fingerprint: str | None = None
+    observation: TestObservation | None = None
+
+
+class SourceSymbolSnapshot(StrictModel):
+    path: str
+    qualified_name: str
+    kind: Literal["function", "method", "async_function", "async_method"]
+    start_line: Annotated[int, Field(ge=1)]
+    end_line: Annotated[int, Field(ge=1)]
+    executable_lines: list[Annotated[int, Field(ge=1)]]
+
+
+class SourceFileSnapshot(StrictModel):
+    path: str
+    content_sha256: str
+    line_count: Annotated[int, Field(ge=0)]
+    parse_error: str | None = None
+    symbols: list[SourceSymbolSnapshot] = Field(default_factory=list)
+
+
+class SourceSnapshot(StrictModel):
+    schema_version: Literal["2.0"] = RUN_RECORD_VERSION
+    revision: str
+    content_sha256: str
+    files: list[SourceFileSnapshot]
+
+
+class ReplayComparison(StrEnum):
+    SAME_FAILURE = "SAME_FAILURE"
+    DIFFERENT_FAILURE = "DIFFERENT_FAILURE"
+    PASSED_ON_REPLAY = "PASSED_ON_REPLAY"
+    MISSING_OR_DESELECTED = "MISSING_OR_DESELECTED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+class ReplayProvenance(StrictModel):
+    parent_run_id: str
+    parent_test_id: str
+    comparison: ReplayComparison | None = None
 
 
 class ProjectTestRun(StrictModel):
-    schema_version: Literal["1.0"] = RUN_RECORD_VERSION
+    schema_version: Literal["2.0"] = RUN_RECORD_VERSION
     id: str
     config_version: str
     target: TargetIdentity
@@ -213,3 +364,13 @@ class ProjectTestRun(StrictModel):
     stderr_truncated: bool = False
     error: str | None = None
     artifacts: RunArtifacts
+    observation_requested: bool = False
+    observation_status: ObservationStatus = ObservationStatus.NOT_REQUESTED
+    test_case_count: int = Field(default=0, ge=0)
+    replay: ReplayProvenance | None = None
+
+
+class RunEvidenceExport(StrictModel):
+    schema_version: Literal["2.0"] = EXPORT_VERSION
+    run: ProjectTestRun
+    tests: list[TestCaseRecord]
