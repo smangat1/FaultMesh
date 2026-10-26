@@ -2,7 +2,6 @@ import type {
   RunSummary,
   TestItem,
   GraphData,
-  SourceViewData,
 } from '../types';
 
 export const FIXTURE_RUNS: RunSummary[] = [

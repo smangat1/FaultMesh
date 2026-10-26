@@ -1,0 +1,284 @@
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-surface: #182234;
+  --border-color: #334155;
+  --border-subtle: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent: #38bdf8;
+  --accent-hover: #0284c7;
+
+  /* Semantic status colors */
+  --status-pass: #10b981;
+  --status-pass-bg: rgba(16, 185, 129, 0.15);
+  --status-fail: #ef4444;
+  --status-fail-bg: rgba(239, 68, 68, 0.15);
+  --status-error: #f97316;
+  --status-error-bg: rgba(249, 115, 22, 0.15);
+  --status-skipped: #a855f7;
+  --status-skipped-bg: rgba(168, 85, 247, 0.15);
+
+  /* Code change semantics */
+  --change-modified: #f59e0b;
+  --change-modified-bg: rgba(245, 158, 11, 0.15);
+  --change-added: #06b6d4;
+  --change-added-bg: rgba(6, 182, 212, 0.15);
+  --change-unchanged: #64748b;
+  --change-unchanged-bg: rgba(100, 116, 139, 0.15);
+
+  /* Edge and graph colors */
+  --edge-runtime: #38bdf8;
+  --edge-runtime-active: #f43f5e;
+  --edge-static: #64748b;
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+[data-theme='light'] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e2e8f0;
+  --bg-surface: #f1f5f9;
+  --border-color: #cbd5e1;
+  --border-subtle: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+
+  --status-pass: #059669;
+  --status-pass-bg: rgba(5, 150, 105, 0.12);
+  --status-fail: #dc2626;
+  --status-fail-bg: rgba(220, 38, 38, 0.12);
+  --status-error: #ea580c;
+  --status-error-bg: rgba(234, 88, 12, 0.12);
+  --status-skipped: #9333ea;
+  --status-skipped-bg: rgba(147, 51, 234, 0.12);
+
+  --change-modified: #d97706;
+  --change-modified-bg: rgba(217, 119, 6, 0.12);
+  --change-added: #0891b2;
+  --change-added-bg: rgba(8, 145, 178, 0.12);
+  --change-unchanged: #94a3b8;
+  --change-unchanged-bg: rgba(148, 163, 184, 0.12);
+
+  --edge-runtime: #0284c7;
+  --edge-runtime-active: #e11d48;
+  --edge-static: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.4;
+  font-size: 13px;
+  overflow-x: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Monospace code styling */
+code, pre, .font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Sample data fixture banner */
+.fixture-banner {
+  background: linear-gradient(90deg, #b45309, #d97706);
+  color: #fff;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.fixture-banner .badge {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.btn:hover {
+  background-color: var(--border-color);
+}
+.btn-primary {
+  background-color: var(--accent);
+  color: #0f172a;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+  color: #fff;
+}
+.btn-sm {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.btn-ghost:hover {
+  background-color: var(--bg-tertiary);
+}
+
+/* Status Badges */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.badge-status.pass {
+  background-color: var(--status-pass-bg);
+  color: var(--status-pass);
+  border: 1px solid var(--status-pass);
+}
+.badge-status.fail {
+  background-color: var(--status-fail-bg);
+  color: var(--status-fail);
+  border: 1px solid var(--status-fail);
+}
+.badge-status.error {
+  background-color: var(--status-error-bg);
+  color: var(--status-error);
+  border: 1px solid var(--status-error);
+}
+.badge-status.skipped {
+  background-color: var(--status-skipped-bg);
+  color: var(--status-skipped);
+  border: 1px solid var(--status-skipped);
+}
+
+/* Change Badges */
+.badge-change {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge-change.modified {
+  background-color: var(--change-modified-bg);
+  color: var(--change-modified);
+  border: 1px solid var(--change-modified);
+}
+.badge-change.added {
+  background-color: var(--change-added-bg);
+  color: var(--change-added);
+  border: 1px solid var(--change-added);
+}
+.badge-change.unchanged {
+  background-color: var(--change-unchanged-bg);
+  color: var(--change-unchanged);
+  border: 1px solid var(--border-color);
+}
+
+/* Notice Box */
+.notice-box {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--accent);
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.notice-box.warning {
+  border-left-color: var(--change-modified);
+  background-color: rgba(245, 158, 11, 0.06);
+}
+.notice-box.honest-cause {
+  border-left-color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.08);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.notice-box.honest-cause strong {
+  color: #fbbf24;
+}
+
+/* Diff formatting */
+.diff-container {
+  background-color: #0b1120;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.diff-line {
+  padding: 1px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-line.added {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+.diff-line.removed {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+.diff-line.header {
+  color: #94a3b8;
+  background-color: rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+}
