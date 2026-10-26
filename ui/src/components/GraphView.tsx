@@ -163,7 +163,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   agentActiveNodeId,
   agentPhase,
   agentPhaseLabel,
-  agentActionPill,
+  agentActionPill: _agentActionPill,
   agentActiveEdgeIds = [],
   agentZoomTarget = 1.15,
   isInspectorOpen = false,
@@ -191,7 +191,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
   );
   const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
   const [hoverTag, setHoverTag] = useState<HoverTagInfo | null>(null);
-  const [agentScreenPos, setAgentScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [isCameraTrackingPaused, setIsCameraTrackingPaused] = useState(false);
   const [localExplanationExpanded, setLocalExplanationExpanded] = useState(false);
 
@@ -791,53 +790,195 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 100,
             },
           },
-          // --- Autonomous Agent Live Animation Classes ---
+          // --- Autonomous Agent Live Animation Classes: Focused Highlighting & Greying Out ---
+          // Grey out all unimpacted nodes in agent mode: clean Obsidian dark, no borders, no labels
           {
-            selector: 'node.agent-focused',
+            selector: 'node.agent-unimpacted',
             style: {
-              width: 10,
-              height: 10,
+              'background-color': '#161a22',
+              'border-width': 0,
+              opacity: 0.12,
+              label: '',
+              'z-index': 1,
+            },
+          },
+          // Grey out all unimpacted edges in agent mode
+          {
+            selector: 'edge.agent-unimpacted',
+            style: {
+              'line-color': '#1a2230',
+              opacity: 0.05,
+              'target-arrow-shape': 'none',
+              width: 0.5,
+              label: '',
+              'z-index': 1,
+            },
+          },
+          // Impacted nodes: high contrast, fully visible
+          {
+            selector: 'node.agent-impacted',
+            style: {
+              opacity: 1.0,
+              'z-index': 100,
+            },
+          },
+          // Impacted failing test node
+          {
+            selector: 'node.agent-impacted[id = "tests/test_auth.py::test_login_expired_token"]',
+            style: {
+              'background-color': '#ef4444',
+              'border-width': 1.5,
+              'border-color': '#fca5a5',
+              width: 9,
+              height: 9,
+              label: 'data(shortLabel)',
+              color: '#fca5a5',
+              'font-weight': 600,
+              'font-size': '10px',
+              'z-index': 120,
+            },
+          },
+          // Impacted service intermediary node (call coordinator)
+          {
+            selector: 'node.agent-impacted[id = "auth/service.py::login_with_token"]',
+            style: {
+              'background-color': '#38bdf8',
+              'border-width': 1.2,
+              'border-color': '#7dd3fc',
+              width: 8,
+              height: 8,
+              label: 'data(shortLabel)',
+              color: '#7dd3fc',
+              'font-weight': 500,
+              'font-size': '9.5px',
+              'z-index': 110,
+            },
+          },
+          // Impacted token validator node (defect candidate & patch site)
+          {
+            selector: 'node.agent-impacted[id = "auth/tokens.py::validate_token"]',
+            style: {
+              'background-color': '#f59e0b',
+              'border-width': 1.5,
+              'border-color': '#fde68a',
+              width: 9,
+              height: 9,
+              label: 'data(shortLabel)',
+              color: '#fde68a',
+              'font-weight': 600,
+              'font-size': '10px',
+              'z-index': 120,
+            },
+          },
+          // Impacted file cluster nodes
+          {
+            selector: 'node[?isFileCluster].agent-impacted',
+            style: {
+              opacity: 0.9,
+              'border-color': '#64748b',
+              'border-width': 1,
+              label: 'data(label)',
+              color: '#cbd5e1',
+              'z-index': 80,
+            },
+          },
+          // Resolved state: turns nodes emerald
+          {
+            selector: 'node.agent-resolved-state',
+            style: {
+              'background-color': '#10b981',
+              'border-color': '#6ee7b7',
+              color: '#a7f3d0',
+              'z-index': 130,
+            },
+          },
+          // Currently impacted active node with smooth canvas style transition
+          {
+            selector: 'node.agent-currently-impacted',
+            style: {
+              'transition-property': 'width, height, border-width, border-color, background-color, border-opacity',
+              'transition-duration': 0.35,
+              'transition-timing-function': 'ease-in-out',
+              'border-width': 2,
+              'border-color': '#ffffff',
+              'border-opacity': 1.0,
+              'z-index': 1000,
+            },
+          },
+          // Peak state of the flash pulse: enlarged luminous core with crisp bright white rim
+          {
+            selector: 'node.agent-currently-impacted.agent-flash-peak',
+            style: {
+              width: 15,
+              height: 15,
+              'border-width': 3.5,
+              'border-color': '#ffffff',
+              'border-opacity': 1.0,
+              'z-index': 1000,
+            },
+          },
+          // Phase-specific flash color accents
+          {
+            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-diagnosing',
+            style: {
+              'background-color': '#ff4d4d',
+              'border-color': '#ffffff',
+            },
+          },
+          {
+            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-tracing',
+            style: {
               'background-color': '#38bdf8',
               'border-color': '#ffffff',
-              'border-width': 1.5,
-              'border-opacity': 1.0,
-              'z-index': 999,
             },
           },
           {
-            selector: 'node.agent-editing',
+            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-inspecting',
             style: {
-              width: 11,
-              height: 11,
-              'background-color': '#f59e0b',
+              'background-color': '#fbbf24',
               'border-color': '#ffffff',
-              'border-width': 2,
-              'border-opacity': 1.0,
-              'z-index': 999,
             },
           },
           {
-            selector: 'node.agent-resolved',
+            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-patching',
             style: {
-              width: 10,
-              height: 10,
-              'background-color': '#10b981',
+              'background-color': '#fde047',
               'border-color': '#ffffff',
-              'border-width': 1.5,
-              'border-opacity': 1.0,
-              'z-index': 999,
             },
           },
-          // Agent active trail edges: brightened progressively along the evidence trail
+          {
+            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-verifying',
+            style: {
+              'background-color': '#c084fc',
+              'border-color': '#ffffff',
+            },
+          },
+          {
+            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-resolved',
+            style: {
+              'background-color': '#34d399',
+              'border-color': '#ffffff',
+            },
+          },
+          // Containment strands for impacted files
+          {
+            selector: 'edge[category = "containment"].agent-impacted',
+            style: {
+              opacity: 0.35,
+              'line-color': '#334155',
+              'z-index': 10,
+            },
+          },
+          // Agent active trail edges: brightened progressively along the recorded evidence trail
           {
             selector: 'edge.agent-trail-active',
             style: {
               'line-color': '#38bdf8',
               'target-arrow-color': '#38bdf8',
               'target-arrow-shape': 'triangle',
-              'arrow-scale': 0.75,
-              width: 1.8,
-              opacity: 0.95,
+              'arrow-scale': 0.8,
+              width: 2.0,
+              opacity: 1.0,
               'z-index': 90,
             },
           },
@@ -847,23 +988,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'line-color': '#f59e0b',
               'target-arrow-color': '#f59e0b',
               'target-arrow-shape': 'triangle',
-              'arrow-scale': 0.75,
-              width: 1.8,
-              opacity: 0.95,
+              'arrow-scale': 0.8,
+              width: 2.0,
+              opacity: 1.0,
               'z-index': 90,
             },
           },
-          // Restrained dimming during agent investigation: background remains visible in Obsidian dark charcoal
           {
-            selector: 'node.agent-dimmed',
+            selector: 'edge.agent-trail-emerald',
             style: {
-              opacity: 0.28,
-            },
-          },
-          {
-            selector: 'edge.agent-dimmed',
-            style: {
-              opacity: 0.12,
+              'line-color': '#10b981',
+              'target-arrow-color': '#10b981',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.8,
+              width: 2.0,
+              opacity: 1.0,
+              'z-index': 90,
             },
           },
         ],
@@ -1278,45 +1418,72 @@ export const GraphView: React.FC<GraphViewProps> = ({
           }
         });
       }
-      // 4. Autonomous Agent Active Highlighting & Evidence Trail
+      // 4. Autonomous Agent Live Highlighting: Decisive Greying Out & Impact Spotlight
       cy.nodes()
-        .removeClass('agent-focused')
-        .removeClass('agent-editing')
-        .removeClass('agent-resolved')
-        .removeClass('agent-dimmed');
+        .removeClass('agent-impacted')
+        .removeClass('agent-unimpacted')
+        .removeClass('agent-resolved-state');
       cy.edges()
+        .removeClass('agent-impacted')
+        .removeClass('agent-unimpacted')
         .removeClass('agent-trail-active')
         .removeClass('agent-trail-amber')
-        .removeClass('agent-dimmed');
+        .removeClass('agent-trail-emerald');
 
-      if (isAgentMode && agentActiveNodeId) {
-        const agentTarget = cy.getElementById(agentActiveNodeId);
-        if (agentTarget.length > 0) {
-          if (agentPhase === 'patching') {
-            agentTarget.addClass('agent-editing').addClass('show-label');
-          } else if (agentPhase === 'resolved') {
-            agentTarget.addClass('agent-resolved').addClass('show-label');
-            const patchTarget = cy.getElementById('auth/tokens.py::validate_token');
-            if (patchTarget.length > 0) {
-              patchTarget.addClass('agent-resolved').addClass('show-label');
-            }
-            const testTarget = cy.getElementById('tests/test_auth.py::test_login_expired_token');
-            if (testTarget.length > 0) {
-              testTarget.addClass('agent-resolved').addClass('show-label');
-            }
-          } else if (agentPhase === 'inspecting') {
-            agentTarget.addClass('agent-editing').addClass('show-label');
-          } else {
-            agentTarget.addClass('agent-focused').addClass('show-label');
-          }
+      if (isAgentMode) {
+        const impactedNodeIds = new Set<string>([
+          'tests/test_auth.py::test_login_expired_token',
+          'auth/service.py::login_with_token',
+          'auth/tokens.py::validate_token',
+          'file:tests/test_auth.py',
+          'file:auth/service.py',
+          'file:auth/tokens.py',
+        ]);
+        if (agentActiveNodeId) {
+          impactedNodeIds.add(agentActiveNodeId);
         }
 
-        // Active evidence trail edges
+        const impactedEdgeIds = new Set<string>([
+          'e_test_fail_to_login',
+          'e_login_to_validate',
+          'containment:file:tests/test_auth.py->tests/test_auth.py::test_login_expired_token',
+          'containment:file:auth/service.py->auth/service.py::login_with_token',
+          'containment:file:auth/tokens.py->auth/tokens.py::validate_token',
+          ...(agentActiveEdgeIds || []),
+        ]);
+
+        // Decisively grey out all non-impacted nodes; prominently spotlight impacted nodes
+        cy.nodes().forEach((n) => {
+          if (impactedNodeIds.has(n.id())) {
+            n.addClass('agent-impacted');
+            n.removeClass('agent-unimpacted');
+            n.addClass('show-label');
+          } else {
+            n.addClass('agent-unimpacted');
+            n.removeClass('agent-impacted');
+            n.removeClass('show-label');
+          }
+        });
+
+        // Decisively grey out all non-impacted edges; spotlight impacted edges
+        cy.edges().forEach((e) => {
+          if (impactedEdgeIds.has(e.id())) {
+            e.addClass('agent-impacted');
+            e.removeClass('agent-unimpacted');
+          } else {
+            e.addClass('agent-unimpacted');
+            e.removeClass('agent-impacted');
+          }
+        });
+
+        // Highlight active trail edges progressively along recorded trace
         if (agentActiveEdgeIds && agentActiveEdgeIds.length > 0) {
           agentActiveEdgeIds.forEach((eid) => {
             const edge = cy.getElementById(eid);
             if (edge.length > 0) {
-              if (agentPhase === 'inspecting' || agentPhase === 'patching') {
+              if (agentPhase === 'resolved') {
+                edge.addClass('agent-trail-emerald');
+              } else if (agentPhase === 'inspecting' || agentPhase === 'patching') {
                 edge.addClass('agent-trail-amber');
               } else {
                 edge.addClass('agent-trail-active');
@@ -1325,29 +1492,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
           });
         }
 
-        // Restrained dimming: in early investigation phases, gently dim unrelated nodes (opacity 0.28)
-        if (agentPhase !== 'resolved') {
-          const focusedNodeIds = new Set<string>([
-            agentActiveNodeId,
-            'tests/test_auth.py::test_login_expired_token',
-            'auth/service.py::login_with_token',
-            'auth/tokens.py::validate_token',
-            'file:tests/test_auth.py',
-            'file:auth/service.py',
-            'file:auth/tokens.py',
-          ]);
-
-          cy.nodes().forEach((n) => {
-            if (!focusedNodeIds.has(n.id())) {
-              n.addClass('agent-dimmed');
-            }
-          });
-
-          cy.edges().forEach((e) => {
-            if (!agentActiveEdgeIds?.includes(e.id())) {
-              e.addClass('agent-dimmed');
-            }
-          });
+        // If in resolved phase, turn defect site and passing test to emerald
+        if (agentPhase === 'resolved') {
+          const patchTarget = cy.getElementById('auth/tokens.py::validate_token');
+          if (patchTarget.length > 0) {
+            patchTarget.addClass('agent-resolved-state');
+          }
+          const testTarget = cy.getElementById('tests/test_auth.py::test_login_expired_token');
+          if (testTarget.length > 0) {
+            testTarget.addClass('agent-resolved-state');
+          }
         }
       }
     });
@@ -1404,27 +1558,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 
-    const syncPos = () => {
-      let node = cy.getElementById(agentActiveNodeId);
-      if (!node || node.length === 0) {
-        const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
-        if (file) {
-          node = cy.getElementById(`file:${file}`);
-        }
-      }
-      if (node && node.length > 0) {
-        setAgentScreenPos(node.renderedPosition());
-      }
-    };
-
-    let animFrameId: number;
-    const trackMovingNode = () => {
-      syncPos();
-      if (cy.animated()) {
-        animFrameId = requestAnimationFrame(trackMovingNode);
-      }
-    };
-
     cy.stop();
     cy.animate(
       {
@@ -1432,19 +1565,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
         zoom: targetZoom,
       },
       {
-        duration: prefersReducedMotion ? 0 : 550,
+        duration: prefersReducedMotion ? 0 : 500,
         easing: 'ease-in-out-cubic',
-        complete: () => {
-          syncPos();
-        },
       }
     );
-
-    animFrameId = requestAnimationFrame(trackMovingNode);
-
-    return () => {
-      if (animFrameId) cancelAnimationFrame(animFrameId);
-    };
   }, [agentActiveNodeId, isAgentMode, agentZoomTarget, isCameraTrackingPaused, isInspectorOpen, graphData.nodes]);
 
   // Detect manual user pan/zoom during agent mode to pause camera tracking
@@ -1464,36 +1588,46 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, [isAgentMode, isCameraTrackingPaused]);
 
-  // Synchronize agent active node screen coordinates for 60fps CSS beacon overlay
+  // Smooth Native Canvas Flashing Pulse on Currently Impacted Node
   useEffect(() => {
     const cy = cyRef.current;
-    if (!cy || !agentActiveNodeId) {
-      setAgentScreenPos(null);
-      return;
+    if (!cy || !isAgentMode || !agentActiveNodeId) return;
+
+    let targetNode = cy.getElementById(agentActiveNodeId);
+    if (!targetNode || targetNode.length === 0) {
+      const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
+      if (file) {
+        targetNode = cy.getElementById(`file:${file}`);
+      }
     }
+    if (!targetNode || targetNode.length === 0) return;
 
-    const updateAgentPos = () => {
-      let node = cy.getElementById(agentActiveNodeId);
-      if (!node || node.length === 0) {
-        const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
-        if (file) {
-          node = cy.getElementById(`file:${file}`);
-        }
-      }
-      if (node && node.length > 0) {
-        setAgentScreenPos(node.renderedPosition());
+    const phaseClass = `flash-${agentPhase || 'tracing'}`;
+    targetNode.addClass('agent-currently-impacted').addClass(phaseClass);
+
+    let isPeak = false;
+    const interval = setInterval(() => {
+      isPeak = !isPeak;
+      if (isPeak) {
+        targetNode.addClass('agent-flash-peak');
       } else {
-        setAgentScreenPos(null);
+        targetNode.removeClass('agent-flash-peak');
       }
-    };
-
-    updateAgentPos();
-    cy.on('pan zoom render position', updateAgentPos);
+    }, 400);
 
     return () => {
-      cy.removeListener('pan zoom render position', updateAgentPos);
+      clearInterval(interval);
+      targetNode
+        .removeClass('agent-currently-impacted')
+        .removeClass('agent-flash-peak')
+        .removeClass('flash-diagnosing')
+        .removeClass('flash-tracing')
+        .removeClass('flash-inspecting')
+        .removeClass('flash-patching')
+        .removeClass('flash-verifying')
+        .removeClass('flash-resolved');
     };
-  }, [agentActiveNodeId, isAgentMode, elements, graphData.nodes]);
+  }, [isAgentMode, agentActiveNodeId, agentPhase, graphData.nodes]);
 
   // ResizeObserver to handle container size changes cleanly
   useEffect(() => {
@@ -2106,47 +2240,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
             onClose={onToggleAgentMode}
             isInspectorOpen={isInspectorOpen}
           />
-        )}
-
-        {/* Refined Obsidian-Style Agent Active Node Aura & Action Tag */}
-        {agentScreenPos && agentActiveNodeId && (
-          <div
-            style={{
-              position: 'absolute',
-              left: `${Math.round(agentScreenPos.x)}px`,
-              top: `${Math.round(agentScreenPos.y)}px`,
-              width: 0,
-              height: 0,
-              pointerEvents: 'none',
-              zIndex: 250,
-            }}
-          >
-            <div className={`agent-aura-ring ${agentPhase || ''}`} />
-            <div
-              className="agent-floating-target-tag"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (agentActiveNodeId && onSelectNode) onSelectNode(agentActiveNodeId);
-              }}
-              title="Click to inspect active code, evidence, and remediation"
-            >
-              <Bot
-                size={11}
-                style={{
-                  color:
-                    agentPhase === 'patching' || agentPhase === 'inspecting'
-                      ? '#f59e0b'
-                      : agentPhase === 'resolved'
-                      ? '#10b981'
-                      : agentPhase === 'verifying'
-                      ? '#a855f7'
-                      : '#38bdf8',
-                }}
-              />
-              <span>{agentActionPill || agentPhaseLabel || 'Agent Focus'}</span>
-              <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '2px' }}>• Inspect</span>
-            </div>
-          </div>
         )}
       </div>
     </div>

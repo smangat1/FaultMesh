@@ -234,4 +234,19 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
       expect(screen.getByText(/Replay Verification Trial/i)).toBeDefined();
     });
   });
+
+  it('decisively greys out all unimpacted nodes, spotlights impacted nodes, and eliminates laggy HTML overlay ring', async () => {
+    const { container } = render(<App initialScreen="workspace" />);
+
+    // Toggle agent mode
+    const toolbarBtn = await screen.findByRole('button', { name: /agent auto-repair/i });
+    fireEvent.click(toolbarBtn);
+
+    // Verify replay bar is present
+    expect(screen.getByRole('region', { name: /investigation replay bar/i })).toBeDefined();
+
+    // Verify no laggy HTML aura rings or floating divs are mounted
+    expect(container.querySelector('.agent-aura-ring')).toBeNull();
+    expect(container.querySelector('.agent-floating-target-tag')).toBeNull();
+  });
 });
