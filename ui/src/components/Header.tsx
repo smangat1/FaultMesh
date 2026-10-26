@@ -1,39 +1,34 @@
 import React from 'react';
 import type { RunSummary } from '../types';
 import {
-  FileText,
-  Network,
+  ChevronLeft,
   AlertTriangle,
-  Monitor,
   Activity,
+  Layers,
+  GitBranch,
 } from 'lucide-react';
 
 interface HeaderProps {
-  runs: RunSummary[];
+  runs?: RunSummary[];
   activeRun: RunSummary | null;
-  onSelectRun: (runId: string) => void;
-  activeView: 'investigation' | 'evidence_map' | 'diagnostics';
-  onSelectView: (view: 'investigation' | 'evidence_map' | 'diagnostics') => void;
+  onSelectRun?: (runId: string) => void;
+  onBackToSelector?: () => void;
+  activeView: 'map' | 'diagnostics';
+  onSelectView: (view: 'map' | 'diagnostics') => void;
   failedTestCount?: number;
   errorCount?: number;
   diagnosticsCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  runs,
   activeRun,
-  onSelectRun,
+  onBackToSelector,
   activeView,
   onSelectView,
   failedTestCount = 0,
   errorCount = 0,
   diagnosticsCount = 0,
 }) => {
-  const isDesktop =
-    typeof window !== 'undefined' &&
-    (Boolean((window as unknown as { process?: { type?: string } }).process?.type) ||
-      navigator.userAgent.includes('Electron'));
-
   const isMacDesktop =
     typeof navigator !== 'undefined' &&
     /Electron/i.test(navigator.userAgent) &&
@@ -45,14 +40,14 @@ export const Header: React.FC<HeaderProps> = ({
     <header
       style={{
         borderBottom: '1px solid var(--border-default)',
-        backgroundColor: 'var(--bg-surface)',
+        backgroundColor: '#11141a',
         flexShrink: 0,
         // @ts-expect-error WebkitAppRegion
         WebkitAppRegion: 'drag',
         userSelect: 'none',
       }}
     >
-      {/* Main Bar */}
+      {/* Sleek Workspace Navigation Bar */}
       <div
         style={{
           display: 'flex',
@@ -61,12 +56,12 @@ export const Header: React.FC<HeaderProps> = ({
           padding: '6px 14px',
           paddingLeft: isMacDesktop ? '78px' : '14px',
           gap: '12px',
-          minHeight: '44px',
+          minHeight: '40px',
           flexWrap: 'nowrap',
           minWidth: 0,
         }}
       >
-        {/* Brand & Run Context */}
+        {/* Left: Project Return Button & Run Context (No FM logo, No FaultMesh title, No Run dropdown) */}
         <div
           style={{
             display: 'flex',
@@ -78,91 +73,59 @@ export const Header: React.FC<HeaderProps> = ({
             WebkitAppRegion: 'no-drag',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <div
+          {/* Back to Projects button */}
+          {onBackToSelector && (
+            <button
+              onClick={onBackToSelector}
+              className="btn-ghost btn-sm"
               style={{
-                width: '20px',
-                height: '20px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                padding: '3px 8px',
+                color: 'var(--text-secondary)',
+                backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'var(--accent)',
-                color: '#ffffff',
+                cursor: 'pointer',
+              }}
+              title="Return to Projects and Run Selector"
+            >
+              <ChevronLeft size={13} />
+              <span>Projects</span>
+            </button>
+          )}
+
+          {/* Active Project & Branch indicator */}
+          {activeRun && (
+            <div
+              onClick={onBackToSelector}
+              style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 700,
-                fontSize: '11px',
-              }}
-            >
-              FM
-            </div>
-            <span style={{ fontWeight: 700, fontSize: '13px', letterSpacing: '-0.01em' }}>
-              FaultMesh
-            </span>
-            {isDesktop && (
-              <span
-                style={{
-                  fontSize: '10px',
-                  backgroundColor: 'var(--bg-raised)',
-                  padding: '1px 5px',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-muted)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                }}
-              >
-                <Monitor size={10} />
-                desktop
-              </span>
-            )}
-          </div>
-
-          <div
-            style={{
-              height: '16px',
-              width: '1px',
-              backgroundColor: 'var(--border-default)',
-              flexShrink: 0,
-            }}
-          />
-
-          {/* Run Switcher */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexShrink: 1 }}>
-            <label
-              htmlFor="run-selector"
-              style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}
-            >
-              Run:
-            </label>
-            <select
-              id="run-selector"
-              value={activeRun?.id || ''}
-              onChange={(e) => onSelectRun(e.target.value)}
-              style={{
-                backgroundColor: 'var(--bg-app)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '3px 8px',
+                gap: '6px',
                 fontSize: '12px',
                 fontFamily: 'var(--font-mono)',
-                outline: 'none',
-                maxWidth: '180px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                color: '#f8fafc',
+                cursor: onBackToSelector ? 'pointer' : 'default',
+                padding: '2px 6px',
+                borderRadius: 'var(--radius-sm)',
               }}
-              aria-label="Select Recorded Run"
+              title={onBackToSelector ? 'Click to change project or run' : undefined}
             >
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.project} ({r.gitBranch} @ {r.gitRevision})
-                </option>
-              ))}
-            </select>
-          </div>
+              <span style={{ fontWeight: 600 }}>{activeRun.project}</span>
+              <span style={{ color: 'var(--text-muted)' }}>/</span>
+              <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <GitBranch size={11} />
+                {activeRun.gitBranch}
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>@</span>
+              <span style={{ color: 'var(--text-muted)' }}>{activeRun.gitRevision.slice(0, 7)}</span>
+            </div>
+          )}
 
-          {/* Sample Data / Fixture Indicator */}
+          {/* Sample Data / Fixture Badge */}
           {activeRun?.isFixture && (
             <span
               style={{
@@ -237,7 +200,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* View Modes */}
+        {/* Right: Workspace Views (Streamlined: Map vs Run Diagnostics, redundant views eliminated) */}
         <div
           style={{
             display: 'flex',
@@ -259,40 +222,25 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label="Workspace Views"
           >
             <button
-              onClick={() => onSelectView('investigation')}
-              className={activeView === 'investigation' ? 'btn-secondary' : 'btn-ghost'}
+              onClick={() => onSelectView('map')}
+              className={activeView === 'map' ? 'btn-secondary' : 'btn-ghost'}
               style={{
-                padding: '3px 9px',
+                padding: '3px 10px',
                 fontSize: '11px',
-                fontWeight: activeView === 'investigation' ? 600 : 400,
-                backgroundColor: activeView === 'investigation' ? 'var(--bg-active)' : 'transparent',
+                fontWeight: activeView === 'map' ? 600 : 400,
+                backgroundColor: activeView === 'map' ? 'var(--bg-active)' : 'transparent',
               }}
-              aria-current={activeView === 'investigation' ? 'page' : undefined}
+              aria-current={activeView === 'map' ? 'page' : undefined}
             >
-              <FileText size={12} />
-              Investigation
-            </button>
-
-            <button
-              onClick={() => onSelectView('evidence_map')}
-              className={activeView === 'evidence_map' ? 'btn-secondary' : 'btn-ghost'}
-              style={{
-                padding: '3px 9px',
-                fontSize: '11px',
-                fontWeight: activeView === 'evidence_map' ? 600 : 400,
-                backgroundColor: activeView === 'evidence_map' ? 'var(--bg-active)' : 'transparent',
-              }}
-              aria-current={activeView === 'evidence_map' ? 'page' : undefined}
-            >
-              <Network size={12} />
-              Evidence Map
+              <Layers size={12} />
+              Project Map
             </button>
 
             <button
               onClick={() => onSelectView('diagnostics')}
               className={activeView === 'diagnostics' ? 'btn-secondary' : 'btn-ghost'}
               style={{
-                padding: '3px 9px',
+                padding: '3px 10px',
                 fontSize: '11px',
                 fontWeight: activeView === 'diagnostics' ? 600 : 400,
                 backgroundColor: activeView === 'diagnostics' ? 'var(--bg-active)' : 'transparent',

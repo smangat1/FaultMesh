@@ -50,12 +50,24 @@ async function main() {
   ];
 
   for (const res of resolutions) {
-    console.log(`\n=== Capturing 7 Visual Scenarios for ${res.name} ===`);
+    console.log(`\n=== Capturing Visual Scenarios for ${res.name} ===`);
     await page.setViewport({ width: res.width, height: res.height, deviceScaleFactor: 2 });
     await page.goto(fileUrl, { waitUntil: 'networkidle0' });
     await new Promise((r) => setTimeout(r, 600));
 
-    // Scenario 1: Opening state — clean Obsidian-style constellation in Structure mode
+    // Scenario 0: Selector Page — Clean FaultMesh title, instructions, project/run selector
+    await captureState(page, `00_project_selector_${res.name}.png`, res.width, res.height);
+
+    // Enter Workspace Map
+    await page.evaluate(() => {
+      const openBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.includes('Open Project Map')
+      );
+      if (openBtn) openBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 600));
+
+    // Scenario 1: Opening state — clean Obsidian-style constellation in Structure mode (no FM logo in header)
     await page.evaluate(() => {
       const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
       if (fitBtn) fitBtn.click();
@@ -65,7 +77,6 @@ async function main() {
 
     // Scenario 2: Zoomed into tokens.py — expand tokens cluster into functions while other files remain collapsed
     await page.evaluate(() => {
-      // Find tokens.py expand chevron in sidebar or double click
       const expandBtn = document.querySelector('button[aria-label*="Expand tokens.py"]');
       if (expandBtn) expandBtn.click();
       const zoomInBtn = document.querySelector('button[aria-label="Zoom in"]');
@@ -77,7 +88,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 500));
     await captureState(page, `02_cluster_zoomed_in_${res.name}.png`, res.width, res.height);
 
-    // Scenario 3: Failing test selected — highlight inside full map, rest dimmed, observed runtime call strands
+    // Scenario 3: Failing test selected — highlight inside full map, step badges [1] -> [2] -> [3], rest dimmed
     await page.evaluate(() => {
       const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
       if (fitBtn) fitBtn.click();
@@ -102,7 +113,6 @@ async function main() {
 
     // Scenario 5: Changes mode overlay — modified and added files/functions highlighted
     await page.evaluate(() => {
-      // Switch to changes mode
       const changesBtn = Array.from(document.querySelectorAll('button')).find(
         (b) => b.textContent && b.textContent.trim().toLowerCase() === 'changes'
       );
@@ -138,7 +148,7 @@ async function main() {
   }
 
   await browser.close();
-  console.log('\nAll 14 screenshots successfully captured in docs/screenshots/!');
+  console.log('\nAll screenshots successfully captured in docs/screenshots/!');
 }
 
 main().catch((err) => {

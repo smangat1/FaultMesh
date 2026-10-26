@@ -7,17 +7,19 @@ import { Sidebar } from './components/Sidebar';
 import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
-import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
 import './styles/theme.css';
 
 const DEFAULT_ADAPTER = new FixtureAdapter(0);
 
 interface AppProps {
   adapter?: FaultMeshAdapter;
+  initialScreen?: 'selector' | 'workspace';
 }
 
-export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
-  const [activeView, setActiveView] = useState<'evidence_map' | 'diagnostics' | 'investigation'>('evidence_map');
+export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScreen = 'selector' }) => {
+  const [currentScreen, setCurrentScreen] = useState<'selector' | 'workspace'>(initialScreen);
+  const [activeView, setActiveView] = useState<'map' | 'diagnostics'>('map');
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [tests, setTests] = useState<TestItem[]>([]);
@@ -202,130 +204,81 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
         color: 'var(--text-primary)',
       }}
     >
-      <Header
-        runs={runs}
-        activeRun={activeRun}
-        onSelectRun={(runId) => {
-          setActiveRunId(runId);
-        }}
-        activeView={activeView}
-        onSelectView={setActiveView}
-        failedTestCount={failedTestCount}
-        errorCount={errorCount}
-        diagnosticsCount={diagnosticsCount}
-      />
+      {currentScreen === 'selector' ? (
+        <ProjectSelectorScreen
+          runs={runs}
+          activeRun={activeRun}
+          tests={tests}
+          onSelectRun={(runId) => {
+            setActiveRunId(runId);
+          }}
+          onOpenWorkspace={(testId) => {
+            if (testId) {
+              setSelectedTestId(testId);
+            }
+            setCurrentScreen('workspace');
+          }}
+          onOpenDiagnostics={() => {
+            setActiveView('diagnostics');
+            setCurrentScreen('workspace');
+          }}
+          isLoading={isLoadingRuns || isLoadingRunData}
+          error={runsError || runDataError}
+          onRetry={
+            runsError
+              ? loadRuns
+              : activeRunId
+              ? () => loadActiveRunData(activeRunId)
+              : undefined
+          }
+        />
+      ) : (
+        <>
+          <Header
+            activeRun={activeRun}
+            onBackToSelector={() => setCurrentScreen('selector')}
+            activeView={activeView}
+            onSelectView={setActiveView}
+            failedTestCount={failedTestCount}
+            errorCount={errorCount}
+            diagnosticsCount={diagnosticsCount}
+          />
 
-      <main
-        style={{
-          flex: 1,
-          display: 'flex',
-          overflow: 'hidden',
-          position: 'relative',
-          minWidth: 0,
-          minHeight: 0,
-        }}
-      >
-        {/* Runs discovery error state */}
-        {runsError && (
-          <div
+          <main
             style={{
               flex: 1,
               display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '40px',
-              textAlign: 'center',
+              overflow: 'hidden',
+              position: 'relative',
+              minWidth: 0,
+              minHeight: 0,
             }}
           >
-            <AlertTriangle size={32} style={{ color: 'var(--status-fail)', marginBottom: '10px' }} />
-            <h2 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>Failed to Load Runs</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '12px', maxWidth: '420px', marginBottom: '14px' }}>
-              {runsError}
-            </p>
-            <button onClick={loadRuns} className="btn-secondary btn-sm">
-              <RotateCcw size={12} />
-              Retry Discovery
-            </button>
-          </div>
-        )}
-
-        {/* Empty Runs list */}
-        {!runsError && !isLoadingRuns && runs.length === 0 && (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '40px',
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-              No Recorded Runs
-            </div>
-            <div style={{ fontSize: '12px', maxWidth: '380px' }}>
-              No test execution artifacts or recorded runs were discovered for this workspace.
-            </div>
-          </div>
-        )}
-
-        {/* Active run artifacts error */}
-        {runDataError && (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '40px',
-              textAlign: 'center',
-            }}
-          >
-            <AlertTriangle size={32} style={{ color: 'var(--status-error)', marginBottom: '10px' }} />
-            <h2 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>Run Artifact Error</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '12px', maxWidth: '420px', marginBottom: '14px' }}>
-              {runDataError}
-            </p>
-            {activeRunId && (
-              <button onClick={() => loadActiveRunData(activeRunId)} className="btn-secondary btn-sm">
-                <RotateCcw size={12} />
-                Retry Loading Run
-              </button>
+            {/* Loading state for run data */}
+            {isLoadingRunData && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '12px',
+                  right: '16px',
+                  zIndex: 100,
+                  backgroundColor: 'var(--bg-raised)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '4px 10px',
+                  fontSize: '11px',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Loading run artifacts...
+              </div>
             )}
-          </div>
-        )}
 
-        {/* Normal Loading state for run data */}
-        {isLoadingRunData && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '12px',
-              right: '16px',
-              zIndex: 100,
-              backgroundColor: 'var(--bg-raised)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '4px 10px',
-              fontSize: '11px',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            Loading run artifacts...
-          </div>
-        )}
-
-        {/* Holistic Workspace Body */}
-        {!runsError && runs.length > 0 && !runDataError && (
-          <>
+            {/* Diagnostics View */}
             {activeView === 'diagnostics' ? (
               <RunDiagnosticsPane activeRun={activeRun} graphData={graphData} />
             ) : (
+              /* Holistic Map Workspace */
               <div
                 style={{
                   display: 'flex',
@@ -336,7 +289,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
                   position: 'relative',
                 }}
               >
-                {/* 1. Left Zotero-like Sidebar (Tests, Pinned Shortlist, Files) */}
+                {/* 1. Left Sidebar (Tests, Pinned Shortlist, Files) */}
                 <Sidebar
                   tests={tests}
                   selectedTestId={selectedTestId}
@@ -399,6 +352,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
                   edges={graphData.edges}
                   tests={tests}
                   files={graphData.files}
+                  collapsedFiles={collapsedFiles}
+                  onToggleCollapseFile={handleToggleCollapseFile}
                   pinnedSymbols={pinnedSymbols}
                   onPinSymbol={handlePinSymbol}
                   onUnpinSymbol={handleUnpinSymbol}
@@ -406,9 +361,9 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
                 />
               </div>
             )}
-          </>
-        )}
-      </main>
+          </main>
+        </>
+      )}
     </div>
   );
 };

@@ -34,6 +34,8 @@ export interface InspectorDrawerProps {
   edges: GraphEdge[];
   tests: TestItem[];
   files?: FileCluster[];
+  collapsedFiles?: Set<string>;
+  onToggleCollapseFile?: (file: string) => void;
   pinnedSymbols: PinnedSymbol[];
   onPinSymbol?: (symbol: PinnedSymbol) => void;
   onUnpinSymbol?: (symbolId: string) => void;
@@ -51,6 +53,8 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   edges,
   tests,
   files = [],
+  collapsedFiles = new Set(),
+  onToggleCollapseFile,
   pinnedSymbols,
   onPinSymbol,
   onUnpinSymbol,
@@ -831,7 +835,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 marginBottom: '6px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 <span
                   style={{
                     fontSize: '10px',
@@ -840,10 +844,25 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     backgroundColor: '#1e293b',
                     color: '#94a3b8',
                     textTransform: 'uppercase',
+                    fontWeight: 600,
                   }}
                 >
                   File Cluster
                 </span>
+                {currentFile.tier && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      padding: '1px 6px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                      color: '#60a5fa',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                    }}
+                  >
+                    {currentFile.tier}
+                  </span>
+                )}
                 {currentFile.changeStatus !== 'unchanged' && (
                   <span className={`badge-change ${currentFile.changeStatus}`}>
                     {currentFile.changeStatus}
@@ -858,7 +877,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
             <div
               style={{
-                fontSize: '14px',
+                fontSize: '15px',
                 fontWeight: 700,
                 fontFamily: 'var(--font-mono)',
                 color: '#f8fafc',
@@ -866,20 +885,186 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
             >
               {currentFile.name}
             </div>
+
+            {currentFile.role && (
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#93c5fd',
+                  marginTop: '2px',
+                }}
+              >
+                {currentFile.role}
+              </div>
+            )}
+
             <div
               style={{
                 fontSize: '11px',
                 color: 'var(--text-muted)',
                 fontFamily: 'var(--font-mono)',
-                marginTop: '2px',
+                marginTop: '4px',
               }}
             >
-              {currentFile.file} • {currentFile.lineCount} lines
+              {currentFile.file} • {currentFile.lineCount} lines • {currentFile.symbolCount} symbols
             </div>
           </div>
 
-          {/* File Symbols List */}
-          <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+          <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+            {/* Grounded Plain-English Architectural Role & Summary */}
+            <div
+              style={{
+                backgroundColor: '#141a24',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '6px',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  color: 'var(--text-secondary)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                Architectural Role & Summary
+              </div>
+              <p
+                style={{
+                  fontSize: '12px',
+                  color: '#e2e8f0',
+                  lineHeight: '1.5',
+                  margin: 0,
+                }}
+              >
+                {currentFile.description ||
+                  `Source file defining ${currentFile.symbolCount} functions/classes within the ${currentFile.tier || 'application'} domain.`}
+              </p>
+
+              {/* Cluster Map Controls */}
+              {onToggleCollapseFile && (
+                <div style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <button
+                    onClick={() => onToggleCollapseFile(currentFile.file)}
+                    className="btn-secondary btn-sm"
+                    style={{ width: '100%', justifyContent: 'center', fontSize: '11px' }}
+                  >
+                    {collapsedFiles.has(currentFile.file)
+                      ? 'Expand Cluster in Map (Show Symbols)'
+                      : 'Collapse Cluster to Dot'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Inbound & Outbound File Dependencies */}
+            {(() => {
+              const inboundFiles = new Set<string>();
+              const outboundFiles = new Set<string>();
+
+              edges.forEach((e) => {
+                const srcNode = nodes.find((n) => n.id === e.source);
+                const tgtNode = nodes.find((n) => n.id === e.target);
+                if (srcNode && tgtNode) {
+                  if (tgtNode.file === currentFile.file && srcNode.file !== currentFile.file) {
+                    inboundFiles.add(srcNode.file);
+                  }
+                  if (srcNode.file === currentFile.file && tgtNode.file !== currentFile.file) {
+                    outboundFiles.add(tgtNode.file);
+                  }
+                }
+              });
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div
+                    style={{
+                      backgroundColor: '#141a24',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Called By ({inboundFiles.size})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
+                      {Array.from(inboundFiles).length > 0 ? (
+                        Array.from(inboundFiles).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => onSelectFile(f)}
+                            className="btn-ghost"
+                            style={{
+                              fontSize: '11px',
+                              fontFamily: 'var(--font-mono)',
+                              padding: '2px 4px',
+                              textAlign: 'left',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              color: '#93c5fd',
+                            }}
+                            title={f}
+                          >
+                            {f.split('/').pop()}
+                          </button>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>None (Ingress)</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      backgroundColor: '#141a24',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Calls ({outboundFiles.size})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
+                      {Array.from(outboundFiles).length > 0 ? (
+                        Array.from(outboundFiles).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => onSelectFile(f)}
+                            className="btn-ghost"
+                            style={{
+                              fontSize: '11px',
+                              fontFamily: 'var(--font-mono)',
+                              padding: '2px 4px',
+                              textAlign: 'left',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              color: '#38bdf8',
+                            }}
+                            title={f}
+                          >
+                            {f.split('/').pop()}
+                          </button>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Leaf module</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* File Symbols List */}
             <div>
               <div
                 style={{
@@ -903,15 +1088,34 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                       className="btn-ghost"
                       style={{
                         textAlign: 'left',
-                        padding: '4px 6px',
+                        padding: '5px 8px',
                         fontSize: '11px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
+                        backgroundColor: '#141a24',
+                        borderRadius: '4px',
                       }}
                     >
-                      <span style={{ fontFamily: 'var(--font-mono)' }}>{sym.name}</span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-mono)',
+                            color: sym.changeStatus !== 'unchanged' ? 'var(--change-modified)' : '#cbd5e1',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {sym.name}
+                        </span>
+                        {sym.changeStatus !== 'unchanged' && (
+                          <span className={`badge-change ${sym.changeStatus}`} style={{ fontSize: '9px', padding: '0 4px' }}>
+                            {sym.changeStatus}
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', flexShrink: 0 }}>
                         L{sym.lineStart}-{sym.lineEnd}
                       </span>
                     </button>
@@ -950,7 +1154,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 }
 
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {touchingTests.map((t) => (
                       <button
                         key={t.id}
@@ -958,11 +1162,13 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                         className="btn-ghost"
                         style={{
                           textAlign: 'left',
-                          padding: '4px 6px',
+                          padding: '5px 8px',
                           fontSize: '11px',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
+                          backgroundColor: '#141a24',
+                          borderRadius: '4px',
                         }}
                       >
                         <span style={{ fontFamily: 'var(--font-mono)' }}>{t.name}</span>

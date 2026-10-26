@@ -70,6 +70,9 @@ export interface FileCluster {
   symbolCount: number;
   changeStatus: ChangeStatus;
   lineCount: number;
+  role?: string; // Architectural role (e.g. "Token Authority", "Core Coordinator")
+  tier?: string; // Architectural tier (e.g. "Security Subsystem", "Service Core")
+  description?: string; // Plain-English grounded summary of what this file does
 }
 
 export interface PinnedSymbol {

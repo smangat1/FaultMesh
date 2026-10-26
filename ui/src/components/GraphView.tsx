@@ -1,16 +1,11 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import cytoscape, { Core, EventObject } from 'cytoscape';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
+import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
-import {
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  Search,
-} from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Search } from 'lucide-react';
 
 export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 
-export interface GraphViewProps {
+interface GraphViewProps {
   graphData: GraphData;
   tests: TestItem[];
   selectedTestId: string | null;
@@ -33,17 +28,22 @@ export interface GraphViewProps {
 /**
  * Deterministically computes (x, y) coordinates for all files and their child symbols.
  * Guarantees 0ms layout jitter, 100% repeatability across runs and environments.
- * Uses relationship-informed celestial hub positioning and organic starburst clustering.
+ * Uses relationship-informed architectural tiering and organic celestial starburst clustering.
  */
 const KNOWN_FILE_COORDINATES: Record<string, { x: number; y: number }> = {
-  'auth/service.py': { x: 480, y: 360 },     // central coordinator hub
-  'auth/tokens.py': { x: 250, y: 220 },      // upper-left (token authority)
-  'auth/crypto.py': { x: 710, y: 210 },      // upper-right (keys & crypto)
-  'auth/sessions.py': { x: 230, y: 520 },    // lower-left (sessions)
-  'auth/models.py': { x: 730, y: 470 },      // lower-right (user & token models)
-  'auth/limiter.py': { x: 480, y: 590 },     // bottom-center (rate limiter)
-  'tests/test_auth.py': { x: 270, y: 770 },  // test cluster left
-  'tests/test_sessions.py': { x: 690, y: 750 }, // test cluster right
+  // Ingress / Test tier at top (y = 110)
+  'tests/test_auth.py': { x: 340, y: 110 },
+  'tests/test_sessions.py': { x: 620, y: 110 },
+  // Core coordinator hub at center (y = 290)
+  'auth/service.py': { x: 480, y: 290 },
+  // Security & Token authority wing (left, x = 230)
+  'auth/tokens.py': { x: 230, y: 470 },
+  'auth/crypto.py': { x: 230, y: 680 },
+  // Traffic protection (central intermediary, x = 480)
+  'auth/limiter.py': { x: 480, y: 520 },
+  // State & Session persistence wing (right, x = 730)
+  'auth/sessions.py': { x: 730, y: 470 },
+  'auth/models.py': { x: 730, y: 680 },
 };
 
 export function computeDeterministicPositions(
@@ -84,11 +84,19 @@ export function computeDeterministicPositions(
     // Position file anchor node
     positions[`file:${fileCluster.file}`] = { x: fileCenterX, y: fileCenterY };
 
-    // Position internal child symbols in an organic celestial starburst constellation
+    // Position internal child symbols in an organic celestial constellation
     const fileNodes = nodesByFile[fileCluster.file] || [];
     const count = fileNodes.length;
-    fileNodes.forEach((node, sIdx) => {
-      const angle = (sIdx * (2 * Math.PI / Math.max(count, 1))) + 0.35;
+
+    // Order functions: modified/failing first, then by line order
+    const sortedFileNodes = [...fileNodes].sort((a, b) => {
+      if (a.changeStatus === 'modified') return -1;
+      if (b.changeStatus === 'modified') return 1;
+      return a.lineStart - b.lineStart;
+    });
+
+    sortedFileNodes.forEach((node, sIdx) => {
+      const angle = (sIdx * ((2 * Math.PI) / Math.max(count, 1))) + 0.35;
       const radius = 45 + ((sIdx * 37) % 35);
       const symX = Math.round(fileCenterX + Math.cos(angle) * radius);
       const symY = Math.round(fileCenterY + Math.sin(angle) * radius);
@@ -103,6 +111,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   graphData,
   tests,
   selectedTestId,
+  onSelectTest,
   selectedNodeId,
   onSelectNode,
   selectedFile,
@@ -114,8 +123,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
   onExpandAllFiles,
   viewMode: propViewMode,
   onSelectViewMode,
-  runStatus,
-  errorMessage,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
@@ -170,7 +177,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     return tests.find((t) => t.id === selectedTestId) || null;
   }, [tests, selectedTestId]);
 
-  // Compute Cytoscape elements with deterministic preset positions
+  // Compute Cytoscape elements with deterministic preset positions and call order
   const elements = useMemo(() => {
     const nodes: cytoscape.NodeDefinition[] = [];
     const edges: cytoscape.EdgeDefinition[] = [];
@@ -181,22 +188,58 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     const positions = computeDeterministicPositions(fileClusters, graphData.nodes);
 
-    // 1. Add File Clusters (clean circular dots: 12px summary when collapsed, 13px anchor when expanded)
+    // Compute execution step order if an active test is being traced
+    const edgeStepMap = new Map<string, number>();
+    const nodeStepMap = new Map<string, number>();
+
+    if (activeTest) {
+      const observedEdges = graphData.edges.filter(
+        (e) => e.category === 'runtime_observed' && e.testIds?.includes(activeTest.id)
+      );
+
+      nodeStepMap.set(activeTest.id, 0);
+      const queue: string[] = [activeTest.id];
+      let stepCounter = 1;
+
+      while (queue.length > 0) {
+        const curr = queue.shift()!;
+        const outgoing = observedEdges.filter((e) => e.source === curr);
+        outgoing.forEach((e) => {
+          if (!edgeStepMap.has(e.id)) {
+            edgeStepMap.set(e.id, stepCounter);
+            if (!nodeStepMap.has(e.target)) {
+              nodeStepMap.set(e.target, stepCounter);
+              queue.push(e.target);
+            }
+            stepCounter++;
+          }
+        });
+      }
+    }
+
+    // 1. Add File Clusters (with architectural role subtitle)
     fileClusters.forEach((fc) => {
       const fileId = `file:${fc.file}`;
       const isCollapsed = collapsedFiles.has(fc.file);
       const pos = positions[fileId] || { x: 480, y: 360 };
 
+      const subtitle = fc.role ? `\n${fc.role}` : '';
+      const displayLabel = isCollapsed
+        ? `${fc.name}${subtitle ? ` • ${fc.role}` : ` (${fc.symbolCount})`}`
+        : `${fc.name}${subtitle}`;
+
       nodes.push({
         data: {
           id: fileId,
-          label: isCollapsed ? `${fc.name} (${fc.symbolCount})` : fc.name,
+          label: displayLabel,
           shortLabel: fc.name,
           file: fc.file,
           isFileCluster: true,
           isCollapsed,
           symbolCount: fc.symbolCount,
           changeStatus: fc.changeStatus,
+          role: fc.role || '',
+          tier: fc.tier || '',
         },
         position: pos,
       });
@@ -209,13 +252,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const pos = positions[n.id] || { x: 480, y: 360 };
       const isTestItem = tests.some((t) => t.id === n.id);
       const testItem = tests.find((t) => t.id === n.id);
+      const stepNumber = nodeStepMap.get(n.id);
+
+      const stepPrefix = stepNumber !== undefined ? `[${stepNumber}] ` : '';
+      const formattedLabel = `${stepPrefix}${n.name}`;
+      const short = n.name.length > 18 ? `${n.name.substring(0, 16)}…` : n.name;
 
       nodes.push({
         data: {
           id: n.id,
-          // NOTE: Zero Cytoscape compound parent nesting eliminates rectangular container boxes!
-          label: n.name,
-          shortLabel: n.name.length > 20 ? `${n.name.substring(0, 18)}…` : n.name,
+          label: formattedLabel,
+          shortLabel: `${stepPrefix}${short}`,
           kind: n.kind,
           file: n.file,
           changeStatus: n.changeStatus,
@@ -224,6 +271,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           description: n.description || '',
           lineStart: n.lineStart,
           lineEnd: n.lineEnd,
+          stepNumber,
         },
         position: pos,
       });
@@ -303,6 +351,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
         }
       }
 
+      const stepNum = edgeStepMap.get(e.id);
+
       edges.push({
         data: {
           id: e.id,
@@ -312,6 +362,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           provenance: e.provenance,
           observedCount: e.observedCount,
           testIds: e.testIds || [],
+          stepNumber: stepNum,
+          stepLabel: stepNum !== undefined ? `[${stepNum}]` : '',
         },
       });
     });
@@ -340,411 +392,440 @@ export const GraphView: React.FC<GraphViewProps> = ({
     return set;
   }, [selectedNodeId, pinnedSymbolIds, hoveredNodeId, tests, graphData.nodes]);
 
-  // Initialize Cytoscape with preset deterministic layout and quiet Obsidian-like styling
+  // 1. Initialize Cytoscape ONCE on container mount with preset deterministic layout
   useEffect(() => {
     if (!containerRef.current || elements.nodes.length === 0) return;
 
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: [...elements.nodes, ...elements.edges],
-      boxSelectionEnabled: false,
-      autounselectify: false,
-      style: [
-        // --- File Cluster Nodes (Clean circular dots, NO rectangular compound container) ---
-        {
-          selector: 'node[?isFileCluster]',
-          style: {
-            shape: 'ellipse',
-            width: 12,
-            height: 12,
-            'background-color': '#94a3b8',
-            'border-width': 0,
-            label: 'data(label)',
-            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            'font-size': '11px',
-            'font-weight': 600,
-            'text-valign': 'bottom',
-            'text-halign': 'center',
-            'text-margin-y': 5,
-            color: '#cbd5e1',
-            'text-background-color': '#101114',
-            'text-background-opacity': 0.8,
-            'text-background-padding': '2px',
-            'text-background-shape': 'roundrectangle',
-            'z-index': 20,
+    if (!cyRef.current) {
+      const cy = cytoscape({
+        container: containerRef.current,
+        elements: [...elements.nodes, ...elements.edges],
+        boxSelectionEnabled: false,
+        autounselectify: false,
+        wheelSensitivity: 0.25,
+        style: [
+          // --- File Cluster Nodes (Clean circular dots with architectural subtitles) ---
+          {
+            selector: 'node[?isFileCluster]',
+            style: {
+              shape: 'ellipse',
+              width: 14,
+              height: 14,
+              'background-color': '#94a3b8',
+              'border-width': 0,
+              label: 'data(label)',
+              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              'font-size': '10px',
+              'font-weight': 600,
+              'text-valign': 'bottom',
+              'text-halign': 'center',
+              'text-margin-y': 5,
+              color: '#cbd5e1',
+              'text-wrap': 'wrap',
+              'text-max-width': '140px',
+              'text-background-color': '#101114',
+              'text-background-opacity': 0.85,
+              'text-background-padding': '3px',
+              'text-background-shape': 'roundrectangle',
+              'z-index': 20,
+            },
           },
-        },
-        // Expanded file center anchor
-        {
-          selector: 'node[?isFileCluster][!isCollapsed]',
-          style: {
-            width: 13,
-            height: 13,
-            'background-color': '#475569',
-            'border-width': 1.5,
-            'border-color': '#94a3b8',
-            'border-opacity': 0.8,
-            color: '#94a3b8',
+          // Expanded file center anchor
+          {
+            selector: 'node[?isFileCluster][!isCollapsed]',
+            style: {
+              width: 13,
+              height: 13,
+              'background-color': '#475569',
+              'border-width': 1.5,
+              'border-color': '#94a3b8',
+              'border-opacity': 0.8,
+              color: '#94a3b8',
+            },
           },
-        },
-        // Modified file
-        {
-          selector: 'node[?isFileCluster][changeStatus = "modified"]',
-          style: {
-            'background-color': '#d29922',
-            'border-width': 1.5,
-            'border-color': '#f6c156',
-            width: 14,
-            height: 14,
+          // Modified file
+          {
+            selector: 'node[?isFileCluster][changeStatus = "modified"]',
+            style: {
+              'background-color': '#d29922',
+              'border-width': 1.5,
+              'border-color': '#f6c156',
+              width: 15,
+              height: 15,
+            },
           },
-        },
-        // Added file
-        {
-          selector: 'node[?isFileCluster][changeStatus = "added"]',
-          style: {
-            'background-color': '#38bdf8',
-            'border-width': 1.5,
-            'border-color': '#7dd3fc',
-            width: 14,
-            height: 14,
+          // Added file
+          {
+            selector: 'node[?isFileCluster][changeStatus = "added"]',
+            style: {
+              'background-color': '#38bdf8',
+              'border-width': 1.5,
+              'border-color': '#7dd3fc',
+              width: 15,
+              height: 15,
+            },
           },
-        },
-        // --- Child Symbol Nodes (Functions / Classes / Methods: small circular dots) ---
-        {
-          selector: 'node[!isFileCluster]',
-          style: {
-            shape: 'ellipse',
-            width: 5,
-            height: 5,
-            'background-color': '#64748b',
-            'border-width': 0,
-            label: '',
-            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            'font-size': '10px',
-            'text-valign': 'bottom',
-            'text-halign': 'center',
-            'text-margin-y': 4,
-            color: '#cbd5e1',
-            'text-max-width': '115px',
-            'text-wrap': 'ellipsis',
-            'text-background-color': '#101114',
-            'text-background-opacity': 0.85,
-            'text-background-padding': '2px',
-            'text-background-shape': 'roundrectangle',
-            'z-index': 15,
+          // --- Child Symbol Nodes (Functions / Classes: small circular dots) ---
+          {
+            selector: 'node[!isFileCluster]',
+            style: {
+              shape: 'ellipse',
+              width: 5.5,
+              height: 5.5,
+              'background-color': '#64748b',
+              'border-width': 0,
+              label: '',
+              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              'font-size': '10px',
+              'text-valign': 'bottom',
+              'text-halign': 'center',
+              'text-margin-y': 4,
+              color: '#cbd5e1',
+              'text-max-width': '125px',
+              'text-wrap': 'ellipsis',
+              'text-background-color': '#101114',
+              'text-background-opacity': 0.85,
+              'text-background-padding': '2px',
+              'text-background-shape': 'roundrectangle',
+              'z-index': 15,
+            },
           },
-        },
-        // Class nodes: slightly larger circular dot
-        {
-          selector: 'node[kind = "class"]',
-          style: {
-            shape: 'ellipse',
-            width: 7,
-            height: 7,
-            'background-color': '#7c8c9e',
+          // Class nodes: slightly larger circular dot
+          {
+            selector: 'node[kind = "class"]',
+            style: {
+              shape: 'ellipse',
+              width: 7,
+              height: 7,
+              'background-color': '#7c8c9e',
+            },
           },
-        },
-        // Modified Code Node: Amber circle
-        {
-          selector: 'node[!isFileCluster][changeStatus = "modified"]',
-          style: {
-            'background-color': '#d29922',
-            'border-width': 1.5,
-            'border-color': '#f6c156',
-            width: 7.5,
-            height: 7.5,
-            'z-index': 25,
+          // Modified Code Node: Amber circle
+          {
+            selector: 'node[!isFileCluster][changeStatus = "modified"]',
+            style: {
+              'background-color': '#d29922',
+              'border-width': 1.5,
+              'border-color': '#f6c156',
+              width: 7.5,
+              height: 7.5,
+              'z-index': 25,
+            },
           },
-        },
-        // Added Code Node: Restrained cyan circle
-        {
-          selector: 'node[!isFileCluster][changeStatus = "added"]',
-          style: {
-            'background-color': '#38bdf8',
-            'border-width': 1.5,
-            'border-color': '#7dd3fc',
-            width: 7.5,
-            height: 7.5,
-            'z-index': 25,
+          // Added Code Node: Restrained cyan circle
+          {
+            selector: 'node[!isFileCluster][changeStatus = "added"]',
+            style: {
+              'background-color': '#38bdf8',
+              'border-width': 1.5,
+              'border-color': '#7dd3fc',
+              width: 7.5,
+              height: 7.5,
+              'z-index': 25,
+            },
           },
-        },
-        // Failing Test Node: Crimson circle
-        {
-          selector: 'node[!isFileCluster][status = "fail"]',
-          style: {
-            'background-color': '#f85149',
-            'border-width': 1.5,
-            'border-color': '#ff7b72',
-            width: 9,
-            height: 9,
-            'z-index': 30,
+          // Failing Test Node: Crimson circle
+          {
+            selector: 'node[!isFileCluster][status = "fail"]',
+            style: {
+              'background-color': '#f85149',
+              'border-width': 2,
+              'border-color': '#ff7b72',
+              width: 9,
+              height: 9,
+              'z-index': 30,
+            },
           },
-        },
-        // Error Test Node: Orange circle
-        {
-          selector: 'node[!isFileCluster][status = "error"]',
-          style: {
-            'background-color': '#db6d28',
-            'border-width': 1.5,
-            'border-color': '#f0883e',
-            width: 8,
-            height: 8,
-            'z-index': 30,
+          // Error Test Node: Orange circle
+          {
+            selector: 'node[!isFileCluster][status = "error"]',
+            style: {
+              'background-color': '#db6d28',
+              'border-width': 2,
+              'border-color': '#f0883e',
+              width: 8,
+              height: 8,
+              'z-index': 30,
+            },
           },
-        },
-        // Passing Test Node: Green circle
-        {
-          selector: 'node[!isFileCluster][status = "pass"]',
-          style: {
-            'background-color': '#238636',
-            width: 5,
-            height: 5,
+          // Passing Test Node: Green circle
+          {
+            selector: 'node[!isFileCluster][status = "pass"]',
+            style: {
+              'background-color': '#238636',
+              width: 5,
+              height: 5,
+            },
           },
-        },
-        // --- Containment rays from file center anchor to child symbols ---
-        {
-          selector: 'edge[category = "containment"]',
-          style: {
-            width: 0.75,
-            'line-color': '#243042',
-            'line-style': 'solid',
-            opacity: 0.35,
-            'curve-style': 'straight',
-            'target-arrow-shape': 'none',
-            'z-index': 2,
+          // --- Containment rays from file center anchor to child symbols ---
+          {
+            selector: 'edge[category = "containment"]',
+            style: {
+              width: 0.75,
+              'line-color': '#243042',
+              'line-style': 'solid',
+              opacity: 0.35,
+              'curve-style': 'straight',
+              'target-arrow-shape': 'none',
+              'z-index': 2,
+            },
           },
-        },
-        // --- Aggregated structural edges between files at overview ---
-        {
-          selector: 'edge[?isAggregated]',
-          style: {
-            width: 1.2,
-            'line-color': '#2e3b4e',
-            'curve-style': 'bezier',
-            opacity: 0.6,
-            'target-arrow-shape': 'none',
-            'z-index': 5,
+          // --- Aggregated structural edges between files at overview ---
+          {
+            selector: 'edge[?isAggregated]',
+            style: {
+              width: 1.2,
+              'line-color': '#2e3b4e',
+              'curve-style': 'bezier',
+              opacity: 0.6,
+              'target-arrow-shape': 'none',
+              'z-index': 5,
+            },
           },
-        },
-        // --- Structural Edges (fine strands, semi-transparent desaturated gray) ---
-        {
-          selector: 'edge[!isAggregated][category != "containment"]',
-          style: {
-            width: 0.8,
-            'line-color': '#222d3d',
-            'curve-style': 'bezier',
-            'target-arrow-shape': 'none',
-            opacity: 0.45,
-            'z-index': 5,
+          // --- Structural Edges with Directional Triangle Arrows ---
+          {
+            selector: 'edge[!isAggregated][category != "containment"]',
+            style: {
+              width: 0.85,
+              'line-color': '#222d3d',
+              'curve-style': 'bezier',
+              'target-arrow-shape': 'triangle',
+              'target-arrow-color': '#222d3d',
+              'arrow-scale': 0.65,
+              opacity: 0.5,
+              'z-index': 5,
+            },
           },
-        },
-        {
-          selector: 'edge[category = "static_call"], edge[category = "static_import"]',
-          style: {
-            'line-color': '#1f2a3a',
-            'line-style': 'solid',
-            width: 0.8,
-            opacity: 0.45,
+          {
+            selector: 'edge[category = "static_call"], edge[category = "static_import"]',
+            style: {
+              'line-color': '#243244',
+              'target-arrow-color': '#243244',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.7,
+              'line-style': 'solid',
+              width: 0.85,
+              opacity: 0.55,
+            },
           },
-        },
-        // --- Observed Edges for selected test: fine solid cyan strand ---
-        {
-          selector: 'edge.observed-for-test',
-          style: {
-            'line-color': '#38bdf8',
-            'target-arrow-color': '#38bdf8',
-            'target-arrow-shape': 'chevron',
-            'arrow-scale': 0.7,
-            width: 1.5,
-            opacity: 1.0,
-            'z-index': 40,
+          // --- Observed Edges for selected test: Cyan strand with Sequential Step Badges ---
+          {
+            selector: 'edge.observed-for-test',
+            style: {
+              'line-color': '#38bdf8',
+              'target-arrow-color': '#38bdf8',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.85,
+              width: 1.6,
+              opacity: 1.0,
+              'z-index': 40,
+              label: 'data(stepLabel)',
+              'font-size': '9px',
+              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              'font-weight': 700,
+              color: '#38bdf8',
+              'text-background-color': '#101114',
+              'text-background-opacity': 0.9,
+              'text-background-padding': '2px',
+              'text-background-shape': 'roundrectangle',
+            },
           },
-        },
-        // --- Test Dimming Classes (dims unexercised without removing) ---
-        {
-          selector: 'node.dimmed',
-          style: {
-            opacity: 0.22,
+          // --- Test Dimming Classes (dims unexercised without removing) ---
+          {
+            selector: 'node.dimmed',
+            style: {
+              opacity: 0.22,
+            },
           },
-        },
-        {
-          selector: 'node.exercised',
-          style: {
-            opacity: 1.0,
-            'border-width': 1.5,
-            'border-color': '#38bdf8',
+          {
+            selector: 'node.exercised',
+            style: {
+              opacity: 1.0,
+              'border-width': 1.8,
+              'border-color': '#38bdf8',
+            },
           },
-        },
-        {
-          selector: 'edge.dimmed',
-          style: {
-            opacity: 0.12,
+          {
+            selector: 'edge.dimmed',
+            style: {
+              opacity: 0.1,
+            },
           },
-        },
-        // Selected node focus (luminous outline)
-        {
-          selector: 'node.selected-node',
-          style: {
-            'border-color': '#f8fafc',
-            'border-width': 2,
-            'z-index': 999,
+          // Selected node focus (luminous outline)
+          {
+            selector: 'node.selected-node',
+            style: {
+              'border-color': '#ffffff',
+              'border-width': 2.5,
+              'border-opacity': 1,
+              'z-index': 999,
+            },
           },
-        },
-        // Neighbor highlighted on hover
-        {
-          selector: 'node.neighbor-highlighted',
-          style: {
-            'border-color': '#60a5fa',
-            'border-width': 1.5,
-            'z-index': 400,
+          // Neighbor highlighted on hover
+          {
+            selector: 'node.neighbor-highlighted',
+            style: {
+              'border-color': '#60a5fa',
+              'border-width': 1.5,
+              'z-index': 400,
+            },
           },
-        },
-        // Show label class (driven by semantic zoom and collision prevention)
-        {
-          selector: 'node.show-label',
-          style: {
-            label: 'data(shortLabel)',
+          // Show label class (driven by semantic zoom and collision prevention)
+          {
+            selector: 'node.show-label',
+            style: {
+              label: 'data(shortLabel)',
+            },
           },
-        },
-        // Hovered element
-        {
-          selector: 'node.hovered',
-          style: {
-            'border-color': '#60a5fa',
-            'border-width': 2,
-            'z-index': 500,
+          // Hovered element
+          {
+            selector: 'node.hovered',
+            style: {
+              'border-color': '#60a5fa',
+              'border-width': 2,
+              'z-index': 500,
+            },
           },
-        },
-        {
-          selector: 'edge.hovered',
-          style: {
-            'line-color': '#60a5fa',
-            width: 1.8,
-            opacity: 0.9,
-            'z-index': 100,
+          {
+            selector: 'edge.hovered',
+            style: {
+              'line-color': '#60a5fa',
+              width: 1.8,
+              opacity: 0.9,
+              'z-index': 100,
+            },
           },
+        ],
+        layout: {
+          name: 'preset',
+          fit: true,
+          padding: 50,
         },
-      ],
-      layout: {
-        name: 'preset',
-        fit: true,
-        padding: 50,
-      },
-    });
+      });
 
-    // Zoom listener for semantic zoom & auto expand/collapse
-    cy.on('zoom', () => {
-      const z = cy.zoom();
-      if (z < 0.8) setZoomLevel('far');
-      else if (z < 1.3) setZoomLevel('mid');
-      else setZoomLevel('close');
+      // Zoom listener for semantic zoom level tracking (does not trigger layout destruction)
+      cy.on('zoom', () => {
+        const z = cy.zoom();
+        if (z < 0.8) setZoomLevel('far');
+        else if (z < 1.3) setZoomLevel('mid');
+        else setZoomLevel('close');
+      });
 
-      // Semantic zoom threshold handling:
-      // When zoomed in close (z >= 1.35), find nearest file to viewport center and expand it if collapsed
-      if (z >= 1.35 && onToggleCollapseFile) {
-        const extent = cy.extent();
-        const centerX = (extent.x1 + extent.x2) / 2;
-        const centerY = (extent.y1 + extent.y2) / 2;
-
-        let closestFile: string | null = null;
-        let minDistance = Infinity;
-
-        const positions = computeDeterministicPositions(fileClusters, graphData.nodes);
-        fileClusters.forEach((fc) => {
-          const pos = positions[`file:${fc.file}`];
-          if (pos) {
-            const dist = Math.hypot(pos.x - centerX, pos.y - centerY);
-            if (dist < minDistance) {
-              minDistance = dist;
-              closestFile = fc.file;
-            }
-          }
-        });
-
-        if (closestFile && minDistance < 250 && collapsedFiles.has(closestFile)) {
-          onToggleCollapseFile(closestFile);
+      // Tap handlers
+      cy.on('tap', 'node', (evt: EventObject) => {
+        const target = evt.target;
+        if (target.data('isFileCluster')) {
+          onSelectFile?.(target.data('file'));
+        } else {
+          onSelectNode?.(target.id());
         }
-      } else if (z < 0.8 && collapsedFiles.size < fileClusters.length) {
-        // Zoomed back out to overview: consolidate all files to overview
-        onCollapseAllFiles?.();
-      }
-    });
+      });
 
-    // Tap handlers
-    cy.on('tap', 'node', (evt: EventObject) => {
-      const target = evt.target;
-      if (target.data('isFileCluster')) {
-        onSelectFile?.(target.data('file'));
-      } else {
-        onSelectNode?.(target.id());
-      }
-    });
-
-    // Double tap on file cluster to toggle expand/collapse and center camera
-    cy.on('dbltap', 'node[?isFileCluster]', (evt: EventObject) => {
-      const file = evt.target.data('file');
-      if (file) {
-        if (onToggleCollapseFile) {
+      // Double tap on file cluster to toggle expand/collapse
+      cy.on('dbltap', 'node[?isFileCluster]', (evt: EventObject) => {
+        const file = evt.target.data('file');
+        if (file && onToggleCollapseFile) {
           onToggleCollapseFile(file);
         }
-        cy.animate({
-          center: { eles: evt.target },
-          zoom: Math.max(cy.zoom(), 1.4),
-          duration: 300,
-        });
+      });
+
+      // Double tap on background to fit view
+      cy.on('dbltap', (evt: EventObject) => {
+        if (evt.target === cy) {
+          cy.animate({
+            fit: { eles: cy.elements(), padding: 40 },
+            duration: 250,
+          });
+        }
+      });
+
+      // Tap on background to deselect
+      cy.on('tap', (evt: EventObject) => {
+        if (evt.target === cy) {
+          onSelectNode?.(null);
+          onSelectFile?.(null);
+        }
+      });
+
+      // Mouseover / Mouseout with neighborhood strand illumination
+      cy.on('mouseover', 'node', (evt: EventObject) => {
+        const target = evt.target;
+        setHoveredNodeId(target.id());
+        target.addClass('hovered');
+        target.neighborhood('edge').addClass('hovered');
+        target.neighborhood('node').addClass('neighbor-highlighted');
+      });
+
+      cy.on('mouseout', 'node', (evt: EventObject) => {
+        setHoveredNodeId(null);
+        evt.target.removeClass('hovered');
+        cy.elements().removeClass('hovered').removeClass('neighbor-highlighted');
+      });
+
+      cy.on('mouseover', 'edge', (evt: EventObject) => {
+        evt.target.addClass('hovered');
+      });
+
+      cy.on('mouseout', 'edge', (evt: EventObject) => {
+        evt.target.removeClass('hovered');
+      });
+
+      cyRef.current = cy;
+      return;
+    }
+
+    // 2. Incremental element updates: preserve current zoom and pan without any jumps
+    const cy = cyRef.current;
+    const currentPan = cy.pan();
+    const currentZoom = cy.zoom();
+
+    const allElements = [...elements.nodes, ...elements.edges];
+    const newIds = new Set(allElements.map((el) => el.data.id));
+
+    cy.batch(() => {
+      // Remove elements no longer present
+      cy.elements().forEach((el) => {
+        if (!newIds.has(el.id())) {
+          cy.remove(el);
+        }
+      });
+
+      // Add or update elements
+      const toAdd: cytoscape.ElementDefinition[] = [];
+      allElements.forEach((el) => {
+        const id = el.data.id;
+        if (!id) return;
+        const existing = cy.getElementById(id);
+        if (existing.length > 0) {
+          existing.data(el.data);
+          if (el.position) {
+            existing.position(el.position);
+          }
+        } else {
+          toAdd.push(el);
+        }
+      });
+
+      if (toAdd.length > 0) {
+        cy.add(toAdd);
       }
     });
 
-    // Double tap on background to fit view
-    cy.on('dbltap', (evt: EventObject) => {
-      if (evt.target === cy) {
-        cy.animate({
-          fit: { eles: cy.elements(), padding: 40 },
-          duration: 300,
-        });
-      }
-    });
-
-    // Tap on background to deselect
-    cy.on('tap', (evt: EventObject) => {
-      if (evt.target === cy) {
-        onSelectNode?.(null);
-        onSelectFile?.(null);
-      }
-    });
-
-    // Mouseover / Mouseout with neighborhood strand illumination
-    cy.on('mouseover', 'node', (evt: EventObject) => {
-      const target = evt.target;
-      setHoveredNodeId(target.id());
-      target.addClass('hovered');
-      target.neighborhood('edge').addClass('hovered');
-      target.neighborhood('node').addClass('neighbor-highlighted');
-    });
-
-    cy.on('mouseout', 'node', (evt: EventObject) => {
-      setHoveredNodeId(null);
-      evt.target.removeClass('hovered');
-      cy.elements().removeClass('hovered').removeClass('neighbor-highlighted');
-    });
-
-    cy.on('mouseover', 'edge', (evt: EventObject) => {
-      evt.target.addClass('hovered');
-    });
-
-    cy.on('mouseout', 'edge', (evt: EventObject) => {
-      evt.target.removeClass('hovered');
-    });
-
-    cyRef.current = cy;
-
-    return () => {
-      cy.destroy();
-      cyRef.current = null;
-    };
+    // Retain exact camera viewport
+    cy.viewport({ zoom: currentZoom, pan: currentPan });
   }, [elements, onSelectNode, onSelectFile, onToggleCollapseFile]);
 
-  // Update selection highlight & test dimming dynamically WITHOUT re-running layout
+  // Clean up Cytoscape on unmount
+  useEffect(() => {
+    return () => {
+      if (cyRef.current) {
+        cyRef.current.destroy();
+        cyRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update classes and dynamic highlights
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -759,7 +840,39 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
 
       // 2. Mode-aware highlight & dimming
-      if (currentViewMode === 'changes') {
+      if (activeTest) {
+        // Highlighting active test coverage & runtime calls
+        const exercisedSet = new Set(activeTest.exercisedNodeIds);
+        exercisedSet.add(activeTest.id);
+
+        cy.nodes().forEach((n) => {
+          if (n.data('isFileCluster')) {
+            n.removeClass('dimmed');
+            return;
+          }
+          if (exercisedSet.has(n.id())) {
+            n.addClass('exercised');
+            n.removeClass('dimmed');
+          } else {
+            n.removeClass('exercised');
+            n.addClass('dimmed');
+          }
+        });
+
+        cy.edges().forEach((e) => {
+          const isObserved =
+            e.data('category') === 'runtime_observed' &&
+            Boolean(e.data('testIds')?.includes(activeTest.id));
+
+          if (isObserved) {
+            e.addClass('observed-for-test');
+            e.removeClass('dimmed');
+          } else {
+            e.removeClass('observed-for-test');
+            e.addClass('dimmed');
+          }
+        });
+      } else if (currentViewMode === 'changes') {
         // Changes Mode: highlight modified and added symbols, dim unchanged
         cy.nodes().forEach((n) => {
           if (n.data('isFileCluster')) {
@@ -776,49 +889,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
           }
         });
         cy.edges().removeClass('observed-for-test');
-      } else if (currentViewMode === 'structure') {
-        // Structure Mode: all nodes and static structure visible with full contrast
+      } else {
+        // All Code / Structure Mode: full contrast on all elements
         cy.nodes().removeClass('dimmed').removeClass('exercised');
         cy.edges().removeClass('dimmed').removeClass('observed-for-test');
-      } else {
-        // Tests & Investigation Modes: highlight active test coverage & runtime calls
-        if (activeTest) {
-          const exercisedSet = new Set(activeTest.exercisedNodeIds);
-          exercisedSet.add(activeTest.id);
-
-          cy.nodes().forEach((n) => {
-            if (n.data('isFileCluster')) {
-              // Keep file clusters visible
-              n.removeClass('dimmed');
-              return;
-            }
-            if (exercisedSet.has(n.id())) {
-              n.addClass('exercised');
-              n.removeClass('dimmed');
-            } else {
-              n.removeClass('exercised');
-              n.addClass('dimmed');
-            }
-          });
-
-          cy.edges().forEach((e) => {
-            const isObserved =
-              e.data('category') === 'runtime_observed' &&
-              Boolean(e.data('testIds')?.includes(activeTest.id));
-
-            if (isObserved) {
-              e.addClass('observed-for-test');
-              e.removeClass('dimmed');
-            } else {
-              e.removeClass('observed-for-test');
-              e.addClass('dimmed');
-            }
-          });
-        } else {
-          // No test selected: restore full contrast
-          cy.nodes().removeClass('dimmed').removeClass('exercised');
-          cy.edges().removeClass('dimmed').removeClass('observed-for-test');
-        }
       }
 
       // 3. Semantic Zoom & Collision-Managed Labels
@@ -828,14 +902,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
         // Zoomed in: show all symbol labels inside clusters
         cy.nodes('[!isFileCluster]').addClass('show-label');
       } else if (zoomLevel === 'mid') {
-        // Mid zoom: show labels only for priority nodes (selected > pinned > failing > changed > hovered)
+        // Mid zoom: show labels only for priority nodes
         cy.nodes().forEach((n) => {
           if (!n.data('isFileCluster') && priorityNodeIds.has(n.id())) {
             n.addClass('show-label');
           }
         });
       }
-      // Far zoom: labels remain hidden on symbols, only file names shown on clusters
     });
   }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds, currentViewMode]);
 
@@ -880,47 +953,36 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
   };
 
-  const handleFit = () => {
-    cyRef.current?.fit(undefined, 40);
-  };
-
+  // Zoom controls with smooth camera animation
   const handleZoomIn = () => {
     const cy = cyRef.current;
-    if (cy) cy.zoom(cy.zoom() * 1.3);
+    if (!cy) return;
+    cy.animate({
+      zoom: cy.zoom() * 1.35,
+      duration: 180,
+    });
   };
 
   const handleZoomOut = () => {
     const cy = cyRef.current;
-    if (cy) cy.zoom(cy.zoom() * 0.75);
+    if (!cy) return;
+    cy.animate({
+      zoom: cy.zoom() / 1.35,
+      duration: 180,
+    });
   };
 
-  // Diagnostic states for empty / failed harness
-  if (runStatus === 'empty') {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          padding: '40px',
-          color: 'var(--text-muted)',
-          textAlign: 'center',
-          backgroundColor: 'var(--bg-app)',
-        }}
-      >
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-          Empty Repository Scan
-        </div>
-        <div style={{ fontSize: '12px', maxWidth: '420px', lineHeight: '1.5' }}>
-          Scan completed with 0 test cases detected. Static AST discovered 0 executable code nodes.
-        </div>
-      </div>
-    );
-  }
+  const handleFit = () => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.animate({
+      fit: { eles: cy.elements(), padding: 40 },
+      duration: 250,
+    });
+  };
 
-  if (runStatus === 'failed') {
+  // Empty state guard
+  if (graphData.nodes.length === 0 && (!graphData.files || graphData.files.length === 0)) {
     return (
       <div
         style={{
@@ -932,32 +994,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           padding: '40px',
           color: 'var(--text-muted)',
           textAlign: 'center',
-          backgroundColor: 'var(--bg-app)',
-        }}
-      >
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--status-error)', marginBottom: '4px' }}>
-          Harness Aborted During Collection
-        </div>
-        <div style={{ fontSize: '12px', maxWidth: '480px', lineHeight: '1.5' }}>
-          {errorMessage || 'Runner encountered an unhandled collection error before runtime traces could be collected.'}
-        </div>
-      </div>
-    );
-  }
-
-  if (graphData.nodes.length === 0) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          padding: '40px',
-          color: 'var(--text-muted)',
-          textAlign: 'center',
-          backgroundColor: 'var(--bg-app)',
+          backgroundColor: '#101114',
         }}
       >
         <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
@@ -990,17 +1027,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
         height: '100%',
         position: 'relative',
         overflow: 'hidden',
-        backgroundColor: 'var(--bg-app)',
+        backgroundColor: '#101114',
       }}
     >
-      {/* Calm Obsidian/Zotero Toolbar */}
+      {/* Calm Toolbar */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '6px 14px',
-          backgroundColor: 'var(--bg-surface)',
+          backgroundColor: '#11141a',
           borderBottom: '1px solid var(--border-default)',
           gap: '12px',
           flexWrap: 'nowrap',
@@ -1008,9 +1045,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
           minHeight: '38px',
         }}
       >
-        {/* Left: Mode Switcher + Scope / Highlighting Status */}
+        {/* Left: Clear Layer Controls + Active Test Scope */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
-          {/* Mode Segmented Control: Structure | Changes | Tests | Investigation */}
+          {/* Layer Selector: All Code vs Changed Code */}
           <div
             style={{
               display: 'flex',
@@ -1023,41 +1060,99 @@ export const GraphView: React.FC<GraphViewProps> = ({
             role="radiogroup"
             aria-label="Graph View Mode"
           >
-            {(['structure', 'changes', 'tests', 'investigation'] as GraphViewMode[]).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => handleModeChange(mode)}
-                style={{
-                  padding: '2px 8px',
-                  fontSize: '11px',
-                  fontWeight: currentViewMode === mode ? 600 : 400,
-                  backgroundColor: currentViewMode === mode ? 'var(--bg-active)' : 'transparent',
-                  color: currentViewMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
-                }}
-                role="radio"
-                aria-checked={currentViewMode === mode}
-              >
-                {mode}
-              </button>
-            ))}
+            <button
+              onClick={() => handleModeChange('structure')}
+              style={{
+                padding: '2px 8px',
+                fontSize: '11px',
+                fontWeight: currentViewMode === 'structure' ? 600 : 400,
+                backgroundColor: currentViewMode === 'structure' ? 'var(--bg-active)' : 'transparent',
+                color: currentViewMode === 'structure' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+              role="radio"
+              aria-label="Structure"
+              aria-checked={currentViewMode === 'structure'}
+              title="Show entire codebase structure and static relationships"
+            >
+              Structure
+            </button>
+
+            <button
+              onClick={() => handleModeChange('changes')}
+              style={{
+                padding: '2px 8px',
+                fontSize: '11px',
+                fontWeight: currentViewMode === 'changes' ? 600 : 400,
+                backgroundColor: currentViewMode === 'changes' ? 'var(--bg-active)' : 'transparent',
+                color: currentViewMode === 'changes' ? 'var(--change-modified)' : 'var(--text-secondary)',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+              role="radio"
+              aria-label="Changes"
+              aria-checked={currentViewMode === 'changes'}
+              title="Highlight modified and added files/functions in this commit"
+            >
+              Changes
+            </button>
           </div>
 
-          <span
-            style={{
-              fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {activeTest ? `Highlighting: ${activeTest.name}` : 'Whole Project Map'}
-          </span>
+          {/* Active Test Scope or Overview Scope */}
+          {activeTest ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: activeTest.status === 'fail' ? '#f87171' : '#34d399',
+                  backgroundColor:
+                    activeTest.status === 'fail'
+                      ? 'rgba(239, 68, 68, 0.12)'
+                      : 'rgba(16, 185, 129, 0.12)',
+                  border:
+                    activeTest.status === 'fail'
+                      ? '1px solid rgba(239, 68, 68, 0.3)'
+                      : '1px solid rgba(16, 185, 129, 0.3)',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  whiteSpace: 'nowrap',
+                  maxWidth: '280px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: 'inline-block',
+                }}
+                title={`Highlighting: ${activeTest.name}`}
+              >
+                Highlighting: {activeTest.name}
+              </span>
+              <button
+                onClick={() => onSelectTest?.(null)}
+                className="btn-ghost btn-sm"
+                style={{ fontSize: '10px', padding: '1px 5px', color: 'var(--text-muted)' }}
+                title="Clear test tracing and return to whole project overview"
+              >
+                ✕ Clear
+              </button>
+            </div>
+          ) : (
+            <span
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              Whole Project Map
+            </span>
+          )}
+
           <span
             style={{
               fontSize: '11px',
@@ -1096,7 +1191,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
             onClick={handleToggleAllCollapse}
             className="btn-ghost btn-sm"
             style={{ fontSize: '11px', padding: '2px 7px' }}
-            title={isAllCollapsed ? 'Expand all files into function constellations' : 'Collapse all files into overview dots'}
+            title={
+              isAllCollapsed
+                ? 'Expand all files into function constellations'
+                : 'Collapse all files into overview dots'
+            }
           >
             {isAllCollapsed ? 'Expand All' : 'Collapse to Files'}
           </button>
@@ -1170,13 +1269,28 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
           {/* Zoom Buttons */}
           <div style={{ display: 'flex', gap: '2px' }}>
-            <button onClick={handleZoomIn} className="btn-ghost btn-sm" title="Zoom In" aria-label="Zoom in">
+            <button
+              onClick={handleZoomIn}
+              className="btn-ghost btn-sm"
+              title="Zoom In"
+              aria-label="Zoom in"
+            >
               <ZoomIn size={12} />
             </button>
-            <button onClick={handleZoomOut} className="btn-ghost btn-sm" title="Zoom Out" aria-label="Zoom out">
+            <button
+              onClick={handleZoomOut}
+              className="btn-ghost btn-sm"
+              title="Zoom Out"
+              aria-label="Zoom out"
+            >
               <ZoomOut size={12} />
             </button>
-            <button onClick={handleFit} className="btn-ghost btn-sm" title="Fit to View" aria-label="Fit to view">
+            <button
+              onClick={handleFit}
+              className="btn-ghost btn-sm"
+              title="Fit to View"
+              aria-label="Fit to view"
+            >
               <Maximize2 size={12} />
             </button>
           </div>
