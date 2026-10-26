@@ -10,7 +10,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: 'FaultMesh — Visual Evidence Explorer',
-    backgroundColor: '#0b0f19',
+    backgroundColor: '#0e1117',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {

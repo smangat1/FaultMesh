@@ -1,90 +1,59 @@
-# FaultMesh Desktop UI: Visual Evidence Explorer
+# FaultMesh Desktop UI: Evidence-Backed Debugging Workspace
 
-FaultMesh is a local-first, open-source visual debugger for Python projects across three levels: **Understand** (code structure, Git changes), **Observe** (run existing pytest suites, trace code paths, inspect failures, rerun for stability), and **Investigate** (optional local small-model analysis).
+FaultMesh is a local-first visual debugger for Python projects designed to support the core investigation workflow:
+**Choose recorded run → Inspect failed test → See exercised code → Inspect relevant changed code & diff → Read recorded replay comparisons.**
 
-This package contains the interactive desktop visual explorer prototype, designed to run directly from the terminal as a standalone native desktop facet without requiring a localhost web server.
+This package contains the interactive desktop UI workspace, launched directly from your terminal as a standalone native desktop application without requiring a localhost dev server or browser.
 
 ---
 
 ## Running from Terminal (Desktop Mode — Zero Localhost)
 
-FaultMesh is built to operate as a native desktop application launched straight from your terminal. No localhost dev servers or browser tabs are required:
+FaultMesh operates as a sandboxed native desktop application (`nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`) loading local assets via the `file://` protocol.
 
 ### Quickstart (from workspace root):
 ```bash
 ./run-desktop.sh
 ```
 
-### Alternatively (from the `ui` directory):
+### Alternatively (from the `ui/` directory):
 ```bash
 cd ui
-npm install
-npm run desktop
+npm test          # Run automated Vitest component & adapter suite
+npm run build     # Compile production desktop bundle
+./bin/faultmesh-ui # Launch desktop runner
 ```
 
-Or invoke the direct CLI executable:
-```bash
-./ui/bin/faultmesh-ui
-```
-
-### Automated Testing & Production Builds:
-```bash
-cd ui
-
-# Run automated Vitest component & adapter suite
-npm test
-
-# Build production desktop bundle
-npm run build
-```
+The runner scripts (`run-desktop.sh` and `ui/bin/faultmesh-ui`) automatically verify local dependencies from `package-lock.json` and rebuild the bundle whenever source files change.
 
 ---
 
-## Obsidian Dataset Graph View
+## Workspace Architecture & Key Views
 
-The graph visualization has been engineered to provide the aesthetic and feel of an **Obsidian dataset / knowledge graph**:
+### 1. Results-First Investigation Workspace
+- **Compact Run Context Header:** Displays project, branch, revision, recorded run selector, execution duration, and an explicit outcome status badge (distinguishing harness run completion from test failures).
+- **Left Test Rail (280–320px):** Filterable by status (`All`, `Failing`, `Errors`, `Passed`, `Skipped`) and searchable by test name or path. Pre-selects the primary failing test upon run load.
+- **Investigation View:**
+  - **Promoted Failure Message & Python Traceback:** Expandable traceback disclosure with preserved line numbers and horizontal scrolling.
+  - **Recorded Replay Comparison:** Honest count-based language (e.g. *"Same failure in 3 of 3 recorded replays"*) with trial history and failure fingerprints. No simulated or fake live replay buttons.
+  - **Promoted Changed Code Inspector:** Immediate access to exercised modified/added code (such as `validate_token`), with tabbed unified Git diff and source snippets.
+  - **Exercised Code Grouped by File:** Expandable file sections listing covered symbols with change badges.
+  - **Honest Causality Notice:** Contextual reminder that observed execution coverage does not constitute defect cause proof without independent verification.
 
-1. **Constellation Force Physics (`cose` physics engine):**
-   - Replaces stiff rectangular flowchart boxes with organic spring physics (Coulomb repulsion, edge elasticity, and central gravity).
-   - Nodes float freely as celestial orbs and particles in an obsidian cosmic canvas (`#080b11`) with subtle starfield depth.
-   - An interactive **Physics HUD** allows real-time adjustment of node repulsion and gravity forces.
-2. **Color Impacts Exclusively on Changes:**
-   - **Modified Code (Glowing Amber `#f59e0b`):** e.g., `validate_token` with glowing gold halo and unified diff.
-   - **Added Code (Glowing Cyan `#06b6d4`):** e.g., `sessions.py` with vibrant cyan halo.
-   - **Failing Tests (Crimson Red `#ef4444`):** e.g., `test_login_expired_token` with crimson pulse.
-   - **Passing Tests (Soft Emerald `#10b981`):** Subtly styled test nodes.
-   - **Unchanged Code (Neutral Slate `#334155`):** All ordinary code symbols remain muted graphite dots fading into the background, eliminating visual noise.
-3. **Animated Moving Dotted Lines (Live Traversal Pulses):**
-   - When a test is highlighted or traversed, the active runtime trace edges feature an animated marching dash offset (`requestAnimationFrame` pulse) representing live electrical signals and data packets traversing through the neural mesh.
-4. **Interactive Node Inspector Drawer:**
-   - Clicking any node opens a slide-out drawer displaying Git unified diffs, syntax-highlighted source snippets, connected relationships (inbound/outbound calls with runtime observation counts), and a 1-hop neighbor isolation toggle.
+### 2. Evidence Map View
+- **Bounded Scope:** Focuses specifically on the active test's exercised symbols and observed call edges, rather than rendering an unmanageable, noisy universe graph.
+- **Explicit Per-Test Edge Provenance:** Runtime call edges are only attributed to a test if explicitly recorded in that test's execution trace. Unobserved connections are never guessed or hallucinated from overlapping coverage sets.
+- **Opt-in Static Context:** Surroundings can optionally reveal 1-hop static AST calls and imports via a distinct dashed visualization.
+- **Symbol Inspector Drawer:** Clicking any node in the map provides instant code inspection, unified diffs, line ranges, and inbound/outbound connected relationships.
 
----
-
-## Fixture Data & Honest States
-
-As per project hard rules, all data in this prototype comes from realistic, labeled fixtures (`FixtureAdapter`). The UI displays a prominent top banner: **"SAMPLE DATA (FIXTURE)"** whenever fixture data is active.
-
-### Included Fixtures (`src/fixtures/index.ts`):
-1. **`run-auth-regression` (Completed Run with Failures)**
-   - Project: `auth-service` (`feat/jwt-sessions` @ `9f3c82d7a1`)
-   - 1 Failing Test: `test_login_expired_token` with full traceback and 3x rerun stability proof (`[FP-AUTH-TOK-52]` 100% deterministic failure).
-   - 3 Passing Tests: `test_login_valid_token`, `test_session_create`, `test_session_invalidation`.
-   - 1 Harness Error: `test_rate_limit_backend` (`ConnectionRefusedError: Redis 6379`).
-   - 1 Skipped Test: `test_oauth2_pkce_flow`.
-   - Code Changes: Modified function `validate_token` (amber) with unified Git diff, and newly added `sessions.py` (teal).
-   - Unresolved AST References: `audit_logger` in `tokens.py:59`, `legacy_ldap_sync` in `service.py:91`.
-   - AST Parse Errors: `auth/experimental/simd_parser.py:14` (`SyntaxError` on match statement without 3.10 grammar).
-2. **`run-empty-scan` (Empty Repository State)**
-   - Honest empty scan guidance explaining discovery patterns and zero detected tests.
-3. **`run-failed-harness` (Collection Phase Failure)**
-   - Displays runner failure (`pytest.CollectionError: ModuleNotFoundError: No module named 'pytest_mock'`) with remediation steps.
+### 3. Run Diagnostics
+- On-demand view for inspecting run harness metadata, AST parse errors, unresolved references, and empty scan or collection failure details.
 
 ---
 
-## Adapter Architecture & Future Backend Wiring
+## Data Integrity & Adapter Contract
 
-All frontend views interact exclusively with a narrow TypeScript contract:
+All frontend views interact through the typed `FaultMeshAdapter` interface (`src/types/index.ts`):
 
 ```ts
 export interface FaultMeshAdapter {
@@ -98,23 +67,16 @@ export interface FaultMeshAdapter {
 }
 ```
 
-- **`FixtureAdapter`** (`src/adapter/fixtureAdapter.ts`): Implemented and active. Serves deterministic fixture data for testing and offline UI development.
-- **`HttpAdapter`** (`src/adapter/httpAdapter.ts`): Documented stub. When Codex finalizes the SQLite schema and HTTP endpoints in the backend, `HttpAdapter` will be wired up to query the server without modifying the UI views.
+- **`FixtureAdapter`** (`src/adapter/fixtureAdapter.ts`): Implemented and active. Provides deterministic, labeled test runs (`run-auth-regression`, `run-empty-scan`, `run-failed-harness`) for UI development, verification, and automated testing.
+- **Clear Fixture Labeling:** Every fixture run displays an unmistakable `SAMPLE DATA` banner to prevent confusing prototype data with live production environments.
 
 ---
 
-## Integrity Principles
+## Visual Verification & Authoritative Screenshots
 
-- **"Observed, not proven cause":** FaultMesh never claims an executed modified function is the defect root cause without independent proof. Real traces show observed execution, not proven causality.
-- **Zero Localhost Ports:** Packaged as an Electron desktop bundle loading directly via the `file://` protocol.
-
----
-
-## Verification Screenshots
-
-All 5 core states have been visually verified and captured in `ui/screenshots/` and `docs/screenshots/`:
-- `01_runs_screen.png`: Run overview, metadata, pass/fail ratios, honest causality notice, and static diagnostics.
-- `02_failing_test_details.png`: Failing test details, failure message, python traceback, 3x rerun fingerprint proof, and inline git diff.
-- `03_graph_test_selected.png`: Obsidian dataset constellation with circular glowing nodes, moving dotted line trace, and node inspector.
-- `04_empty_state.png`: Diagnostic empty repository scan view.
-- `05_error_state.png`: Harness collection failure error view.
+Visual verification artifacts are maintained in `docs/screenshots/`:
+- `01_investigation_view.png`: Failing test investigation with promoted failure message, recorded replay comparison, and unified diff.
+- `02_evidence_map.png`: Bounded visual evidence map with per-test provenance, selected symbol drawer, and connected relationships.
+- `03_run_diagnostics.png`: AST diagnostics, unresolved references, and environment error details.
+- `04_empty_scan_state.png`: Diagnostic guidance for empty repository scan.
+- `05_collection_error_state.png`: Honest error view when the test runner aborts during collection phase.
