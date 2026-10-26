@@ -21,6 +21,7 @@ records. The FaultMesh `src/` scan found 42 files and 390 symbols. Full acceptan
 
 - Safety phase: complete — Git diffs disable external helpers and textconv; child Git processes
   disable optional locks without changing the caller environment.
-- Binding phase: pending — conservative Python scope and import binding resolution.
+- Binding phase: complete — parameters/locals, class scope rules, dotted imports, and resolved base
+  bindings prevent unsupported source-call edges.
 - Path/type phase: pending — byte-safe Git paths and revision entry modes.
 - Ghost phase: pending — coherent removed file/symbol hierarchy and hunk boundaries.

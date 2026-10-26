@@ -6,7 +6,7 @@ import ast
 import builtins
 import hashlib
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from faultmesh.structure.models import (
@@ -25,6 +25,23 @@ from faultmesh.structure.models import (
 class _Binding:
     module: str
     target_id: str | None = None
+    reason: str = "import_binding"
+
+
+@dataclass
+class _Scope:
+    kind: str
+    scope_id: str
+    local_names: set[str] = field(default_factory=set)
+    global_names: set[str] = field(default_factory=set)
+    nonlocal_names: set[str] = field(default_factory=set)
+    bindings: dict[str, list[_Binding] | None] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _Lookup:
+    bindings: list[_Binding]
+    blocked: bool = False
 
 
 def _edge_id(parts: tuple[object, ...]) -> str:
@@ -43,6 +60,73 @@ def _relative_module(
     if module:
         parts.extend(module.split("."))
     return ".".join(parts)
+
+
+def _attribute_parts(node: ast.expr) -> list[str] | None:
+    parts: list[str] = []
+    current: ast.expr = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    return [current.id, *reversed(parts)]
+
+
+class _FunctionBindings(ast.NodeVisitor):
+    def __init__(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self.local_names = {
+            item.arg
+            for item in [
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+            ]
+        }
+        if node.args.vararg:
+            self.local_names.add(node.args.vararg.arg)
+        if node.args.kwarg:
+            self.local_names.add(node.args.kwarg.arg)
+        self.global_names: set[str] = set()
+        self.nonlocal_names: set[str] = set()
+        for statement in node.body:
+            self.visit(statement)
+        self.local_names.difference_update(self.global_names | self.nonlocal_names)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.local_names.add(node.id)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        self.local_names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self.local_names.update(
+            alias.asname or alias.name for alias in node.names if alias.name != "*"
+        )
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.nonlocal_names.update(node.names)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.local_names.add(node.name)
+        self.generic_visit(node)
 
 
 class _RelationshipVisitor(ast.NodeVisitor):
@@ -77,14 +161,13 @@ class _RelationshipVisitor(ast.NodeVisitor):
                 self.top_by_module_name[(target_module, symbol.name)].append(symbol)
             self.children[(symbol.parent_id, symbol.name)].append(symbol)
         self.scope_names: list[str] = []
-        self.scope_ids: list[str] = [file_id]
-        self.scope_kinds: list[str] = ["file"]
-        self.bindings: list[dict[str, _Binding]] = [{}]
+        self.scopes = [_Scope(kind="file", scope_id=file_id)]
         self.occurrences: dict[str, int] = defaultdict(int)
         self.edges: list[StaticEdge] = []
         self.unresolved: list[UnresolvedReference] = []
         self.external: set[str] = set()
         self.edge_occurrences: dict[tuple[object, ...], int] = defaultdict(int)
+        self.class_bases: dict[str, list[str]] = {}
 
     def _add_edge(
         self,
@@ -124,19 +207,68 @@ class _RelationshipVisitor(ast.NodeVisitor):
         )
 
     def _source_id(self) -> str:
-        return self.scope_ids[-1]
+        return self.scopes[-1].scope_id
 
-    def _lookup_binding(self, name: str) -> _Binding | None:
-        for bindings in reversed(self.bindings):
-            if name in bindings:
-                return bindings[name]
-        return None
+    def _binding_scope(self, name: str) -> _Scope:
+        current = self.scopes[-1]
+        if current.kind == "function" and name in current.global_names:
+            return self.scopes[0]
+        if current.kind == "function" and name in current.nonlocal_names:
+            for scope in reversed(self.scopes[:-1]):
+                if scope.kind == "function":
+                    return scope
+        return current
+
+    def _set_binding(self, name: str, binding: _Binding | None) -> None:
+        scope = self._binding_scope(name)
+        if binding is None:
+            scope.bindings[name] = None
+            return
+        existing = scope.bindings.get(name)
+        if existing is None:
+            scope.bindings[name] = [binding]
+        elif binding not in existing:
+            existing.append(binding)
+
+    def _lookup(self, name: str) -> _Lookup:
+        force_module = False
+        inside_function = any(scope.kind == "function" for scope in self.scopes)
+        for scope in reversed(self.scopes):
+            if force_module and scope.kind != "file":
+                continue
+            if scope.kind == "class" and inside_function:
+                continue
+            if scope.kind == "function" and name in scope.global_names:
+                force_module = True
+                continue
+            if name in scope.bindings:
+                bindings = scope.bindings[name]
+                return _Lookup(
+                    bindings=[] if bindings is None else bindings,
+                    blocked=bindings is None,
+                )
+            if scope.kind == "function" and name in scope.local_names:
+                return _Lookup(bindings=[], blocked=True)
+            candidates = self.children.get((scope.scope_id, name), [])
+            if candidates:
+                return _Lookup(
+                    bindings=[
+                        _Binding(module=self.module, target_id=item.id, reason="same_scope")
+                        for item in candidates
+                    ]
+                )
+        return _Lookup(bindings=[])
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self._set_binding(node.id, None)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             bound = alias.asname or alias.name.split(".")[0]
+            bound_module = alias.name if alias.asname else alias.name.split(".")[0]
+            self._set_binding(bound, _Binding(module=bound_module))
             target = self.module_files.get(alias.name)
-            self.bindings[-1][bound] = _Binding(module=alias.name)
             if target:
                 self._add_edge(
                     kind=EdgeKind.IMPORTS,
@@ -192,29 +324,28 @@ class _RelationshipVisitor(ast.NodeVisitor):
                         reason="from_import_symbol",
                         confidence=confidence,
                     )
-                if len(candidates) == 1:
-                    self.bindings[-1][bound] = _Binding(
-                        module=base, target_id=candidates[0].id
-                    )
+                self.scopes[-1].bindings[bound] = [
+                    _Binding(module=base, target_id=item.id) for item in candidates
+                ]
                 continue
             if submodule in self.module_files:
-                target_id = self.module_files[submodule]
-                self.bindings[-1][bound] = _Binding(module=submodule)
+                self._set_binding(bound, _Binding(module=submodule))
                 self._add_edge(
                     kind=EdgeKind.IMPORTS,
                     source_id=self._source_id(),
-                    target_id=target_id,
+                    target_id=self.module_files[submodule],
                     line=node.lineno,
                     reason="from_import_submodule",
                     confidence=EdgeConfidence.RESOLVED,
                 )
                 continue
             if base in self.module_files:
+                self._set_binding(bound, None)
                 self._unresolved(node, ast.unparse(node), "missing_project_export")
             else:
                 external = base or alias.name
                 self.external.add(external)
-                self.bindings[-1][bound] = _Binding(module=external)
+                self._set_binding(bound, _Binding(module=external))
                 self._add_edge(
                     kind=EdgeKind.IMPORTS,
                     source_id=self._source_id(),
@@ -234,9 +365,10 @@ class _RelationshipVisitor(ast.NodeVisitor):
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._enter_symbol(node.name, "function", node)
 
-    def _enter_symbol(self, name: str, kind: str, node: ast.AST) -> None:
-        decorators = getattr(node, "decorator_list", [])
-        for decorator in decorators:
+    def _enter_symbol(
+        self, name: str, kind: str, node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> None:
+        for decorator in node.decorator_list:
             self._unresolved(decorator, ast.unparse(decorator), "decorator_semantics")
         qualified = ".".join([*self.scope_names, name])
         self.occurrences[qualified] += 1
@@ -246,18 +378,56 @@ class _RelationshipVisitor(ast.NodeVisitor):
         if symbol_id not in self.symbols_by_id:
             self.generic_visit(node)
             return
+        self._set_binding(
+            name, _Binding(module=self.module, target_id=symbol_id, reason="same_scope")
+        )
+        if isinstance(node, ast.ClassDef):
+            resolved_bases: list[str] = []
+            for base in node.bases:
+                resolved_bases.extend(self._resolve_expression_targets(base))
+            self.class_bases[symbol_id] = list(dict.fromkeys(resolved_bases))
+            local_names: set[str] = set()
+            global_names: set[str] = set()
+            nonlocal_names: set[str] = set()
+        else:
+            collected = _FunctionBindings(node)
+            local_names = collected.local_names
+            global_names = collected.global_names
+            nonlocal_names = collected.nonlocal_names
+        scope = _Scope(
+            kind=kind,
+            scope_id=symbol_id,
+            local_names=local_names,
+            global_names=global_names,
+            nonlocal_names=nonlocal_names,
+        )
+        if not isinstance(node, ast.ClassDef):
+            for parameter in self.symbols_by_id[symbol_id].parameter_names:
+                scope.bindings[parameter] = None
         self.scope_names.append(name)
-        self.scope_ids.append(symbol_id)
-        self.scope_kinds.append(kind)
-        self.bindings.append({})
+        self.scopes.append(scope)
         self.generic_visit(node)
-        self.bindings.pop()
-        self.scope_kinds.pop()
-        self.scope_ids.pop()
+        self.scopes.pop()
         self.scope_names.pop()
 
+    def _resolve_expression_targets(self, expression: ast.expr) -> list[str]:
+        if isinstance(expression, ast.Name):
+            lookup = self._lookup(expression.id)
+            return [item.target_id for item in lookup.bindings if item.target_id is not None]
+        parts = _attribute_parts(expression)
+        if not parts or len(parts) < 2:
+            return []
+        lookup = self._lookup(parts[0])
+        result: list[str] = []
+        for binding in lookup.bindings:
+            if binding.target_id is not None:
+                continue
+            module = ".".join([binding.module, *parts[1:-1]])
+            result.extend(item.id for item in self.top_by_module_name.get((module, parts[-1]), []))
+        return result
+
     def visit_Call(self, node: ast.Call) -> None:
-        if self.scope_kinds[-1] != "function":
+        if self.scopes[-1].kind != "function":
             self._unresolved(node, ast.unparse(node.func), "module_or_class_body_call")
             self.generic_visit(node)
             return
@@ -269,44 +439,36 @@ class _RelationshipVisitor(ast.NodeVisitor):
             self._unresolved(node, ast.unparse(node.func), "dynamic_callable")
         self.generic_visit(node)
 
+    def _emit_candidates(self, node: ast.Call, bindings: list[_Binding], reason: str) -> bool:
+        targets = list(dict.fromkeys(item.target_id for item in bindings if item.target_id))
+        if not targets:
+            return False
+        confidence = EdgeConfidence.RESOLVED if len(targets) == 1 else EdgeConfidence.AMBIGUOUS
+        for target in targets:
+            self._add_edge(
+                kind=EdgeKind.POSSIBLE_CALL,
+                source_id=self._source_id(),
+                target_id=target,
+                line=node.lineno,
+                reason=reason,
+                confidence=confidence,
+            )
+        return True
+
     def _resolve_name_call(self, node: ast.Call, name: str) -> None:
         if name in {"getattr", "__import__"}:
             self._unresolved(node, ast.unparse(node.func), "dynamic_reference")
             return
-        binding = self._lookup_binding(name)
-        if binding and binding.target_id:
-            self._add_edge(
-                kind=EdgeKind.POSSIBLE_CALL,
-                source_id=self._source_id(),
-                target_id=binding.target_id,
-                line=node.lineno,
-                reason="import_binding",
-                confidence=EdgeConfidence.RESOLVED,
-            )
+        lookup = self._lookup(name)
+        if lookup.blocked:
+            self._unresolved(node, name, "local_binding")
             return
-        candidates: list[SymbolNode] = []
-        for scope_id in reversed(self.scope_ids):
-            candidates = self.children.get((scope_id, name), [])
-            if candidates:
-                break
-        if candidates:
-            confidence = (
-                EdgeConfidence.RESOLVED
-                if len(candidates) == 1
-                else EdgeConfidence.AMBIGUOUS
-            )
-            for candidate in candidates:
-                self._add_edge(
-                    kind=EdgeKind.POSSIBLE_CALL,
-                    source_id=self._source_id(),
-                    target_id=candidate.id,
-                    line=node.lineno,
-                    reason="same_scope",
-                    confidence=confidence,
-                )
-            return
-        if binding:
-            self.external.add(binding.module)
+        if lookup.bindings:
+            reason = lookup.bindings[0].reason
+            if self._emit_candidates(node, lookup.bindings, reason):
+                return
+            external = lookup.bindings[0].module
+            self.external.add(external)
             self._unresolved(node, name, "external_callable")
         elif hasattr(builtins, name):
             self.external.add("builtins")
@@ -314,64 +476,60 @@ class _RelationshipVisitor(ast.NodeVisitor):
         else:
             self._unresolved(node, name, "unknown_name")
 
+    def _method_class(self, receiver: str) -> str | None:
+        source = self.symbols_by_id.get(self._source_id())
+        if source is None or source.kind not in {SymbolKind.METHOD, SymbolKind.ASYNC_METHOD}:
+            return None
+        if not source.parameter_names or source.parameter_names[0] != receiver:
+            return None
+        decorators = {item.rsplit(".", 1)[-1] for item in source.decorators}
+        if "staticmethod" in decorators:
+            return None
+        if receiver == "cls" and "classmethod" not in decorators:
+            return None
+        if receiver == "self" and "classmethod" in decorators:
+            return None
+        return source.parent_id
+
     def _resolve_attribute_call(self, node: ast.Call) -> None:
-        attribute = node.func
-        assert isinstance(attribute, ast.Attribute)
-        if isinstance(attribute.value, ast.Name):
-            receiver = attribute.value.id
-            if receiver == "importlib" and attribute.attr == "import_module":
-                self._unresolved(node, ast.unparse(node.func), "dynamic_import")
+        parts = _attribute_parts(node.func)
+        if not parts or len(parts) < 2:
+            self._unresolved(node, ast.unparse(node.func), "unknown_receiver_type")
+            return
+        receiver = parts[0]
+        if parts == ["importlib", "import_module"]:
+            self._unresolved(node, ast.unparse(node.func), "dynamic_import")
+            return
+        if len(parts) == 2 and receiver in {"self", "cls"}:
+            class_id = self._method_class(receiver)
+            method_candidates = self._class_methods(class_id, parts[-1])
+            if method_candidates:
+                bindings = [
+                    _Binding(module=self.module, target_id=item.id)
+                    for item in method_candidates
+                ]
+                self._emit_candidates(node, bindings, f"{receiver}_method")
                 return
-            if receiver in {"self", "cls"}:
-                class_id = next(
-                    (
-                        scope_id
-                        for scope_id, kind in zip(
-                            reversed(self.scope_ids), reversed(self.scope_kinds), strict=True
-                        )
-                        if kind == "class"
-                    ),
-                    None,
-                )
-                candidates = self._class_methods(class_id, attribute.attr)
-                if candidates:
-                    confidence = (
-                        EdgeConfidence.RESOLVED
-                        if len(candidates) == 1
-                        else EdgeConfidence.AMBIGUOUS
-                    )
-                    for candidate in candidates:
-                        self._add_edge(
-                            kind=EdgeKind.POSSIBLE_CALL,
-                            source_id=self._source_id(),
-                            target_id=candidate.id,
-                            line=node.lineno,
-                            reason=f"{receiver}_method",
-                            confidence=confidence,
-                        )
-                    return
-            binding = self._lookup_binding(receiver)
-            if binding:
-                candidates = self.top_by_module_name.get((binding.module, attribute.attr), [])
-                if candidates:
-                    confidence = (
-                        EdgeConfidence.RESOLVED
-                        if len(candidates) == 1
-                        else EdgeConfidence.AMBIGUOUS
-                    )
-                    for candidate in candidates:
-                        self._add_edge(
-                            kind=EdgeKind.POSSIBLE_CALL,
-                            source_id=self._source_id(),
-                            target_id=candidate.id,
-                            line=node.lineno,
-                            reason="module_attribute",
-                            confidence=confidence,
-                        )
-                    return
-                self.external.add(binding.module)
-                self._unresolved(node, ast.unparse(node.func), "external_or_unknown_attribute")
-                return
+        lookup = self._lookup(receiver)
+        if lookup.blocked:
+            self._unresolved(node, ast.unparse(node.func), "local_binding")
+            return
+        candidates: list[SymbolNode] = []
+        modules: list[str] = []
+        for binding in lookup.bindings:
+            if binding.target_id is not None:
+                continue
+            module = ".".join([binding.module, *parts[1:-1]])
+            modules.append(module)
+            candidates.extend(self.top_by_module_name.get((module, parts[-1]), []))
+        if candidates:
+            bindings = [_Binding(module=self.module, target_id=item.id) for item in candidates]
+            self._emit_candidates(node, bindings, "module_attribute")
+            return
+        if modules:
+            self.external.update(module for module in modules if module not in self.module_files)
+            self._unresolved(node, ast.unparse(node.func), "external_or_unknown_attribute")
+            return
         self._unresolved(node, ast.unparse(node.func), "unknown_receiver_type")
 
     def _class_methods(self, class_id: str | None, name: str) -> list[SymbolNode]:
@@ -380,17 +538,9 @@ class _RelationshipVisitor(ast.NodeVisitor):
         direct = self.children.get((class_id, name), [])
         if direct:
             return direct
-        class_node = self.symbols_by_id.get(class_id)
-        if class_node is None:
-            return []
         result: list[SymbolNode] = []
-        for base in class_node.bases:
-            result.extend(
-                method
-                for candidate in self.symbols
-                if candidate.kind == SymbolKind.CLASS and candidate.name == base
-                for method in self.children.get((candidate.id, name), [])
-            )
+        for base_id in self.class_bases.get(class_id, []):
+            result.extend(self._class_methods(base_id, name))
         return result
 
 
@@ -418,9 +568,7 @@ def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
                     file.module,
                     level=node.level,
                     module=node.module,
-                    is_package=(
-                        file.path == "__init__.py" or file.path.endswith("/__init__.py")
-                    ),
+                    is_package=file.path == "__init__.py" or file.path.endswith("/__init__.py"),
                 )
                 if node.level
                 else (node.module or "")

@@ -62,9 +62,11 @@ for a connecting edge.
 
 Imports resolve only to project modules or top-level definitions established by absolute/relative
 imports and package re-exports. Possible calls resolve only from an import binding, a module or
-enclosing-scope definition, `self`/`cls` method in the same or simply identified project base class,
-or an imported module attribute. Multiple candidates produce ambiguous edges. V3 has no type
-inference and does not guess through arbitrary values.
+enclosing function/module definition, a supported `self`/`cls` method, an actually resolved project
+base class, or an imported module attribute. Function parameters and compile-time locals block
+fallback to outer imports. Class namespaces are not treated as function lexical scopes, and dotted
+imports keep the module chain Python binds. Multiple candidates produce ambiguous edges. V3 has no
+type inference and does not guess through arbitrary values.
 
 Static edges are possibilities from source text, not proof a call happens at runtime. Absence of an
 edge is not proof of no call. Dynamic Python creates false negatives, especially through `getattr`,
