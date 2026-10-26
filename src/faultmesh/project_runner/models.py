@@ -362,6 +362,8 @@ class ReplayComparison(StrEnum):
 class ReplayProvenance(StrictModel):
     parent_run_id: str
     parent_test_id: str
+    original_failure_fingerprint: str
+    original_installed_packages: list[str] | None = None
     comparison: ReplayComparison | None = None
 
 
@@ -396,3 +398,5 @@ class RunEvidenceExport(StrictModel):
     schema_version: Literal["2.0"] = EXPORT_VERSION
     run: ProjectTestRun
     tests: list[TestCaseRecord]
+    source_snapshot: SourceSnapshot | None = None
+    missing_artifacts: list[str] = Field(default_factory=list)

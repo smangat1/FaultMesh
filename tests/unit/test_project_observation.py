@@ -73,7 +73,9 @@ class Worker:
                 "path": "/workspace/pkg.py",
                 "contexts": [
                     {"node_id": None, "phase": "collection", "lines": [1, 2, 4]},
+                    {"node_id": first, "phase": "setup", "lines": [2]},
                     {"node_id": first, "phase": "call", "lines": [7, 8]},
+                    {"node_id": second, "phase": "setup", "lines": [2]},
                     {"node_id": second, "phase": "call", "lines": [13]},
                 ],
             }
@@ -91,12 +93,15 @@ class Worker:
     second_observation = records[1].observation
     assert first_observation is not None and second_observation is not None
     assert {symbol.qualified_name for symbol in first_observation.symbols} == {
+        "deco",
         "outer",
         "outer.nested",
     }
     assert {symbol.qualified_name for symbol in second_observation.symbols} == {
+        "deco",
         "Worker.compute"
     }
+    assert first_observation.files != second_observation.files
 
 
 def test_unknown_context_makes_observation_incomplete(tmp_path: Path) -> None:

@@ -8,7 +8,7 @@ V2 started from fresh `origin/main` at
 
 - Phase 1: complete — versioned per-test evidence contracts and append-only persistence.
 - Phase 2: complete — real container observation and source mapping.
-- Phase 3: pending — read/export and exact failed-test replay.
+- Phase 3: complete — read/export and exact failed-test replay.
 - Phase 4: pending — real-project acceptance, documentation, and PR.
 
 V2 keeps pytest execution results separate from observed line evidence. `TEST_EXECUTED_SYMBOL` will

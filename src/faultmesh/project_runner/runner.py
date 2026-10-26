@@ -24,6 +24,7 @@ from faultmesh.project_runner.models import (
     ObservationStatus,
     ProjectTestRun,
     PytestSummary,
+    ReplayComparison,
     ReplayProvenance,
     RunArtifacts,
     RunOutcome,
@@ -170,6 +171,21 @@ class DockerClient:
         if inspected.returncode != 0 or not image_id:
             raise ProjectRunnerError("built image could not be inspected")
         return image_id
+
+    def require_image(self, image_id: str) -> str:
+        inspected = subprocess.run(
+            ["docker", "image", "inspect", image_id, "--format", "{{.Id}}"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        resolved = inspected.stdout.strip()
+        if inspected.returncode != 0 or resolved != image_id:
+            raise ProjectRunnerError(
+                f"recorded immutable container image is unavailable: {image_id}"
+            )
+        return resolved
 
     @staticmethod
     def run_command(
@@ -549,6 +565,32 @@ def _validate_observed_command(argv: list[str]) -> None:
             raise ProjectRunnerError("observation does not support xdist")
 
 
+def _compare_replay(
+    replay: ReplayProvenance,
+    tests: list[TestCaseRecord],
+    observation_status: ObservationStatus,
+    installed_packages: list[str] | None,
+) -> ReplayProvenance:
+    if observation_status != ObservationStatus.COMPLETE or (
+        replay.original_installed_packages is not None
+        and installed_packages != replay.original_installed_packages
+    ):
+        comparison = ReplayComparison.INCONCLUSIVE
+    else:
+        selected = [case for case in tests if case.node_id == replay.parent_test_id]
+        if len(selected) != 1:
+            comparison = ReplayComparison.MISSING_OR_DESELECTED
+        elif selected[0].outcome == TestOutcome.PASSED:
+            comparison = ReplayComparison.PASSED_ON_REPLAY
+        elif selected[0].failure_fingerprint is None:
+            comparison = ReplayComparison.INCONCLUSIVE
+        elif selected[0].failure_fingerprint == replay.original_failure_fingerprint:
+            comparison = ReplayComparison.SAME_FAILURE
+        else:
+            comparison = ReplayComparison.DIFFERENT_FAILURE
+    return replay.model_copy(update={"comparison": comparison})
+
+
 class ProjectTestRunner:
     def __init__(self, docker: DockerClient | None = None) -> None:
         self.docker = docker or DockerClient()
@@ -560,6 +602,7 @@ class ProjectTestRunner:
         observe: bool = False,
         argv: list[str] | None = None,
         replay: ReplayProvenance | None = None,
+        required_image_id: str | None = None,
     ) -> ProjectTestRun:
         resolved = load_run_config(config_path)
         selected_argv = list(argv or resolved.config.test.argv)
@@ -617,7 +660,11 @@ class ProjectTestRunner:
                     source_snapshot.model_dump_json(indent=2), encoding="utf-8"
                 )
             docker_version = self.docker.preflight()
-            image_id = self.docker.prepare_image(environment, run_dir)
+            image_id = (
+                self.docker.require_image(required_image_id)
+                if required_image_id is not None
+                else self.docker.prepare_image(environment, run_dir)
+            )
             execution = self.docker.run(
                 resolved,
                 run_id,
@@ -749,6 +796,10 @@ class ProjectTestRunner:
         command.extend(
             ["--json-report", "--json-report-file=/output/pytest-report.json"]
         )
+        if replay is not None:
+            replay = _compare_replay(
+                replay, test_cases, observation_status, installed_packages
+            )
         run = ProjectTestRun(
             id=run_id,
             config_version=resolved.config.schema_version,
