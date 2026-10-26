@@ -1,49 +1,43 @@
 import React, { useState, useMemo } from 'react';
-import type { TestItem, CodeNode, TestStatus } from '../types';
-import { TestDetailsPane } from './TestDetailsPane';
+import type { TestItem, TestStatus } from '../types';
 import {
   Search,
-  Filter,
   CheckCircle2,
   XCircle,
   AlertOctagon,
   SkipForward,
   Clock,
+  X,
   Code2,
 } from 'lucide-react';
 
 interface TestListProps {
   tests: TestItem[];
-  allNodes: CodeNode[];
   selectedTestId: string | null;
   onSelectTest: (testId: string) => void;
-  onNavigateToGraphWithTest?: (testId: string) => void;
 }
 
 export const TestList: React.FC<TestListProps> = ({
   tests,
-  allNodes,
   selectedTestId,
   onSelectTest,
-  onNavigateToGraphWithTest,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | TestStatus>('all');
 
   const filteredTests = useMemo(() => {
     return tests.filter((t) => {
+      const q = searchQuery.toLowerCase();
       const matchesSearch =
-        t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.file.toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        t.name.toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q) ||
+        t.file.toLowerCase().includes(q);
       const matchesStatus =
         statusFilter === 'all' ? true : t.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
   }, [tests, searchQuery, statusFilter]);
-
-  const selectedTest = useMemo(() => {
-    return tests.find((t) => t.id === selectedTestId) || null;
-  }, [tests, selectedTestId]);
 
   const counts = useMemo(() => {
     return {
@@ -58,250 +52,293 @@ export const TestList: React.FC<TestListProps> = ({
   return (
     <div
       style={{
-        display: 'grid',
-        gridTemplateColumns: '420px 1fr',
-        height: 'calc(100vh - 85px)',
-        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        backgroundColor: 'var(--bg-surface)',
+        borderRight: '1px solid var(--border-default)',
+        minWidth: '280px',
+        maxWidth: '340px',
+        width: '300px',
+        flexShrink: 0,
       }}
     >
-      {/* Left Column: Filter & List */}
+      {/* Search & Filter Header */}
       <div
         style={{
-          borderRight: '1px solid var(--border-color)',
+          padding: '10px 12px',
+          borderBottom: '1px solid var(--border-default)',
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: 'var(--bg-primary)',
-          height: '100%',
+          gap: '8px',
+          backgroundColor: 'var(--bg-surface)',
         }}
       >
-        {/* Search & Status Filter Bar */}
-        <div
-          style={{
-            padding: '12px 14px',
-            borderBottom: '1px solid var(--border-color)',
-            backgroundColor: 'var(--bg-secondary)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}
-        >
-          {/* Search Box */}
-          <div style={{ position: 'relative' }}>
-            <Search
-              size={14}
+        {/* Search input */}
+        <div style={{ position: 'relative' }}>
+          <Search
+            size={13}
+            style={{
+              position: 'absolute',
+              left: '8px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-muted)',
+              pointerEvents: 'none',
+            }}
+          />
+          <input
+            type="text"
+            placeholder="Filter tests by name or file..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              backgroundColor: 'var(--bg-app)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '5px 24px 5px 26px',
+              color: 'var(--text-primary)',
+              fontSize: '11px',
+              outline: 'none',
+              fontFamily: 'inherit',
+            }}
+            aria-label="Filter tests"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="btn-ghost"
               style={{
                 position: 'absolute',
-                left: '9px',
+                right: '4px',
                 top: '50%',
                 transform: 'translateY(-50%)',
+                padding: '2px',
                 color: 'var(--text-muted)',
               }}
-            />
-            <input
-              type="text"
-              placeholder="Filter tests by name or file..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                backgroundColor: 'var(--bg-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
-                padding: '6px 10px 6px 30px',
-                color: 'var(--text-primary)',
-                fontSize: '12px',
-                outline: 'none',
-              }}
-              aria-label="Filter tests"
-            />
-          </div>
-
-          {/* Status Filter Chips */}
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={`btn btn-sm ${statusFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ fontSize: '11px', padding: '2px 8px' }}
+              title="Clear search"
+              aria-label="Clear search"
             >
-              All ({counts.all})
+              <X size={12} />
             </button>
+          )}
+        </div>
+
+        {/* Filter Pills */}
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={statusFilter === 'all' ? 'btn-secondary' : 'btn-ghost'}
+            style={{
+              fontSize: '11px',
+              padding: '2px 6px',
+              backgroundColor: statusFilter === 'all' ? 'var(--bg-active)' : 'transparent',
+            }}
+          >
+            All ({counts.all})
+          </button>
+          {counts.fail > 0 && (
             <button
               onClick={() => setStatusFilter('fail')}
-              className={`btn btn-sm ${statusFilter === 'fail' ? 'btn-primary' : 'btn-ghost'}`}
+              className={statusFilter === 'fail' ? 'btn-secondary' : 'btn-ghost'}
               style={{
                 fontSize: '11px',
-                padding: '2px 8px',
-                color: statusFilter === 'fail' ? '#fff' : 'var(--status-fail)',
+                padding: '2px 6px',
+                color: 'var(--status-fail)',
+                backgroundColor: statusFilter === 'fail' ? 'var(--status-fail-bg)' : 'transparent',
               }}
             >
               Failing ({counts.fail})
             </button>
+          )}
+          {counts.error > 0 && (
             <button
               onClick={() => setStatusFilter('error')}
-              className={`btn btn-sm ${statusFilter === 'error' ? 'btn-primary' : 'btn-ghost'}`}
+              className={statusFilter === 'error' ? 'btn-secondary' : 'btn-ghost'}
               style={{
                 fontSize: '11px',
-                padding: '2px 8px',
-                color: statusFilter === 'error' ? '#fff' : 'var(--status-error)',
+                padding: '2px 6px',
+                color: 'var(--status-error)',
+                backgroundColor: statusFilter === 'error' ? 'var(--status-error-bg)' : 'transparent',
               }}
             >
               Errors ({counts.error})
             </button>
+          )}
+          {counts.pass > 0 && (
             <button
               onClick={() => setStatusFilter('pass')}
-              className={`btn btn-sm ${statusFilter === 'pass' ? 'btn-primary' : 'btn-ghost'}`}
+              className={statusFilter === 'pass' ? 'btn-secondary' : 'btn-ghost'}
               style={{
                 fontSize: '11px',
-                padding: '2px 8px',
-                color: statusFilter === 'pass' ? '#fff' : 'var(--status-pass)',
+                padding: '2px 6px',
+                color: 'var(--status-pass)',
+                backgroundColor: statusFilter === 'pass' ? 'var(--status-pass-bg)' : 'transparent',
               }}
             >
               Passed ({counts.pass})
             </button>
+          )}
+          {counts.skipped > 0 && (
             <button
               onClick={() => setStatusFilter('skipped')}
-              className={`btn btn-sm ${statusFilter === 'skipped' ? 'btn-primary' : 'btn-ghost'}`}
+              className={statusFilter === 'skipped' ? 'btn-secondary' : 'btn-ghost'}
               style={{
                 fontSize: '11px',
-                padding: '2px 8px',
-                color: statusFilter === 'skipped' ? '#fff' : 'var(--status-skipped)',
+                padding: '2px 6px',
+                color: 'var(--status-skipped)',
+                backgroundColor: statusFilter === 'skipped' ? 'var(--status-skipped-bg)' : 'transparent',
               }}
             >
               Skipped ({counts.skipped})
             </button>
-          </div>
+          )}
         </div>
+      </div>
 
-        {/* Test Items List */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {filteredTests.length === 0 ? (
-            <div
-              style={{
-                padding: '32px 16px',
-                textAlign: 'center',
-                color: 'var(--text-muted)',
-                fontSize: '12px',
-              }}
-            >
-              <Filter size={24} style={{ opacity: 0.4, marginBottom: '8px' }} />
-              <div>No matching tests found.</div>
-            </div>
-          ) : (
-            filteredTests.map((t) => {
+      {/* Tests List */}
+      <div style={{ flex: 1, overflowY: 'auto' }} role="region" aria-label="Tests List">
+        {filteredTests.length === 0 ? (
+          <div
+            style={{
+              padding: '24px 16px',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              fontSize: '12px',
+            }}
+          >
+            <div>No matching tests found.</div>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="btn-secondary btn-sm"
+                style={{ marginTop: '8px' }}
+              >
+                Clear Search
+              </button>
+            )}
+          </div>
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} role="list">
+            {filteredTests.map((t) => {
               const isSelected = t.id === selectedTestId;
               const hasReruns = t.rerunHistory && t.rerunHistory.length > 0;
               return (
-                <div
-                  key={t.id}
-                  onClick={() => onSelectTest(t.id)}
-                  style={{
-                    padding: '10px 14px',
-                    borderBottom: '1px solid var(--border-subtle)',
-                    cursor: 'pointer',
-                    backgroundColor: isSelected
-                      ? 'var(--bg-tertiary)'
-                      : 'transparent',
-                    borderLeft: isSelected
-                      ? '3px solid var(--accent)'
-                      : '3px solid transparent',
-                    transition: 'all 0.1s ease',
-                  }}
-                >
-                  <div
+                <li key={t.id}>
+                  <button
+                    onClick={() => onSelectTest(t.id)}
                     style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      border: 'none',
+                      borderBottom: '1px solid var(--border-subtle)',
+                      textAlign: 'left',
+                      backgroundColor: isSelected ? 'var(--bg-active)' : 'transparent',
+                      borderLeft: isSelected
+                        ? '3px solid var(--accent)'
+                        : '3px solid transparent',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: '4px',
+                      flexDirection: 'column',
+                      gap: '3px',
+                      cursor: 'pointer',
                     }}
+                    role="button"
+                    aria-selected={isSelected}
+                    title={t.id}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className={`badge-status ${t.status}`}>
-                        {t.status === 'pass' && <CheckCircle2 size={11} />}
-                        {t.status === 'fail' && <XCircle size={11} />}
-                        {t.status === 'error' && <AlertOctagon size={11} />}
-                        {t.status === 'skipped' && <SkipForward size={11} />}
-                        {t.status}
-                      </span>
-                      {hasReruns && (
-                        <span
-                          style={{
-                            fontSize: '9px',
-                            fontWeight: 700,
-                            color: 'var(--accent)',
-                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                            padding: '1px 4px',
-                            borderRadius: '3px',
-                            fontFamily: 'var(--font-mono)',
-                          }}
-                        >
-                          {t.rerunHistory.length}x rerun
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className={`badge-status ${t.status}`}>
+                          {t.status === 'pass' && <CheckCircle2 size={11} />}
+                          {t.status === 'fail' && <XCircle size={11} />}
+                          {t.status === 'error' && <AlertOctagon size={11} />}
+                          {t.status === 'skipped' && <SkipForward size={11} />}
+                          {t.status.toUpperCase()}
                         </span>
-                      )}
+                        {hasReruns && (
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              fontWeight: 700,
+                              color: 'var(--accent)',
+                              backgroundColor: 'var(--accent-muted)',
+                              padding: '1px 4px',
+                              borderRadius: '2px',
+                              fontFamily: 'var(--font-mono)',
+                            }}
+                          >
+                            {t.rerunHistory.length}x replay
+                          </span>
+                        )}
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          color: 'var(--text-muted)',
+                          fontFamily: 'var(--font-mono)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                        }}
+                      >
+                        <Clock size={10} /> {t.durationMs}ms
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '12px',
+                        fontWeight: isSelected ? 600 : 400,
+                        color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {t.name}
                     </div>
 
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
+                        justifyContent: 'space-between',
                         fontSize: '10px',
                         color: 'var(--text-muted)',
                         fontFamily: 'var(--font-mono)',
+                        width: '100%',
                       }}
                     >
+                      <span
+                        style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: '180px',
+                        }}
+                      >
+                        {t.file}
+                      </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                        <Clock size={10} /> {t.durationMs}ms
+                        <Code2 size={10} /> {t.exercisedNodeIds.length} nodes
                       </span>
                     </div>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      fontFamily: 'var(--font-mono)',
-                      color: isSelected
-                        ? 'var(--text-primary)'
-                        : 'var(--text-secondary)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {t.name}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      fontFamily: 'var(--font-mono)',
-                      marginTop: '2px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                    }}
-                  >
-                    <span>{t.file}</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                      <Code2 size={11} /> {t.exercisedNodeIds.length} nodes
-                    </span>
-                  </div>
-                </div>
+                  </button>
+                </li>
               );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* Right Column: Selected Test Details */}
-      <div style={{ height: '100%', overflow: 'hidden' }}>
-        <TestDetailsPane
-          test={selectedTest}
-          allNodes={allNodes}
-          onNavigateToGraphWithTest={onNavigateToGraphWithTest}
-        />
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );

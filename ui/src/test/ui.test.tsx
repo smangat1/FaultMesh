@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RunsScreen } from '../components/RunsScreen';
 import { TestList } from '../components/TestList';
+import { TestDetailsPane } from '../components/TestDetailsPane';
 import { FIXTURE_RUNS, FIXTURE_TESTS, FIXTURE_GRAPH } from '../fixtures';
 
 describe('RunsScreen Component', () => {
@@ -95,7 +96,6 @@ describe('TestList Component & Filtering', () => {
     render(
       <TestList
         tests={tests}
-        allNodes={nodes}
         selectedTestId={tests[0].id}
         onSelectTest={vi.fn()}
       />
@@ -118,7 +118,6 @@ describe('TestList Component & Filtering', () => {
     render(
       <TestList
         tests={tests}
-        allNodes={nodes}
         selectedTestId={tests[0].id}
         onSelectTest={vi.fn()}
       />
@@ -133,17 +132,15 @@ describe('TestList Component & Filtering', () => {
 
   it('displays traceback and rerun history for failing test', () => {
     render(
-      <TestList
-        tests={tests}
+      <TestDetailsPane
+        test={tests[0]}
         allNodes={nodes}
-        selectedTestId="tests/test_auth.py::test_login_expired_token"
-        onSelectTest={vi.fn()}
       />
     );
 
     expect(screen.getAllByText(/Failure Message/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Python Traceback/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Rerun Stability History/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Recorded Replay Comparison/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/FP-AUTH-TOK-52/i).length).toBeGreaterThan(0);
   });
 });
