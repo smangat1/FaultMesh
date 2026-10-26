@@ -4,16 +4,15 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const SCREENSHOTS_DIR = path.resolve(__dirname, '../screenshots');
+const SCREENSHOTS_DIR = path.resolve(__dirname, '../../docs/screenshots');
 const DIST_INDEX_PATH = path.resolve(__dirname, '../dist/index.html');
 
 async function main() {
-  console.log('Launching Chrome via puppeteer-core for zero-localhost file:// verification...');
+  console.log('Launching headless Chrome for zero-localhost file:// capture...');
   const browser = await puppeteer.launch({
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--allow-file-access-from-files'],
-    defaultViewport: { width: 1400, height: 900, deviceScaleFactor: 2 },
   });
 
   const page = await browser.newPage();
@@ -21,125 +20,115 @@ async function main() {
   page.on('pageerror', (err) => console.error('PAGE ERROR:', err));
 
   const fileUrl = `file://${DIST_INDEX_PATH}`;
-  console.log(`Navigating directly to ${fileUrl} (Zero localhost!)...`);
+  console.log(`Navigating to ${fileUrl}...`);
   await page.goto(fileUrl, { waitUntil: 'networkidle0' });
 
-  // Wait for initial data to load
+  // Wait for initial artifacts to load
   await page.waitForFunction(() => !document.body.innerText.includes('Loading run artifacts...'), {
     timeout: 5000,
   });
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 600));
 
-  // Screenshot 1: Runs Screen
-  console.log('Capturing 01_runs_screen.png...');
+  // 1. Investigation View at 1440x920
+  console.log('Capturing 01_investigation_1440x920.png...');
+  await page.setViewport({ width: 1440, height: 920, deviceScaleFactor: 2 });
+  await new Promise((r) => setTimeout(r, 400));
   await page.screenshot({
-    path: path.join(SCREENSHOTS_DIR, '01_runs_screen.png'),
+    path: path.join(SCREENSHOTS_DIR, '01_investigation_1440x920.png'),
     fullPage: false,
   });
 
-  // Screenshot 2: Failing Test Details
-  console.log('Switching to Tests tab...');
+  // 2. Evidence Map View at 1440x920 (with validate_token inspected)
+  console.log('Switching to Evidence Map...');
   await page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll('button'));
-    const testTab = buttons.find((b) => b.textContent && b.textContent.includes('Tests'));
-    if (testTab) testTab.click();
+    const mapBtn = buttons.find((b) => b.textContent && b.textContent.includes('Evidence Map'));
+    if (mapBtn) mapBtn.click();
   });
-  await new Promise((r) => setTimeout(r, 400));
-
-  // Click test_login_expired_token
-  await page.evaluate(() => {
-    const allDivs = Array.from(document.querySelectorAll('div'));
-    const testRow = allDivs.find(
-      (el) => el.textContent && el.textContent.includes('test_login_expired_token') && el.textContent.includes('fail')
-    );
-    if (testRow) testRow.click();
-  });
-  await new Promise((r) => setTimeout(r, 400));
-
-  // Expand exercised node validate_token to show diff
-  const validateBtn = await page.$('[data-testid="exercised-node-validate_token"]');
-  if (validateBtn) {
-    await validateBtn.click();
-    await new Promise((r) => setTimeout(r, 400));
-  }
-
-  // Scroll details pane down to reveal the expanded git diff
-  await page.evaluate(() => {
-    const scrollContainers = Array.from(document.querySelectorAll('div')).filter(
-      (el) => el.style && el.style.overflowY === 'auto'
-    );
-    const rightPane = scrollContainers.find((el) => el.textContent && el.textContent.includes('Failure Message'));
-    if (rightPane) {
-      rightPane.scrollTop = 500;
-    }
-  });
-  await new Promise((r) => setTimeout(r, 400));
-
-  console.log('Capturing 02_failing_test_details.png...');
-  await page.screenshot({
-    path: path.join(SCREENSHOTS_DIR, '02_failing_test_details.png'),
-    fullPage: false,
-  });
-
-  // Screenshot 3: Obsidian Graph View with Test Selected & Node Drawer Open
-  console.log('Switching to Obsidian Graph tab...');
-  await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const graphTab = buttons.find((b) => b.textContent && (b.textContent.includes('Graph') || b.textContent.includes('Obsidian')));
-    if (graphTab) graphTab.click();
-  });
-  // Give physics layout 1.5 seconds to settle into beautiful constellation
-  await new Promise((r) => setTimeout(r, 1500));
-
-  // Highlight test_login_expired_token and inspect validate_token symbol
-  await page.select(
-    'select[aria-label="Highlight Test Trace"]',
-    'tests/test_auth.py::test_login_expired_token'
-  );
-  await new Promise((r) => setTimeout(r, 500));
-
-  await page.select(
-    'select[aria-label="Inspect Symbol"]',
-    'auth/tokens.py::validate_token'
-  );
   await new Promise((r) => setTimeout(r, 800));
 
-  console.log('Capturing 03_graph_test_selected.png...');
+  // Search/select validate_token to open inspector drawer
+  const searchInput = await page.$('input[placeholder="Find symbol..."]');
+  if (searchInput) {
+    await searchInput.type('validate_token');
+    await new Promise((r) => setTimeout(r, 600));
+  }
+
+  console.log('Capturing 02_evidence_map_1440x920.png...');
   await page.screenshot({
-    path: path.join(SCREENSHOTS_DIR, '03_graph_test_selected.png'),
+    path: path.join(SCREENSHOTS_DIR, '02_evidence_map_1440x920.png'),
     fullPage: false,
   });
 
-  // Screenshot 4: Empty State
-  console.log('Switching to empty scan run...');
-  await page.select('select[aria-label="Select Run"]', 'run-empty-scan');
-  await new Promise((r) => setTimeout(r, 400));
+  // 3. Minimum Supported Resolution 1024x700: Investigation
+  console.log('Switching to 1024x700 viewport...');
+  await page.setViewport({ width: 1024, height: 700, deviceScaleFactor: 2 });
   await page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll('button'));
-    const runTab = buttons.find((b) => b.textContent && b.textContent.includes('Run Overview'));
-    if (runTab) runTab.click();
+    const invBtn = buttons.find((b) => b.textContent && b.textContent.includes('Investigation'));
+    if (invBtn) invBtn.click();
   });
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 600));
 
-  console.log('Capturing 04_empty_state.png...');
+  console.log('Capturing 03_investigation_1024x700.png...');
   await page.screenshot({
-    path: path.join(SCREENSHOTS_DIR, '04_empty_state.png'),
+    path: path.join(SCREENSHOTS_DIR, '03_investigation_1024x700.png'),
     fullPage: false,
   });
 
-  // Screenshot 5: Error State
-  console.log('Switching to failed harness run...');
-  await page.select('select[aria-label="Select Run"]', 'run-failed-harness');
-  await new Promise((r) => setTimeout(r, 500));
-
-  console.log('Capturing 05_error_state.png...');
+  // 4. Minimum Supported Resolution 1024x700: Evidence Map
+  console.log('Capturing 04_evidence_map_1024x700.png...');
+  await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const mapBtn = buttons.find((b) => b.textContent && b.textContent.includes('Evidence Map'));
+    if (mapBtn) mapBtn.click();
+  });
+  await new Promise((r) => setTimeout(r, 600));
   await page.screenshot({
-    path: path.join(SCREENSHOTS_DIR, '05_error_state.png'),
+    path: path.join(SCREENSHOTS_DIR, '04_evidence_map_1024x700.png'),
+    fullPage: false,
+  });
+
+  // 5. 1280x800 Viewport: Run Diagnostics
+  console.log('Switching to 1280x800 viewport...');
+  await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 2 });
+  await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const diagBtn = buttons.find((b) => b.textContent && b.textContent.includes('Run Diagnostics'));
+    if (diagBtn) diagBtn.click();
+  });
+  await new Promise((r) => setTimeout(r, 600));
+
+  console.log('Capturing 05_run_diagnostics_1280x800.png...');
+  await page.screenshot({
+    path: path.join(SCREENSHOTS_DIR, '05_run_diagnostics_1280x800.png'),
+    fullPage: false,
+  });
+
+  // 6. Empty Scan State at 1280x800
+  console.log('Switching to run-empty-scan...');
+  await page.select('select[aria-label="Select Recorded Run"]', 'run-empty-scan');
+  await new Promise((r) => setTimeout(r, 600));
+
+  console.log('Capturing 06_empty_scan_1280x800.png...');
+  await page.screenshot({
+    path: path.join(SCREENSHOTS_DIR, '06_empty_scan_1280x800.png'),
+    fullPage: false,
+  });
+
+  // 7. Collection Phase Failure at 1280x800
+  console.log('Switching to run-failed-harness...');
+  await page.select('select[aria-label="Select Recorded Run"]', 'run-failed-harness');
+  await new Promise((r) => setTimeout(r, 600));
+
+  console.log('Capturing 07_collection_error_1280x800.png...');
+  await page.screenshot({
+    path: path.join(SCREENSHOTS_DIR, '07_collection_error_1280x800.png'),
     fullPage: false,
   });
 
   await browser.close();
-  console.log('Finished capturing all screenshots!');
+  console.log('Successfully captured all authoritative screenshots in docs/screenshots/!');
 }
 
 main().catch((err) => {
