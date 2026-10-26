@@ -155,7 +155,7 @@ as modified, renamed at 100% Git similarity, and untracked/added respectively; `
 modified, `added_for_v3` was added, and eight one-hop possible-impact records were emitted.
 
 The PR #5 corrective pass reran Ruff, strict mypy, and the complete non-container suite: Ruff was
-clean, mypy found no issues in 61 files, and pytest reported 95 passed with 3 container tests
+clean, mypy found no issues in 61 files, and pytest reported 96 passed with 3 container tests
 deselected. Dedicated regressions cover disabled external diff/textconv helpers, Python binding
 shadowing and class scopes, exact Git paths and tree modes, coherent removed hierarchies, and
 zero-length hunk boundaries. Two consecutive hpack exports were byte-identical.

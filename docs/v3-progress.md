@@ -21,8 +21,8 @@ records. The FaultMesh `src/` scan found 42 files and 390 symbols. Full acceptan
 
 - Safety phase: complete — Git diffs disable external helpers and textconv; child Git processes
   disable optional locks without changing the caller environment.
-- Binding phase: complete — parameters/locals, class scope rules, dotted imports, and resolved base
-  bindings prevent unsupported source-call edges.
+- Binding phase: complete — parameters/locals, global/nonlocal declarations, class scope rules,
+  dotted imports, and resolved base bindings prevent unsupported source-call edges.
 - Path/type phase: complete — NUL-delimited Git paths preserve exact names; revision scans inspect
   tree modes and skip symlinks/gitlinks.
 - Ghost phase: complete — removed files/symbols retain base-side hierarchy and edges; counts split

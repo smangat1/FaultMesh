@@ -324,7 +324,8 @@ class _RelationshipVisitor(ast.NodeVisitor):
                         reason="from_import_symbol",
                         confidence=confidence,
                     )
-                self.scopes[-1].bindings[bound] = [
+                binding_scope = self._binding_scope(bound)
+                binding_scope.bindings[bound] = [
                     _Binding(module=base, target_id=item.id) for item in candidates
                 ]
                 continue

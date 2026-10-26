@@ -292,3 +292,38 @@ class Child(Duplicate):
         "symbol:consumer.py:outer.inner"
     }
     assert not _resolved_targets(result, "symbol:consumer.py:Child.call")
+
+
+def test_global_and_nonlocal_import_bindings_use_the_declared_scope(tmp_path: Path) -> None:
+    (tmp_path / "helper.py").write_text(
+        "def target():\n    return 1\n", encoding="utf-8"
+    )
+    (tmp_path / "consumer.py").write_text(
+        """def set_global():
+    global global_target
+    from helper import target as global_target
+    return global_target()
+
+def use_global():
+    return global_target()
+
+def outer():
+    local_target = None
+    def inner():
+        nonlocal local_target
+        from helper import target as local_target
+        return local_target()
+    def sibling():
+        return local_target()
+    return inner, sibling
+""",
+        encoding="utf-8",
+    )
+
+    result = build_relationships(tmp_path, build_structure_index(tmp_path))
+    expected = {"symbol:helper.py:target"}
+
+    assert _resolved_targets(result, "symbol:consumer.py:set_global") == expected
+    assert _resolved_targets(result, "symbol:consumer.py:use_global") == expected
+    assert _resolved_targets(result, "symbol:consumer.py:outer.inner") == expected
+    assert _resolved_targets(result, "symbol:consumer.py:outer.sibling") == expected
