@@ -26,7 +26,7 @@ import {
   FileCode,
   ArrowRightLeft,
 } from 'lucide-react';
-import type { AgentPhase } from '../agent/agentSimulation';
+import type { AgentPhase, PhaseEvidenceItem } from '../agent/agentSimulation';
 import { AGENT_EXPLANATION, AGENT_ACTIVE_FILES } from '../agent/agentSimulation';
 
 export interface InspectorDrawerProps {
@@ -48,8 +48,10 @@ export interface InspectorDrawerProps {
   onClose: () => void;
   isAgentActive?: boolean;
   agentPhase?: AgentPhase;
+  agentPhaseEvidence?: PhaseEvidenceItem | null;
   agentPatchedSnippet?: string | null;
   agentPatchedDiff?: string | null;
+  onReplayInvestigation?: () => void;
 }
 
 export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
@@ -71,8 +73,10 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onClose,
   isAgentActive = false,
   agentPhase = 'idle',
+  agentPhaseEvidence,
   agentPatchedSnippet,
   agentPatchedDiff,
+  onReplayInvestigation,
 }) => {
   const [activeCodeTab, setActiveCodeTab] = useState<'source' | 'diff'>('source');
   const [isTracebackOpen, setIsTracebackOpen] = useState(true);
@@ -129,20 +133,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   return (
     <aside
       aria-label="Inspector Drawer"
-      style={{
-        width: '400px',
-        maxWidth: '90vw',
-        height: '100%',
-        backgroundColor: '#111722',
-        borderLeft: '1px solid var(--border-default)',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        zIndex: 30,
-        boxShadow: '-4px 0 16px rgba(0,0,0,0.3)',
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}
+      className="inspector-drawer"
     >
       {/* ================= MODE 1: SYMBOL INSPECTOR ================= */}
       {selectedNode ? (
@@ -302,6 +293,27 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
             {/* 3. Active Remediation Files & Real Engineering Explanation */}
             {((isAgentActive) || selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'tests/test_auth.py::test_login_expired_token' || selectedNode.id === 'auth/service.py::login_with_token') && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Honest Simulation Demarcation Notice */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '4px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    fontSize: '10px',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                    SAMPLE INVESTIGATION PLAYBACK
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '9px' }}>
+                    Simulated Replay
+                  </span>
+                </div>
+
                 {/* Active Files in Remediation Tab Switcher */}
                 <div
                   style={{
@@ -377,6 +389,74 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                   </div>
                 </div>
 
+                {/* Progressive Phase Evidence Item Card (Context-Aware for current step) */}
+                {agentPhaseEvidence && (
+                  <div
+                    style={{
+                      backgroundColor: '#121824',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {agentPhaseEvidence.title}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          color: '#38bdf8',
+                          backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          fontFamily: 'var(--font-mono)',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {agentPhase}
+                      </span>
+                    </div>
+
+                    <p style={{ margin: 0, fontSize: '11px', lineHeight: 1.5, color: '#cbd5e1' }}>
+                      {agentPhaseEvidence.summary}
+                    </p>
+
+                    {agentPhaseEvidence.bullets && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                        {agentPhaseEvidence.bullets.map((b, idx) => (
+                          <div key={idx} style={{ fontSize: '11px', lineHeight: 1.4 }}>
+                            <span style={{ fontWeight: 600, color: b.color || '#38bdf8' }}>{b.label}: </span>
+                            <span style={{ color: '#94a3b8' }}>{b.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {agentPhaseEvidence.tracebackSnippet && (
+                      <pre
+                        style={{
+                          margin: '6px 0 0 0',
+                          padding: '8px',
+                          backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          color: '#f87171',
+                          overflowX: 'auto',
+                          fontFamily: 'var(--font-mono)',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {agentPhaseEvidence.tracebackSnippet}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
                 {/* Deep Real Engineering Explanation Card */}
                 <div
                   style={{
@@ -389,27 +469,40 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     gap: '8px',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Bot size={13} style={{ color: '#38bdf8' }} />
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Remediation Explanation & Analysis
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Bot size={13} style={{ color: '#38bdf8' }} />
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Remediation Explanation & Analysis
+                      </span>
+                    </div>
+                    {agentPhase === 'resolved' && onReplayInvestigation && (
+                      <button
+                        onClick={onReplayInvestigation}
+                        className="btn-ghost btn-sm"
+                        style={{ fontSize: '10px', padding: '1px 5px', color: '#10b981' }}
+                        title="Replay entire investigation"
+                      >
+                        <RotateCcw size={10} style={{ marginRight: '3px' }} />
+                        Replay
+                      </button>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', lineHeight: 1.5 }}>
-                    <div>
+                    <div style={{ opacity: agentPhase === 'diagnosing' || agentPhase === 'resolved' ? 1 : 0.85 }}>
                       <span style={{ color: '#f87171', fontWeight: 600 }}>Defect Isolation: </span>
                       <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.defectSummary}</span>
                     </div>
-                    <div>
+                    <div style={{ opacity: agentPhase === 'inspecting' || agentPhase === 'patching' || agentPhase === 'resolved' ? 1 : 0.75 }}>
                       <span style={{ color: '#f59e0b', fontWeight: 600 }}>Root Cause: </span>
                       <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.rootCause}</span>
                     </div>
-                    <div>
+                    <div style={{ opacity: agentPhase === 'patching' || agentPhase === 'resolved' ? 1 : 0.75 }}>
                       <span style={{ color: '#38bdf8', fontWeight: 600 }}>Fix Applied: </span>
                       <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.remediation}</span>
                     </div>
-                    <div>
+                    <div style={{ opacity: agentPhase === 'verifying' || agentPhase === 'resolved' ? 1 : 0.75 }}>
                       <span style={{ color: '#34d399', fontWeight: 600 }}>Verification: </span>
                       <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.verification}</span>
                     </div>

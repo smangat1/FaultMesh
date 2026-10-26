@@ -52,7 +52,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   const [isAgentActive, setIsAgentActive] = useState<boolean>(false);
   const [agentStepIndex, setAgentStepIndex] = useState<number>(0);
   const [isAgentPlaying, setIsAgentPlaying] = useState<boolean>(false);
-  const [agentSpeed] = useState<number>(1);
+  const [agentSpeed, setAgentSpeed] = useState<number>(1);
   const [, setAgentLogs] = useState<AgentLogEntry[]>([]);
   const agentTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -235,9 +235,11 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
 
     setAgentStepIndex(idx);
 
-    // Target node selection & unfolding
+    // Target node selection & unfolding: track active target without jarring drawer open/close layout shifts
     setSelectedNodeId(step.targetNodeId);
     setSelectedFile(null);
+
+    // Unfold target file locally so active node is visible without opening unrelated files
     setCollapsedFiles((prev) => {
       const next = new Set(prev);
       next.delete(step.targetFile);
@@ -313,7 +315,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     }
   }, [activeRunId, loadActiveRunData]);
 
-  // Playback timer effect
+  // Playback timer effect with variable step duration
   useEffect(() => {
     if (!isAgentActive || !isAgentPlaying) {
       if (agentTimerRef.current) clearTimeout(agentTimerRef.current);
@@ -325,7 +327,9 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
       return;
     }
 
-    const delay = Math.round(2400 / agentSpeed);
+    const currentStep = AGENT_SIMULATION_STEPS[agentStepIndex];
+    const duration = currentStep?.durationMs || 2500;
+    const delay = Math.round(duration / agentSpeed);
     agentTimerRef.current = setTimeout(() => {
       applyAgentStep(agentStepIndex + 1);
     }, delay);
@@ -490,6 +494,24 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     agentActiveNodeId={currentAgentStep?.targetNodeId}
                     agentPhase={currentAgentStep?.phase}
                     agentPhaseLabel={currentAgentStep?.phaseLabel}
+                    agentActionPill={currentAgentStep?.actionPill}
+                    agentActiveEdgeIds={currentAgentStep?.activeEdgeIds}
+                    agentZoomTarget={currentAgentStep?.cameraZoom}
+                    isInspectorOpen={Boolean(selectedNodeId || selectedTestId || selectedFile)}
+                    agentStepIndex={agentStepIndex}
+                    totalAgentSteps={AGENT_SIMULATION_STEPS.length}
+                    isAgentPlaying={isAgentPlaying}
+                    onToggleAgentPlay={() => setIsAgentPlaying((prev) => !prev)}
+                    onPrevAgentStep={() => applyAgentStep(Math.max(0, agentStepIndex - 1))}
+                    onNextAgentStep={() =>
+                      applyAgentStep(
+                        Math.min(AGENT_SIMULATION_STEPS.length - 1, agentStepIndex + 1)
+                      )
+                    }
+                    onRestartAgent={startAgentSimulation}
+                    onJumpAgentStep={(idx) => applyAgentStep(idx)}
+                    agentSpeed={agentSpeed}
+                    onChangeAgentSpeed={setAgentSpeed}
                   />
                 </div>
 
@@ -513,8 +535,10 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   onClose={handleCloseInspector}
                   isAgentActive={isAgentActive}
                   agentPhase={currentAgentStep?.phase}
+                  agentPhaseEvidence={currentAgentStep?.phaseEvidence}
                   agentPatchedSnippet={currentAgentStep?.patchedSnippet}
                   agentPatchedDiff={currentAgentStep?.patchedDiff}
+                  onReplayInvestigation={startAgentSimulation}
                 />
               </div>
             )}

@@ -17,20 +17,37 @@ export interface AgentLogEntry {
   codeTarget?: string;
 }
 
+export interface PhaseEvidenceItem {
+  type:
+    | 'failure_evidence'
+    | 'call_trace'
+    | 'candidate_defect'
+    | 'candidate_patch'
+    | 'verification_trial'
+    | 'resolution_summary';
+  title: string;
+  summary: string;
+  bullets?: { label: string; text: string; color?: string }[];
+  tracebackSnippet?: string;
+}
+
 export interface AgentSimulationStep {
   stepIndex: number;
   phase: AgentPhase;
   phaseLabel: string;
+  actionPill: string;
   headline: string;
   detail: string;
   targetNodeId: string;
   targetFile: string;
-  targetEdgeId?: string;
-  autoOpenInspector?: boolean;
+  activeEdgeIds?: string[];
+  cameraZoom: number;
+  durationMs: number;
+  autoOpenInspector: boolean;
   activeTestStatus?: 'fail' | 'running' | 'pass';
   patchedSnippet?: string;
   patchedDiff?: string;
-  activeTestIds?: string[];
+  phaseEvidence: PhaseEvidenceItem;
   log: {
     title: string;
     message: string;
@@ -143,7 +160,7 @@ export const AGENT_ACTIVE_FILES: ActiveFileMutation[] = [
     id: 'auth/tokens.py::validate_token',
     file: 'auth/tokens.py',
     name: 'validate_token',
-    role: 'Defect Site & Live Patch',
+    role: 'Defect Site & Candidate Patch',
     status: 'defect_site',
     lineRange: '43-59',
     diff: AGENT_PATCHED_DIFF,
@@ -186,12 +203,35 @@ export const AGENT_SIMULATION_STEPS: AgentSimulationStep[] = [
     stepIndex: 0,
     phase: 'diagnosing',
     phaseLabel: 'Scoping Failure',
+    actionPill: 'Inspecting failed test',
     headline: 'Analyzing pytest failure in test_login_expired_token',
-    detail: 'Inspecting traceback assertion: Expected TokenExpiredError, but got InvalidClaimError.',
+    detail: 'Traceback assertion failure: Expected TokenExpiredError, but got InvalidClaimError.',
     targetNodeId: 'tests/test_auth.py::test_login_expired_token',
     targetFile: 'tests/test_auth.py',
+    activeEdgeIds: [],
+    cameraZoom: 1.05,
+    durationMs: 2400,
     autoOpenInspector: false,
     activeTestStatus: 'fail',
+    phaseEvidence: {
+      type: 'failure_evidence',
+      title: 'Recorded Failure Evidence',
+      summary:
+        'test_login_expired_token raised InvalidClaimError unexpectedly. Assertion failed on token expiration contract.',
+      bullets: [
+        { label: 'Test Target', text: 'tests/test_auth.py::test_login_expired_token', color: '#ef4444' },
+        { label: 'Expected', text: 'TokenExpiredError ("Token expired")', color: '#10b981' },
+        { label: 'Actual', text: 'InvalidClaimError ("\'exp\' claim is not numeric")', color: '#ef4444' },
+      ],
+      tracebackSnippet: `FAILED tests/test_auth.py::test_login_expired_token - InvalidClaimError: 'exp' claim is not numeric: 1718000000
+Traceback (most recent call last):
+  File "tests/test_auth.py", line 45, in test_login_expired_token
+    login_with_token(expired_token)
+  File "auth/service.py", line 35, in login_with_token
+    claims = validate_token(token, leeway=0)
+  File "auth/tokens.py", line 49, in validate_token
+    raise InvalidClaimError(f"'exp' claim is not numeric: {exp_val}")`,
+    },
     log: {
       title: 'Targeting Failure Point',
       message: 'Detected regression in test_login_expired_token. Traceback indicates InvalidClaimError on numeric string timestamp.',
@@ -202,13 +242,27 @@ export const AGENT_SIMULATION_STEPS: AgentSimulationStep[] = [
     stepIndex: 1,
     phase: 'tracing',
     phaseLabel: 'Tracing Call Flow',
-    headline: 'Tracing runtime execution path across service and token modules',
+    actionPill: 'Following call stack',
+    headline: 'Tracing runtime execution path into coordinator',
     detail: 'Traversing call stack: test_login_expired_token → login_with_token → validate_token.',
     targetNodeId: 'auth/service.py::login_with_token',
     targetFile: 'auth/service.py',
-    targetEdgeId: 'e_test_auth_to_login',
+    activeEdgeIds: ['e_test_auth_to_login'],
+    cameraZoom: 1.15,
+    durationMs: 2600,
     autoOpenInspector: false,
     activeTestStatus: 'fail',
+    phaseEvidence: {
+      type: 'call_trace',
+      title: 'Guided Exploration of Recorded Trace',
+      summary:
+        'Following recorded runtime call sequence from the test entry point into the auth service coordinator.',
+      bullets: [
+        { label: 'Caller', text: 'tests/test_auth.py::test_login_expired_token', color: '#38bdf8' },
+        { label: 'Coordinator', text: 'auth/service.py::login_with_token (Step [1])', color: '#38bdf8' },
+        { label: 'Delegation', text: 'Delegates claim verification to auth/tokens.py::validate_token', color: '#94a3b8' },
+      ],
+    },
     log: {
       title: 'Dynamic Call Tracing',
       message: 'Observed runtime call graph: test enters service.py:login_with_token and delegates validation to tokens.py:validate_token.',
@@ -219,31 +273,60 @@ export const AGENT_SIMULATION_STEPS: AgentSimulationStep[] = [
     stepIndex: 2,
     phase: 'inspecting',
     phaseLabel: 'Candidate Defect Found',
-    headline: 'Inspecting candidate defect in auth/tokens.py::validate_token',
-    detail: 'Recent refactoring added strict type check isinstance(exp_val, (int, float)) which rejects string timestamps.',
+    actionPill: 'Inspecting candidate defect',
+    headline: 'Inspecting candidate defect site in validate_token()',
+    detail: 'Suspected regression: isinstance(exp_val, (int, float)) rejects numeric string timestamp "1718000000".',
     targetNodeId: 'auth/tokens.py::validate_token',
     targetFile: 'auth/tokens.py',
-    targetEdgeId: 'e_service_to_validate_token',
+    activeEdgeIds: ['e_test_auth_to_login', 'e_service_to_validate_token'],
+    cameraZoom: 1.35,
+    durationMs: 3500,
     autoOpenInspector: true,
     activeTestStatus: 'fail',
+    phaseEvidence: {
+      type: 'candidate_defect',
+      title: 'Candidate Defect Hypothesis (Unproven)',
+      summary:
+        'Recent refactoring introduced a rigid type check that treats stringified timestamps as invalid claims rather than coercing them.',
+      bullets: [
+        { label: 'Suspect Site', text: 'auth/tokens.py::validate_token (Lines 48–52)', color: '#f59e0b' },
+        { label: 'Hypothesis', text: 'Strict isinstance check rejects valid numeric strings from client payloads', color: '#f59e0b' },
+        { label: 'Evidence Status', text: 'Candidate defect under evaluation — not yet proven', color: '#94a3b8' },
+      ],
+    },
     log: {
       title: 'Defect Isolated',
-      message: 'Located defect at auth/tokens.py line 49. String timestamp "1718000000" fails isinstance check. Formulating non-breaking patch.',
+      message: 'Located candidate defect at auth/tokens.py line 49. String timestamp "1718000000" fails isinstance check. Formulating non-breaking patch.',
       badge: { text: 'INSPECT', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' },
     },
   },
   {
     stepIndex: 3,
     phase: 'patching',
-    phaseLabel: 'Live Patching Code',
-    headline: 'Applying live patch to auth/tokens.py::validate_token',
-    detail: 'Replacing strict isinstance check with try/float conversion to accept valid numeric strings gracefully.',
+    phaseLabel: 'Candidate Patch',
+    actionPill: 'Simulating candidate patch',
+    headline: 'Formulating non-breaking candidate patch for validate_token()',
+    detail: 'Candidate patch: coerce string timestamps with try/float conversion before checking expiration range.',
     targetNodeId: 'auth/tokens.py::validate_token',
     targetFile: 'auth/tokens.py',
+    activeEdgeIds: ['e_test_auth_to_login', 'e_service_to_validate_token'],
+    cameraZoom: 1.35,
+    durationMs: 3600,
     autoOpenInspector: true,
     activeTestStatus: 'fail',
     patchedSnippet: AGENT_PATCHED_SNIPPET,
     patchedDiff: AGENT_PATCHED_DIFF,
+    phaseEvidence: {
+      type: 'candidate_patch',
+      title: 'Candidate Patch Formulation (Simulated Demo)',
+      summary:
+        'Demonstrating candidate fix in source inspector. The change coerces valid numeric strings to float without breaking non-numeric rejection.',
+      bullets: [
+        { label: 'File Target', text: 'auth/tokens.py (Lines 47–56)', color: '#f59e0b' },
+        { label: 'Change', text: 'try: exp_num = float(exp_val) except (ValueError, TypeError)', color: '#f59e0b' },
+        { label: 'Status', text: 'Candidate change simulated — awaiting test verification', color: '#94a3b8' },
+      ],
+    },
     log: {
       title: 'Patch Injected',
       message: 'Replaced strict isinstance check with robust numeric coercion try: float(exp_val) except (ValueError, TypeError). File updated.',
@@ -253,15 +336,30 @@ export const AGENT_SIMULATION_STEPS: AgentSimulationStep[] = [
   {
     stepIndex: 4,
     phase: 'verifying',
-    phaseLabel: 'Verifying with Pytest',
-    headline: 'Re-running test_login_expired_token against patched code',
-    detail: 'Triggering execution replay trial #4 to verify whether TokenExpiredError is properly raised.',
+    phaseLabel: 'Replaying Verification',
+    actionPill: 'Replaying verification trial',
+    headline: 'Re-running test_login_expired_token against candidate patch',
+    detail: 'Simulated verification trial #4: checking if TokenExpiredError is properly raised.',
     targetNodeId: 'tests/test_auth.py::test_login_expired_token',
     targetFile: 'tests/test_auth.py',
+    activeEdgeIds: ['e_test_auth_to_login', 'e_service_to_validate_token'],
+    cameraZoom: 1.15,
+    durationMs: 2800,
     autoOpenInspector: false,
     activeTestStatus: 'running',
     patchedSnippet: AGENT_PATCHED_SNIPPET,
     patchedDiff: AGENT_PATCHED_DIFF,
+    phaseEvidence: {
+      type: 'verification_trial',
+      title: 'Replay Verification Trial (Simulated Demo)',
+      summary:
+        'Executing verification trial #4 against the modified token validation logic to verify whether regression is resolved.',
+      bullets: [
+        { label: 'Test Target', text: 'tests/test_auth.py::test_login_expired_token', color: '#a855f7' },
+        { label: 'Trial', text: 'Replay Trial #4 with instrumented coverage', color: '#a855f7' },
+        { label: 'Status', text: 'Executing test runner... (Demo simulation)', color: '#94a3b8' },
+      ],
+    },
     log: {
       title: 'Re-running Pytest',
       message: 'Running pytest tests/test_auth.py -k test_login_expired_token with live instrumentation...',
@@ -271,15 +369,31 @@ export const AGENT_SIMULATION_STEPS: AgentSimulationStep[] = [
   {
     stepIndex: 5,
     phase: 'resolved',
-    phaseLabel: 'Regression Resolved',
+    phaseLabel: 'Demonstration Resolved',
+    actionPill: 'Verified green (0 regressions)',
     headline: 'test_login_expired_token PASSED in 34ms (0 Failures Remaining)',
-    detail: 'Verification confirmed: TokenExpiredError was successfully raised. 6 of 6 tests passing across repository.',
+    detail: 'Verification confirmed in recorded sample: TokenExpiredError raised cleanly. 6 of 6 tests passing.',
     targetNodeId: 'tests/test_auth.py::test_login_expired_token',
     targetFile: 'tests/test_auth.py',
-    autoOpenInspector: false,
+    activeEdgeIds: ['e_test_auth_to_login', 'e_service_to_validate_token'],
+    cameraZoom: 1.05,
+    durationMs: 4200,
+    autoOpenInspector: true,
     activeTestStatus: 'pass',
     patchedSnippet: AGENT_PATCHED_SNIPPET,
     patchedDiff: AGENT_PATCHED_DIFF,
+    phaseEvidence: {
+      type: 'resolution_summary',
+      title: 'Sample Investigation Resolution Summary',
+      summary:
+        'Sample demonstration completed. The candidate patch resolved the regression without introducing secondary failures.',
+      bullets: [
+        { label: 'Target Failure', text: 'tests/test_auth.py::test_login_expired_token', color: '#10b981' },
+        { label: 'Candidate Site', text: 'auth/tokens.py::validate_token', color: '#f59e0b' },
+        { label: 'Sample Outcome', text: 'PASSED in 34ms (6 passed, 0 failed across test suite)', color: '#10b981' },
+        { label: 'Mode', text: 'Changes mode active — examine modified code in inspector', color: '#38bdf8' },
+      ],
+    },
     log: {
       title: 'Regression Resolved',
       message: 'Pytest replay trial #4 passed cleanly in 34ms. Zero regressions detected. Code change verified.',

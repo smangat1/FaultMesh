@@ -3,6 +3,7 @@ import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
 import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp, Bot } from 'lucide-react';
 import type { AgentPhase } from '../agent/agentSimulation';
+import { AgentPlaybackControls } from './AgentPlaybackControls';
 
 export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 
@@ -29,6 +30,20 @@ interface GraphViewProps {
   agentActiveNodeId?: string | null;
   agentPhase?: AgentPhase;
   agentPhaseLabel?: string;
+  agentActionPill?: string;
+  agentActiveEdgeIds?: string[];
+  agentZoomTarget?: number;
+  isInspectorOpen?: boolean;
+  agentStepIndex?: number;
+  totalAgentSteps?: number;
+  isAgentPlaying?: boolean;
+  onToggleAgentPlay?: () => void;
+  onPrevAgentStep?: () => void;
+  onNextAgentStep?: () => void;
+  onRestartAgent?: () => void;
+  onJumpAgentStep?: (step: number) => void;
+  agentSpeed?: number;
+  onChangeAgentSpeed?: (speed: number) => void;
 }
 
 interface HoverTagInfo {
@@ -143,6 +158,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
   agentActiveNodeId,
   agentPhase,
   agentPhaseLabel,
+  agentActionPill,
+  agentActiveEdgeIds = [],
+  agentZoomTarget = 1.15,
+  isInspectorOpen = false,
+  agentStepIndex = 0,
+  totalAgentSteps = 6,
+  isAgentPlaying = false,
+  onToggleAgentPlay,
+  onPrevAgentStep,
+  onNextAgentStep,
+  onRestartAgent,
+  onJumpAgentStep,
+  agentSpeed = 1,
+  onChangeAgentSpeed,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
@@ -155,6 +184,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
   const [hoverTag, setHoverTag] = useState<HoverTagInfo | null>(null);
   const [agentScreenPos, setAgentScreenPos] = useState<{ x: number; y: number } | null>(null);
+  const [isCameraTrackingPaused, setIsCameraTrackingPaused] = useState(false);
 
   useEffect(() => {
     if (propViewMode && propViewMode !== currentViewMode) {
@@ -760,6 +790,44 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 999,
             },
           },
+          // Agent active trail edges: brightened progressively along the evidence trail
+          {
+            selector: 'edge.agent-trail-active',
+            style: {
+              'line-color': '#38bdf8',
+              'target-arrow-color': '#38bdf8',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.75,
+              width: 1.8,
+              opacity: 0.95,
+              'z-index': 90,
+            },
+          },
+          {
+            selector: 'edge.agent-trail-amber',
+            style: {
+              'line-color': '#f59e0b',
+              'target-arrow-color': '#f59e0b',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.75,
+              width: 1.8,
+              opacity: 0.95,
+              'z-index': 90,
+            },
+          },
+          // Restrained dimming during agent investigation: background remains visible in Obsidian dark charcoal
+          {
+            selector: 'node.agent-dimmed',
+            style: {
+              opacity: 0.28,
+            },
+          },
+          {
+            selector: 'edge.agent-dimmed',
+            style: {
+              opacity: 0.12,
+            },
+          },
         ],
         layout: {
           name: 'preset',
@@ -1172,22 +1240,150 @@ export const GraphView: React.FC<GraphViewProps> = ({
           }
         });
       }
-      // 4. Autonomous Agent Active Highlighting
-      cy.nodes().removeClass('agent-focused').removeClass('agent-editing').removeClass('agent-resolved');
-      if (agentActiveNodeId) {
+      // 4. Autonomous Agent Active Highlighting & Evidence Trail
+      cy.nodes()
+        .removeClass('agent-focused')
+        .removeClass('agent-editing')
+        .removeClass('agent-resolved')
+        .removeClass('agent-dimmed');
+      cy.edges()
+        .removeClass('agent-trail-active')
+        .removeClass('agent-trail-amber')
+        .removeClass('agent-dimmed');
+
+      if (isAgentMode && agentActiveNodeId) {
         const agentTarget = cy.getElementById(agentActiveNodeId);
         if (agentTarget.length > 0) {
           if (agentPhase === 'patching') {
             agentTarget.addClass('agent-editing').addClass('show-label');
           } else if (agentPhase === 'resolved') {
             agentTarget.addClass('agent-resolved').addClass('show-label');
+            const patchTarget = cy.getElementById('auth/tokens.py::validate_token');
+            if (patchTarget.length > 0) {
+              patchTarget.addClass('agent-resolved').addClass('show-label');
+            }
+          } else if (agentPhase === 'inspecting') {
+            agentTarget.addClass('agent-editing').addClass('show-label');
           } else {
             agentTarget.addClass('agent-focused').addClass('show-label');
           }
         }
+
+        // Active evidence trail edges
+        if (agentActiveEdgeIds && agentActiveEdgeIds.length > 0) {
+          agentActiveEdgeIds.forEach((eid) => {
+            const edge = cy.getElementById(eid);
+            if (edge.length > 0) {
+              if (agentPhase === 'inspecting' || agentPhase === 'patching') {
+                edge.addClass('agent-trail-amber');
+              } else {
+                edge.addClass('agent-trail-active');
+              }
+            }
+          });
+        }
+
+        // Restrained dimming: in early investigation phases, gently dim unrelated nodes (opacity 0.28)
+        if (agentPhase !== 'resolved') {
+          const focusedNodeIds = new Set<string>([
+            agentActiveNodeId,
+            'tests/test_auth.py::test_login_expired_token',
+            'auth/service.py::login_with_token',
+            'auth/tokens.py::validate_token',
+            'file:tests/test_auth.py',
+            'file:auth/service.py',
+            'file:auth/tokens.py',
+          ]);
+
+          cy.nodes().forEach((n) => {
+            if (!focusedNodeIds.has(n.id())) {
+              n.addClass('agent-dimmed');
+            }
+          });
+
+          cy.edges().forEach((e) => {
+            if (!agentActiveEdgeIds?.includes(e.id())) {
+              e.addClass('agent-dimmed');
+            }
+          });
+        }
       }
     });
-  }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds, currentViewMode, agentActiveNodeId, agentPhase]);
+  }, [
+    selectedNodeId,
+    selectedFile,
+    activeTest,
+    zoomLevel,
+    priorityNodeIds,
+    currentViewMode,
+    isAgentMode,
+    agentActiveNodeId,
+    agentPhase,
+    agentActiveEdgeIds,
+  ]);
+
+  // Reset camera tracking pause when agent active mode restarts or changes
+  useEffect(() => {
+    if (!isAgentMode) {
+      setIsCameraTrackingPaused(false);
+    }
+  }, [isAgentMode]);
+
+  // Smooth Camera Gliding for Agent Active Node with Visible Area Offset
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !isAgentMode || !agentActiveNodeId || isCameraTrackingPaused) return;
+
+    const targetNode = cy.getElementById(agentActiveNodeId);
+    if (!targetNode || targetNode.length === 0) return;
+
+    const modelPos = targetNode.position();
+    const targetZoom = agentZoomTarget || 1.15;
+
+    // Viewport visible width adjustment: if inspector drawer is open, subtract its width so active node is centered in available canvas
+    const containerW = containerRef.current?.clientWidth || 800;
+    const containerH = containerRef.current?.clientHeight || 600;
+    const drawerWidth = typeof window !== 'undefined' && window.innerWidth < 1200 ? 330 : 400;
+    const rightInset = isInspectorOpen ? drawerWidth : 0;
+    const visibleCenterX = (containerW - rightInset) / 2;
+    const visibleCenterY = containerH / 2;
+
+    const targetPanX = visibleCenterX - modelPos.x * targetZoom;
+    const targetPanY = visibleCenterY - modelPos.y * targetZoom;
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    cy.stop();
+    cy.animate(
+      {
+        pan: { x: targetPanX, y: targetPanY },
+        zoom: targetZoom,
+      },
+      {
+        duration: prefersReducedMotion ? 0 : 550,
+        easing: 'ease-in-out-cubic',
+      }
+    );
+  }, [agentActiveNodeId, isAgentMode, agentZoomTarget, isCameraTrackingPaused, isInspectorOpen]);
+
+  // Detect manual user pan/zoom during agent mode to pause camera tracking
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    const onUserInteraction = (evt: EventObject) => {
+      if (isAgentMode && !isCameraTrackingPaused && evt.originalEvent) {
+        setIsCameraTrackingPaused(true);
+      }
+    };
+
+    cy.on('dragpan zoom', onUserInteraction);
+    return () => {
+      cy.removeListener('dragpan zoom', onUserInteraction);
+    };
+  }, [isAgentMode, isCameraTrackingPaused]);
 
   // Synchronize agent active node screen coordinates for 60fps CSS beacon overlay
   useEffect(() => {
@@ -1780,7 +1976,29 @@ export const GraphView: React.FC<GraphViewProps> = ({
         }}
       />
 
-      {/* Floating Animated Radar Beacon on Agent Active Node */}
+      {/* Agent Investigation Compact Playback Controls */}
+      {isAgentMode && onToggleAgentMode && (
+        <AgentPlaybackControls
+          currentStepIndex={agentStepIndex}
+          totalSteps={totalAgentSteps}
+          currentPhase={agentPhase || 'idle'}
+          phaseLabel={agentPhaseLabel || ''}
+          isPlaying={isAgentPlaying}
+          onTogglePlay={onToggleAgentPlay || (() => {})}
+          onPrevStep={onPrevAgentStep || (() => {})}
+          onNextStep={onNextAgentStep || (() => {})}
+          onRestart={onRestartAgent || (() => {})}
+          onJumpToStep={onJumpAgentStep || (() => {})}
+          speed={agentSpeed}
+          onChangeSpeed={onChangeAgentSpeed || (() => {})}
+          isCameraTrackingPaused={isCameraTrackingPaused}
+          onResumeTracking={() => setIsCameraTrackingPaused(false)}
+          onClose={onToggleAgentMode}
+          isInspectorOpen={isInspectorOpen}
+        />
+      )}
+
+      {/* Refined Obsidian-Style Agent Active Node Aura & Action Tag */}
       {agentScreenPos && agentActiveNodeId && (
         <div
           style={{
@@ -1791,49 +2009,29 @@ export const GraphView: React.FC<GraphViewProps> = ({
             zIndex: 250,
           }}
         >
-          <div
-            className={`agent-radar-ring ${
-              agentPhase === 'patching'
-                ? 'editing'
-                : agentPhase === 'resolved'
-                ? 'resolved'
-                : ''
-            }`}
-          />
-          <div
-            className={`agent-radar-ring-delayed ${
-              agentPhase === 'patching'
-                ? 'editing'
-                : agentPhase === 'resolved'
-                ? 'resolved'
-                : ''
-            }`}
-          />
+          <div className={`agent-aura-ring ${agentPhase || ''}`} />
           <div
             className="agent-floating-target-tag"
             onClick={(e) => {
               e.stopPropagation();
               if (agentActiveNodeId && onSelectNode) onSelectNode(agentActiveNodeId);
             }}
-            style={{
-              pointerEvents: 'auto',
-              cursor: 'pointer',
-              userSelect: 'none',
-            }}
-            title="Click to view live code mutation, active files, and agent engineering explanation"
+            title="Click to inspect active code, evidence, and remediation"
           >
             <Bot
               size={11}
               style={{
                 color:
-                  agentPhase === 'patching'
+                  agentPhase === 'patching' || agentPhase === 'inspecting'
                     ? '#f59e0b'
                     : agentPhase === 'resolved'
                     ? '#10b981'
+                    : agentPhase === 'verifying'
+                    ? '#a855f7'
                     : '#38bdf8',
               }}
             />
-            <span>{agentPhaseLabel || 'Agent Focus'}</span>
+            <span>{agentActionPill || agentPhaseLabel || 'Agent Focus'}</span>
             <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '2px' }}>• Inspect</span>
           </div>
         </div>

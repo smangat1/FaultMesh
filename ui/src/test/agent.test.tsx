@@ -99,4 +99,84 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
       expect(screen.getAllByText(/login_with_token/i).length).toBeGreaterThan(0);
     });
   });
+
+  it('supports compact playback controls: stepping, jumping, speed toggles, and pause', async () => {
+    render(<App initialScreen="workspace" />);
+
+    // Toggle agent mode
+    const toolbarBtn = await screen.findByRole('button', { name: /agent auto-repair/i });
+    fireEvent.click(toolbarBtn);
+
+    // Verify compact playback controls bar rendered
+    expect(screen.getByRole('region', { name: /agent playback controls/i })).toBeDefined();
+    expect(screen.getByText(/SAMPLE PLAYBACK/i)).toBeDefined();
+
+    // Verify initial phase step pill (Diagnose) is highlighted
+    const step1Btn = screen.getByRole('button', { name: /Step 1: Diagnose/i });
+    expect(step1Btn).toBeDefined();
+
+    // Verify Play/Pause toggle button
+    const playPauseBtn = screen.getByRole('button', { name: /Pause Investigation/i });
+    expect(playPauseBtn).toBeDefined();
+    fireEvent.click(playPauseBtn);
+    expect(screen.getByRole('button', { name: /Play Investigation/i })).toBeDefined();
+
+    // Verify next step navigation
+    const nextBtn = screen.getByRole('button', { name: /Next Step/i });
+    fireEvent.click(nextBtn); // moves to Step 2: Trace
+    await waitFor(() => {
+      expect(screen.getByText(/Tracing Call Flow/i)).toBeDefined();
+    });
+
+    // Verify direct jumping to Step 4 (Patch)
+    const patchStepBtn = screen.getByRole('button', { name: /Step 4: Patch/i });
+    fireEvent.click(patchStepBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Candidate Patch Formulation/i)).toBeDefined();
+    });
+
+    // Verify speed toggle
+    const speed2xBtn = screen.getByRole('button', { name: /2x speed/i });
+    fireEvent.click(speed2xBtn);
+    expect(speed2xBtn.style.fontWeight).toBe('700');
+
+    // Verify jump to final step (Resolved)
+    const resolvedStepBtn = screen.getByRole('button', { name: /Step 6: Resolved/i });
+    fireEvent.click(resolvedStepBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Sample Investigation Resolution Summary/i)).toBeDefined();
+    });
+  });
+
+  it('progressively discloses evidence across diagnosing, tracing, inspecting, patching, and verification', async () => {
+    render(<App initialScreen="selector" />);
+
+    // Launch agent auto-repair from selector
+    const agentBtn = await screen.findByRole('button', { name: /watch agent repair/i });
+    fireEvent.click(agentBtn);
+
+    // Wait for workspace to mount in agent mode
+    await screen.findByRole('button', { name: /agent auto-repair/i });
+
+    // Step 0: Diagnosing
+    await waitFor(() => {
+      expect(screen.getByText(/Recorded Failure Evidence/i)).toBeDefined();
+      expect(screen.getAllByText(/InvalidClaimError/i).length).toBeGreaterThan(0);
+    });
+
+    // Jump to Step 3: Inspecting
+    const inspectBtn = screen.getByRole('button', { name: /Step 3: Inspect/i });
+    fireEvent.click(inspectBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Candidate Defect Hypothesis/i)).toBeDefined();
+      expect(screen.getByText(/Suspect Site/i)).toBeDefined();
+    });
+
+    // Jump to Step 5: Verifying
+    const verifyBtn = screen.getByRole('button', { name: /Step 5: Verify/i });
+    fireEvent.click(verifyBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Replay Verification Trial/i)).toBeDefined();
+    });
+  });
 });

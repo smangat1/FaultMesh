@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-core';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,10 @@ async function main() {
   if (!fs.existsSync(SCREENSHOTS_DIR)) {
     fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
   }
+
+  // Ensure production bundle is freshly built
+  console.log('Building latest production bundle...');
+  execSync('npm run build --prefix ' + path.resolve(__dirname, '..'), { stdio: 'inherit' });
 
   console.log('Launching headless Chrome for zero-localhost file:// capture...');
   const browser = await puppeteer.launch({
@@ -67,7 +72,7 @@ async function main() {
     });
     await new Promise((r) => setTimeout(r, 600));
 
-    // Scenario 1: Opening state — clean Obsidian-style constellation in Structure mode (no FM logo in header)
+    // Scenario 1: Opening state — clean Obsidian-style constellation in Structure mode
     await page.evaluate(() => {
       const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
       if (fitBtn) fitBtn.click();
@@ -146,32 +151,78 @@ async function main() {
     await new Promise((r) => setTimeout(r, 500));
     await captureState(page, `07_large_sample_default_zoom_${res.name}.png`, res.width, res.height);
 
-    // Scenario 8: Agent Live Auto-Repair Simulation — Interactive beacon, multi-file code swapper, and real explanation
+    // Scenario 8: Autonomous Agent Live Storytelling & 6 Investigation Stages
+    console.log(`Capturing 6 Investigation Stages for ${res.name}...`);
+    // Launch Agent Mode
     await page.evaluate(() => {
       const agentBtn = Array.from(document.querySelectorAll('button')).find(
         (b) => b.textContent && b.textContent.includes('Agent Auto-Repair')
       );
       if (agentBtn) agentBtn.click();
     });
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 700));
 
-    // Click the interactive robot target tag on the node to open the inspector with active files & real explanation
+    // Pause playback so we can step through each phase cleanly
     await page.evaluate(() => {
-      const robotTag = document.querySelector('.agent-floating-target-tag');
-      if (robotTag) {
-        robotTag.click();
-      } else {
-        // Fallback: select validate_token in search to inspect
-        const searchInput = document.querySelector('input[placeholder*="Find symbol"]');
-        if (searchInput) searchInput.dispatchEvent(new Event('focus'));
-      }
+      const pauseBtn = document.querySelector('button[aria-label="Pause Investigation"]');
+      if (pauseBtn) pauseBtn.click();
     });
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Phase 0: Diagnosing
+    await page.evaluate(() => {
+      const step0Btn = document.querySelector('button[aria-label="Step 1: Diagnose"]');
+      if (step0Btn) step0Btn.click();
+    });
+    await new Promise((r) => setTimeout(r, 700));
+    await captureState(page, `08_agent_phase0_diagnosing_${res.name}.png`, res.width, res.height);
+
+    // Phase 1: Tracing
+    await page.evaluate(() => {
+      const step1Btn = document.querySelector('button[aria-label="Step 2: Trace"]');
+      if (step1Btn) step1Btn.click();
+    });
+    await new Promise((r) => setTimeout(r, 700));
+    await captureState(page, `08_agent_phase1_tracing_${res.name}.png`, res.width, res.height);
+
+    // Phase 2: Inspecting (Candidate Defect Site)
+    await page.evaluate(() => {
+      const step2Btn = document.querySelector('button[aria-label="Step 3: Inspect"]');
+      if (step2Btn) step2Btn.click();
+    });
+    await new Promise((r) => setTimeout(r, 700));
+    await captureState(page, `08_agent_phase2_inspecting_${res.name}.png`, res.width, res.height);
+
+    // Phase 3: Patching (Candidate Patch formulation & live diff viewer)
+    await page.evaluate(() => {
+      const step3Btn = document.querySelector('button[aria-label="Step 4: Patch"]');
+      if (step3Btn) step3Btn.click();
+    });
+    await new Promise((r) => setTimeout(r, 700));
+    await captureState(page, `08_agent_phase3_patching_${res.name}.png`, res.width, res.height);
+
+    // Phase 4: Verifying (Pytest trial replay)
+    await page.evaluate(() => {
+      const step4Btn = document.querySelector('button[aria-label="Step 5: Verify"]');
+      if (step4Btn) step4Btn.click();
+    });
+    await new Promise((r) => setTimeout(r, 700));
+    await captureState(page, `08_agent_phase4_verifying_${res.name}.png`, res.width, res.height);
+
+    // Phase 5: Resolved (Emerald confirmation, 0 regressions, full resolution summary)
+    await page.evaluate(() => {
+      const step5Btn = document.querySelector('button[aria-label="Step 6: Resolved"]');
+      if (step5Btn) step5Btn.click();
+    });
+    await new Promise((r) => setTimeout(r, 700));
+    await captureState(page, `08_agent_phase5_resolved_${res.name}.png`, res.width, res.height);
+
+    // Also update 08_agent_live_simulation overview
     await captureState(page, `08_agent_live_simulation_${res.name}.png`, res.width, res.height);
   }
 
   await browser.close();
-  console.log('\nAll screenshots successfully captured in docs/screenshots/!');
+  console.log('\nAll scenario and phase screenshots successfully captured in docs/screenshots/!');
 }
 
 main().catch((err) => {
