@@ -51,6 +51,22 @@ recorded results, injected test, and exact environment are in
 samples; raw run directories, SQLite databases, caches, and third-party checkouts are intentionally
 not committed.
 
+## V3 static structure
+
+V3 needs Git but not Docker or model inference:
+
+```console
+.venv/bin/faultmesh structure examples/buggy_python_project --out /tmp/structure.json
+.venv/bin/faultmesh structure-summary /tmp/structure.json
+.venv/bin/pytest -q -m 'not container'
+```
+
+Use `--base REV --head REV` for commit-to-commit comparison, or leave the defaults as `HEAD` and
+`worktree` to include staged, unstaged, and untracked changes. Add
+`--coverage /path/to/run-evidence-export.json` to create a separate observed-coverage overlay. The
+real hpack and self-scan acceptance commands and counts are in
+[v3-static-structure.md](v3-static-structure.md). V3 does not require or claim container tests.
+
 ## Build and check the Docker sandbox
 
 Start the small VM and build the current source into the sandbox image:

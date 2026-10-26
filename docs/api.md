@@ -68,3 +68,22 @@ inventory before starting. Its comparison is one of `SAME_FAILURE`, `DIFFERENT_F
 `PASSED_ON_REPLAY`, `MISSING_OR_DESELECTED`, or `INCONCLUSIVE`. One matching replay is evidence of
 one repeat, not a long-term stability claim.
 
+## V3 static structure
+
+```python
+from pathlib import Path
+
+from faultmesh.structure import build_structure_export, load_structure_export, load_v2_export
+
+v2 = load_v2_export(Path("run-evidence.json"))
+structure = build_structure_export(
+    Path("./project"), base="HEAD", head="worktree", coverage=v2
+)
+saved = load_structure_export(Path("structure.json"))
+```
+
+The schema 3.0 surface is separate from ProjectIndex 1.0 and RunEvidenceExport 2.0. Building uses
+source bytes, Python ASTs, and read-only Git commands; it does not import or execute target modules.
+`load_structure_export` reads only the supplied JSON file. Static possible-call edges are not
+runtime or causal evidence.
+

@@ -22,6 +22,7 @@ from faultmesh.project_runner import (
     run_project_tests,
 )
 from faultmesh.project_runner.replay import open_run_store
+from faultmesh.structure import build_structure_export, load_structure_export, load_v2_export
 from faultmesh.telemetry import configure_json_logging
 
 app = typer.Typer(
@@ -267,6 +268,64 @@ def replay_test(
     }:
         raise typer.Exit(code=1)
     raise typer.Exit(code=2)
+
+
+@app.command("structure")
+def structure_command(
+    project: Annotated[Path, typer.Argument(exists=True, file_okay=False, resolve_path=True)],
+    base: Annotated[str, typer.Option(help="Git base revision.")] = "HEAD",
+    head: Annotated[str, typer.Option(help="Git head revision or worktree.")] = "worktree",
+    out: Annotated[Path | None, typer.Option(help="Write schema 3.0 JSON to this file.")] = None,
+    coverage: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            resolve_path=True,
+            help="Optional schema 2.0 RunEvidenceExport coverage overlay.",
+        ),
+    ] = None,
+) -> None:
+    """Build a non-executing project structure and Git-change export."""
+    try:
+        v2 = load_v2_export(coverage) if coverage is not None else None
+        exported = build_structure_export(project, base=base, head=head, coverage=v2)
+    except Exception as exc:
+        typer.secho(f"FaultMesh structure failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    serialized = json.dumps(exported.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    if out is None:
+        typer.echo(serialized, nl=False)
+        return
+    if out.exists() and out.is_dir():
+        raise typer.BadParameter("--out must be a file path")
+    out.write_text(serialized, encoding="utf-8")
+    typer.echo(
+        json.dumps(
+            {"content_sha256": exported.envelope.content_sha256, **exported.counts.model_dump()},
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("structure-summary")
+def structure_summary(
+    export_file: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
+    ],
+) -> None:
+    """Read a schema 3.0 export and print counts without touching its project."""
+    try:
+        exported = load_structure_export(export_file)
+    except Exception as exc:
+        typer.secho(f"FaultMesh structure summary failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {"content_sha256": exported.envelope.content_sha256, **exported.counts.model_dump()},
+            sort_keys=True,
+        )
+    )
 
 
 @app.command()
