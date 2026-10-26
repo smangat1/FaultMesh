@@ -401,9 +401,9 @@ describe('Holistic Project Map & Semantic Zoom', () => {
       />
     );
 
-    // All 54 nodes are present, test highlighted
+    // All 62 nodes are present, test highlighted
     expect(screen.getByText(new RegExp(`Highlighting: ${failingTest.name}`, 'i'))).toBeDefined();
-    expect(screen.getByText(/54 nodes/i)).toBeDefined();
+    expect(screen.getByText(/62 nodes/i)).toBeDefined();
   });
 
   it('handles file cluster collapse and uncollapse dynamically', () => {

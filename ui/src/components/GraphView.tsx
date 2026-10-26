@@ -8,6 +8,8 @@ import {
   Search,
 } from 'lucide-react';
 
+export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
+
 export interface GraphViewProps {
   graphData: GraphData;
   tests: TestItem[];
@@ -20,6 +22,10 @@ export interface GraphViewProps {
   pinnedSymbolIds?: string[];
   collapsedFiles?: Set<string>;
   onToggleCollapseFile?: (file: string) => void;
+  onCollapseAllFiles?: () => void;
+  onExpandAllFiles?: () => void;
+  viewMode?: GraphViewMode;
+  onSelectViewMode?: (mode: GraphViewMode) => void;
   runStatus?: string;
   errorMessage?: string;
 }
@@ -34,10 +40,10 @@ export function computeDeterministicPositions(
 ): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {};
   const COLS = 3;
-  const COL_WIDTH = 380;
-  const ROW_HEIGHT = 280;
-  const ORIGIN_X = 220;
-  const ORIGIN_Y = 160;
+  const COL_WIDTH = 440;
+  const ROW_HEIGHT = 320;
+  const ORIGIN_X = 240;
+  const ORIGIN_Y = 180;
 
   // Group nodes by file
   const nodesByFile: Record<string, CodeNode[]> = {};
@@ -55,13 +61,13 @@ export function computeDeterministicPositions(
     // Position compound parent node
     positions[`file:${fileCluster.file}`] = { x: fileCenterX, y: fileCenterY };
 
-    // Position internal child symbols in 3-column subgrid inside file cluster
+    // Position internal child symbols in 2-column subgrid inside file cluster for clean label readability
     const fileNodes = nodesByFile[fileCluster.file] || [];
     fileNodes.forEach((node, sIdx) => {
-      const symCol = sIdx % 3;
-      const symRow = Math.floor(sIdx / 3);
-      const symX = fileCenterX - 75 + symCol * 75;
-      const symY = fileCenterY - 45 + symRow * 45;
+      const symCol = sIdx % 2;
+      const symRow = Math.floor(sIdx / 2);
+      const symX = fileCenterX - 70 + symCol * 140;
+      const symY = fileCenterY - 60 + symRow * 42;
       positions[node.id] = { x: symX, y: symY };
     });
   });
@@ -80,16 +86,35 @@ export const GraphView: React.FC<GraphViewProps> = ({
   pinnedSymbolIds = [],
   collapsedFiles = new Set(),
   onToggleCollapseFile,
+  onCollapseAllFiles,
+  onExpandAllFiles,
+  viewMode: propViewMode,
+  onSelectViewMode,
   runStatus,
   errorMessage,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
 
+  const [currentViewMode, setCurrentViewMode] = useState<GraphViewMode>(propViewMode || 'tests');
   const [searchQuery, setSearchQuery] = useState('');
   const [includeStaticContext, setIncludeStaticContext] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (propViewMode && propViewMode !== currentViewMode) {
+      setCurrentViewMode(propViewMode);
+    }
+  }, [propViewMode, currentViewMode]);
+
+  const handleModeChange = (mode: GraphViewMode) => {
+    setCurrentViewMode(mode);
+    onSelectViewMode?.(mode);
+    if (mode === 'structure') {
+      setIncludeStaticContext(true);
+    }
+  };
 
   // Compute file clusters from graphData.files or dynamically from nodes
   const fileClusters: FileCluster[] = useMemo(() => {
@@ -271,57 +296,72 @@ export const GraphView: React.FC<GraphViewProps> = ({
       boxSelectionEnabled: false,
       autounselectify: false,
       style: [
-        // --- Compound Parent Nodes (File Clusters) ---
+        // --- Compound Parent Nodes (File Clusters: open constellation anchor, zero rectangular borders) ---
         {
-          selector: 'node[?isFileCluster]',
+          selector: 'node[?isFileCluster][!isCollapsed]',
           style: {
             shape: 'roundrectangle',
-            'background-color': '#111722',
-            'background-opacity': 0.6,
-            'border-width': 1,
-            'border-color': '#212d3d',
-            'border-style': 'solid',
-            'corner-radius': '6px',
-            padding: '26px',
+            'background-opacity': 0,
+            'border-width': 0,
+            padding: '24px',
             label: 'data(label)',
             'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             'font-size': '11px',
-            'font-weight': 'bold',
+            'font-weight': 600,
             'text-valign': 'top',
             'text-halign': 'left',
-            'text-margin-x': 10,
-            'text-margin-y': 10,
-            color: '#8b949e',
+            'text-margin-x': 0,
+            'text-margin-y': -8,
+            color: '#64748b',
             'z-index': 1,
           },
         },
-        // Collapsed file summary node
+        // Collapsed file summary node: clean circular dot (12px)
         {
           selector: 'node[?isCollapsed]',
           style: {
-            shape: 'roundrectangle',
-            width: 140,
-            height: 36,
-            'background-color': '#161f2e',
-            'background-opacity': 0.9,
-            'border-width': 1,
-            'border-color': '#33445c',
-            'border-style': 'dashed',
-            'corner-radius': '6px',
-            'text-valign': 'center',
+            shape: 'ellipse',
+            width: 12,
+            height: 12,
+            'background-color': '#94a3b8',
+            'border-width': 0,
+            'text-valign': 'bottom',
             'text-halign': 'center',
+            'text-margin-y': 4,
             'font-size': '11px',
-            color: '#94a3b8',
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            color: '#cbd5e1',
+            label: 'data(label)',
             'z-index': 10,
           },
         },
-        // --- Child Symbol Nodes (Functions / Classes / Methods) ---
+        {
+          selector: 'node[?isCollapsed][changeStatus = "modified"]',
+          style: {
+            'background-color': '#d29922',
+            'border-width': 1.5,
+            'border-color': '#f6c156',
+            width: 13,
+            height: 13,
+          },
+        },
+        {
+          selector: 'node[?isCollapsed][changeStatus = "added"]',
+          style: {
+            'background-color': '#38bdf8',
+            'border-width': 1.5,
+            'border-color': '#7dd3fc',
+            width: 13,
+            height: 13,
+          },
+        },
+        // --- Child Symbol Nodes (Functions / Classes / Methods: small circular dots) ---
         {
           selector: 'node[!isFileCluster]',
           style: {
             shape: 'ellipse',
-            width: 8,
-            height: 8,
+            width: 6,
+            height: 6,
             'background-color': '#64748b',
             'border-width': 0,
             label: '',
@@ -331,111 +371,112 @@ export const GraphView: React.FC<GraphViewProps> = ({
             'text-halign': 'center',
             'text-margin-y': 4,
             color: '#cbd5e1',
-            'text-max-width': '120px',
+            'text-max-width': '115px',
             'text-wrap': 'ellipsis',
-            'text-background-color': '#0d1117',
+            'text-background-color': '#101114',
             'text-background-opacity': 0.85,
             'text-background-padding': '2px',
             'text-background-shape': 'roundrectangle',
             'z-index': 15,
           },
         },
-        // Class nodes: subtle rounded square
+        // Class nodes: slightly larger circular dot
         {
           selector: 'node[kind = "class"]',
           style: {
-            shape: 'roundrectangle',
-            'corner-radius': '2px',
-            width: 9,
-            height: 9,
+            shape: 'ellipse',
+            width: 7.5,
+            height: 7.5,
+            'background-color': '#7c8c9e',
           },
         },
-        // Modified Code Node: Amber
+        // Modified Code Node: Amber circle
         {
-          selector: 'node[changeStatus = "modified"]',
+          selector: 'node[!isFileCluster][changeStatus = "modified"]',
           style: {
             'background-color': '#d29922',
             'border-width': 1.5,
-            'border-color': '#e3b341',
-            width: 10,
-            height: 10,
+            'border-color': '#f6c156',
+            width: 8,
+            height: 8,
             'z-index': 25,
           },
         },
-        // Added Code Node: Emerald
+        // Added Code Node: Restrained cyan circle
         {
-          selector: 'node[changeStatus = "added"]',
+          selector: 'node[!isFileCluster][changeStatus = "added"]',
           style: {
-            'background-color': '#2ea043',
+            'background-color': '#38bdf8',
             'border-width': 1.5,
-            'border-color': '#3fb950',
-            width: 10,
-            height: 10,
+            'border-color': '#7dd3fc',
+            width: 8,
+            height: 8,
             'z-index': 25,
           },
         },
-        // Failing Test Node: Crimson
+        // Failing Test Node: Crimson circle
         {
-          selector: 'node[status = "fail"]',
+          selector: 'node[!isFileCluster][status = "fail"]',
           style: {
             'background-color': '#f85149',
-            'border-width': 2,
+            'border-width': 1.5,
             'border-color': '#ff7b72',
-            width: 12,
-            height: 12,
+            width: 10,
+            height: 10,
             'z-index': 30,
           },
         },
-        // Error Test Node: Orange
+        // Error Test Node: Orange circle
         {
-          selector: 'node[status = "error"]',
+          selector: 'node[!isFileCluster][status = "error"]',
           style: {
             'background-color': '#db6d28',
             'border-width': 1.5,
             'border-color': '#f0883e',
-            width: 10,
-            height: 10,
+            width: 8,
+            height: 8,
             'z-index': 30,
           },
         },
-        // Passing Test Node: Green
+        // Passing Test Node: Green circle
         {
-          selector: 'node[status = "pass"]',
+          selector: 'node[!isFileCluster][status = "pass"]',
           style: {
             'background-color': '#238636',
-            width: 8,
-            height: 8,
+            width: 6,
+            height: 6,
           },
         },
-        // --- Structural Edges (1px muted, no arrows until hover/select) ---
+        // --- Structural Edges (1px fine strands, semi-transparent desaturated gray) ---
         {
           selector: 'edge',
           style: {
             width: 1,
-            'line-color': '#283548',
+            'line-color': '#1f2937',
             'curve-style': 'bezier',
             'target-arrow-shape': 'none',
-            'arrow-scale': 0.8,
-            'target-arrow-color': '#3b82f6',
+            opacity: 0.45,
             'z-index': 5,
           },
         },
         {
           selector: 'edge[category = "static_call"], edge[category = "static_import"]',
           style: {
-            'line-color': '#212c3d',
+            'line-color': '#1a2230',
             'line-style': 'solid',
             width: 1,
+            opacity: 0.4,
           },
         },
-        // --- Observed Edges for selected test: solid cyan ---
+        // --- Observed Edges for selected test: fine solid cyan strand ---
         {
           selector: 'edge.observed-for-test',
           style: {
             'line-color': '#38bdf8',
             'target-arrow-color': '#38bdf8',
             'target-arrow-shape': 'chevron',
-            width: 2,
+            'arrow-scale': 0.7,
+            width: 1.5,
             opacity: 1.0,
             'z-index': 40,
           },
@@ -444,7 +485,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         {
           selector: 'node.dimmed',
           style: {
-            opacity: 0.28,
+            opacity: 0.22,
           },
         },
         {
@@ -461,14 +502,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
             opacity: 0.12,
           },
         },
-        // Selected node focus
+        // Selected node focus (luminous outline)
         {
           selector: 'node.selected-node',
           style: {
-            'border-color': '#38bdf8',
-            'border-width': 2.5,
-            width: 12,
-            height: 12,
+            'border-color': '#f8fafc',
+            'border-width': 2,
             'z-index': 999,
           },
         },
@@ -581,18 +620,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
         cy.getElementById(`file:${selectedFile}`).addClass('selected-node');
       }
 
-      // 2. Test Selection Highlight (Dim unexercised nodes/edges, highlight exercised)
-      if (activeTest) {
-        const exercisedSet = new Set(activeTest.exercisedNodeIds);
-        exercisedSet.add(activeTest.id);
-
+      // 2. Mode-aware highlight & dimming
+      if (currentViewMode === 'changes') {
+        // Changes Mode: highlight modified and added symbols, dim unchanged
         cy.nodes().forEach((n) => {
           if (n.data('isFileCluster')) {
-            // Keep file clusters visible
             n.removeClass('dimmed');
             return;
           }
-          if (exercisedSet.has(n.id())) {
+          const status = n.data('changeStatus');
+          if (status === 'modified' || status === 'added') {
             n.addClass('exercised');
             n.removeClass('dimmed');
           } else {
@@ -600,24 +637,50 @@ export const GraphView: React.FC<GraphViewProps> = ({
             n.addClass('dimmed');
           }
         });
-
-        cy.edges().forEach((e) => {
-          const isObserved =
-            e.data('category') === 'runtime_observed' &&
-            Boolean(e.data('testIds')?.includes(activeTest.id));
-
-          if (isObserved) {
-            e.addClass('observed-for-test');
-            e.removeClass('dimmed');
-          } else {
-            e.removeClass('observed-for-test');
-            e.addClass('dimmed');
-          }
-        });
-      } else {
-        // No test selected: restore full contrast
+        cy.edges().removeClass('observed-for-test');
+      } else if (currentViewMode === 'structure') {
+        // Structure Mode: all nodes and static structure visible with full contrast
         cy.nodes().removeClass('dimmed').removeClass('exercised');
         cy.edges().removeClass('dimmed').removeClass('observed-for-test');
+      } else {
+        // Tests & Investigation Modes: highlight active test coverage & runtime calls
+        if (activeTest) {
+          const exercisedSet = new Set(activeTest.exercisedNodeIds);
+          exercisedSet.add(activeTest.id);
+
+          cy.nodes().forEach((n) => {
+            if (n.data('isFileCluster')) {
+              // Keep file clusters visible
+              n.removeClass('dimmed');
+              return;
+            }
+            if (exercisedSet.has(n.id())) {
+              n.addClass('exercised');
+              n.removeClass('dimmed');
+            } else {
+              n.removeClass('exercised');
+              n.addClass('dimmed');
+            }
+          });
+
+          cy.edges().forEach((e) => {
+            const isObserved =
+              e.data('category') === 'runtime_observed' &&
+              Boolean(e.data('testIds')?.includes(activeTest.id));
+
+            if (isObserved) {
+              e.addClass('observed-for-test');
+              e.removeClass('dimmed');
+            } else {
+              e.removeClass('observed-for-test');
+              e.addClass('dimmed');
+            }
+          });
+        } else {
+          // No test selected: restore full contrast
+          cy.nodes().removeClass('dimmed').removeClass('exercised');
+          cy.edges().removeClass('dimmed').removeClass('observed-for-test');
+        }
       }
 
       // 3. Semantic Zoom & Collision-Managed Labels
@@ -636,7 +699,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
       // Far zoom: labels remain hidden on symbols, only file names shown on clusters
     });
-  }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds]);
+  }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds, currentViewMode]);
 
   // ResizeObserver to handle container size changes cleanly
   useEffect(() => {
@@ -769,6 +832,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
     );
   }
 
+  const isAllCollapsed =
+    fileClusters.length > 0 && fileClusters.every((fc) => collapsedFiles.has(fc.file));
+
+  const handleToggleAllCollapse = () => {
+    if (isAllCollapsed) {
+      onExpandAllFiles?.();
+    } else {
+      onCollapseAllFiles?.();
+    }
+  };
+
   return (
     <div
       style={{
@@ -796,9 +870,54 @@ export const GraphView: React.FC<GraphViewProps> = ({
           minHeight: '38px',
         }}
       >
-        {/* Left: Scope / Highlighting Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+        {/* Left: Mode Switcher + Scope / Highlighting Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
+          {/* Mode Segmented Control: Structure | Changes | Tests | Investigation */}
+          <div
+            style={{
+              display: 'flex',
+              backgroundColor: 'var(--bg-app)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '1px',
+              border: '1px solid var(--border-default)',
+              flexShrink: 0,
+            }}
+            role="radiogroup"
+            aria-label="Graph View Mode"
+          >
+            {(['structure', 'changes', 'tests', 'investigation'] as GraphViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => handleModeChange(mode)}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: currentViewMode === mode ? 600 : 400,
+                  backgroundColor: currentViewMode === mode ? 'var(--bg-active)' : 'transparent',
+                  color: currentViewMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
+                role="radio"
+                aria-checked={currentViewMode === mode}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
+          <span
+            style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
             {activeTest ? `Highlighting: ${activeTest.name}` : 'Whole Project Map'}
           </span>
           <span
@@ -807,6 +926,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               color: 'var(--text-muted)',
               fontFamily: 'var(--font-mono)',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             ({graphData.nodes.length} nodes, {elements.edges.length} edges)
@@ -821,6 +941,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 backgroundColor: 'rgba(210, 153, 34, 0.15)',
                 color: '#d29922',
                 border: '1px solid rgba(210, 153, 34, 0.3)',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
               title="Coverage recorded without runtime call-edge tracing"
             >
@@ -829,8 +951,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
           )}
         </div>
 
-        {/* Right: Static Context Toggle, Search, Zoom Controls */}
+        {/* Right: Level Toggle, Static Context Toggle, Search, Zoom Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          {/* Level Toggle Button */}
+          <button
+            onClick={handleToggleAllCollapse}
+            className="btn-ghost btn-sm"
+            style={{ fontSize: '11px', padding: '2px 7px' }}
+            title={isAllCollapsed ? 'Expand all files into function constellations' : 'Collapse all files into overview dots'}
+          >
+            {isAllCollapsed ? 'Expand All' : 'Collapse to Files'}
+          </button>
+
           <label
             style={{
               fontSize: '11px',
@@ -853,7 +985,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           </label>
 
           {/* Quick Search */}
-          <div style={{ position: 'relative', width: '140px' }}>
+          <div style={{ position: 'relative', width: '130px' }}>
             <Search
               size={11}
               style={{
@@ -920,7 +1052,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           flex: 1,
           width: '100%',
           height: '100%',
-          backgroundColor: '#0a0d13',
+          backgroundColor: '#101114',
         }}
       />
     </div>

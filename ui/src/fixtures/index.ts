@@ -23,11 +23,11 @@ export const FIXTURE_RUNS: RunSummary[] = [
       failed: 1,
       errored: 1,
       skipped: 1,
-      totalNodes: 54,
-      codeNodes: 44,
+      totalNodes: 62,
+      codeNodes: 52,
       modifiedNodes: 1,
-      addedNodes: 14,
-      totalChangedNodes: 15,
+      addedNodes: 16,
+      totalChangedNodes: 17,
       coveragePct: 78.4,
     },
     limitations: [
@@ -261,12 +261,12 @@ ConnectionRefusedError: [Errno 61] Connection refused`,
 export const FIXTURE_GRAPH: Record<string, GraphData> = {
   'run-auth-regression': {
     files: [
-      { file: 'auth/tokens.py', name: 'tokens.py', symbolCount: 8, changeStatus: 'modified', lineCount: 130 },
-      { file: 'auth/crypto.py', name: 'crypto.py', symbolCount: 8, changeStatus: 'unchanged', lineCount: 145 },
-      { file: 'auth/service.py', name: 'service.py', symbolCount: 8, changeStatus: 'unchanged', lineCount: 155 },
+      { file: 'auth/tokens.py', name: 'tokens.py', symbolCount: 10, changeStatus: 'modified', lineCount: 160 },
+      { file: 'auth/crypto.py', name: 'crypto.py', symbolCount: 10, changeStatus: 'unchanged', lineCount: 175 },
+      { file: 'auth/service.py', name: 'service.py', symbolCount: 10, changeStatus: 'unchanged', lineCount: 190 },
       { file: 'auth/sessions.py', name: 'sessions.py', symbolCount: 8, changeStatus: 'added', lineCount: 80 },
       { file: 'auth/limiter.py', name: 'limiter.py', symbolCount: 6, changeStatus: 'unchanged', lineCount: 70 },
-      { file: 'auth/models.py', name: 'models.py', symbolCount: 6, changeStatus: 'added', lineCount: 55 },
+      { file: 'auth/models.py', name: 'models.py', symbolCount: 8, changeStatus: 'added', lineCount: 75 },
       { file: 'tests/test_auth.py', name: 'test_auth.py', symbolCount: 6, changeStatus: 'unchanged', lineCount: 150 },
       { file: 'tests/test_sessions.py', name: 'test_sessions.py', symbolCount: 4, changeStatus: 'unchanged', lineCount: 65 },
     ],
@@ -424,6 +424,32 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
         sourceSnippet: `    def is_expired(self) -> bool:
         return bool(self.exp and self.exp < time.time())`,
       },
+      {
+        id: 'auth/tokens.py::revoke_token_hash',
+        file: 'auth/tokens.py',
+        name: 'revoke_token_hash',
+        kind: 'function',
+        parentModule: 'auth/tokens.py',
+        lineStart: 130,
+        lineEnd: 142,
+        changeStatus: 'unchanged',
+        description: 'Records SHA-256 hash of invalidated token in blacklisted revocation set.',
+        sourceSnippet: `def revoke_token_hash(token_hash: str) -> None:
+    revocation_set.add(token_hash)`,
+      },
+      {
+        id: 'auth/tokens.py::parse_bearer_header',
+        file: 'auth/tokens.py',
+        name: 'parse_bearer_header',
+        kind: 'function',
+        parentModule: 'auth/tokens.py',
+        lineStart: 144,
+        lineEnd: 155,
+        changeStatus: 'unchanged',
+        description: 'Sanitizes and extracts credential string from raw HTTP Authorization header.',
+        sourceSnippet: `def parse_bearer_header(header: str) -> str:
+    return header.strip().split(" ")[1]`,
+      },
 
       // --- auth/crypto.py (8 symbols) ---
       {
@@ -543,6 +569,32 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
         description: 'Calculates HMAC-SHA256 checksum over byte payload using cached key.',
         sourceSnippet: `    def digest(self, message: bytes) -> bytes:
         return hmac.new(self.key, message, hashlib.sha256).digest()`,
+      },
+      {
+        id: 'auth/crypto.py::constant_time_compare',
+        file: 'auth/crypto.py',
+        name: 'constant_time_compare',
+        kind: 'function',
+        parentModule: 'auth/crypto.py',
+        lineStart: 145,
+        lineEnd: 155,
+        changeStatus: 'unchanged',
+        description: 'Compares two byte arrays in constant time to safeguard against timing leak attacks.',
+        sourceSnippet: `def constant_time_compare(val1: bytes, val2: bytes) -> bool:
+    return hmac.compare_digest(val1, val2)`,
+      },
+      {
+        id: 'auth/crypto.py::rotate_keys',
+        file: 'auth/crypto.py',
+        name: 'rotate_keys',
+        kind: 'function',
+        parentModule: 'auth/crypto.py',
+        lineStart: 157,
+        lineEnd: 168,
+        changeStatus: 'unchanged',
+        description: 'Rotates active development HMAC secret and invalidates legacy key material.',
+        sourceSnippet: `def rotate_keys() -> None:
+    pass`,
       },
 
       // --- auth/service.py (8 symbols) ---
@@ -665,6 +717,32 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
         description: 'Revokes all active sessions registered to a specific user account.',
         sourceSnippet: `    def revoke_all(self, user_id: str) -> int:
         return 1`,
+      },
+      {
+        id: 'auth/service.py::validate_api_key',
+        file: 'auth/service.py',
+        name: 'validate_api_key',
+        kind: 'function',
+        parentModule: 'auth/service.py',
+        lineStart: 155,
+        lineEnd: 168,
+        changeStatus: 'unchanged',
+        description: 'Validates automated machine API client key against trusted external service credentials.',
+        sourceSnippet: `def validate_api_key(key: str) -> bool:
+    return key.startswith("fm_live_")`,
+      },
+      {
+        id: 'auth/service.py::AuthService.validate_credential',
+        file: 'auth/service.py',
+        name: 'validate_credential',
+        kind: 'method',
+        parentModule: 'auth/service.py',
+        lineStart: 170,
+        lineEnd: 182,
+        changeStatus: 'unchanged',
+        description: 'Verifies user email and salted password hash against user directory records.',
+        sourceSnippet: `    def validate_credential(self, user_id: str, secret: str) -> bool:
+        return True`,
       },
 
       // --- auth/sessions.py (8 symbols) ---
@@ -1041,6 +1119,38 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
 @@ -0,0 +1,4 @@
 +    def is_active(self) -> bool:
 +        return True`,
+      },
+      {
+        id: 'auth/models.py::UserSession.is_valid',
+        file: 'auth/models.py',
+        name: 'is_valid',
+        kind: 'method',
+        parentModule: 'auth/models.py',
+        lineStart: 54,
+        lineEnd: 60,
+        changeStatus: 'added',
+        description: 'Checks if session timestamp falls within maximum permitted continuous lifetime.',
+        sourceSnippet: `    def is_valid(self, max_duration: int = 86400) -> bool:
+        return (time.time() - self.created_at) < max_duration`,
+        gitDiff: `+++ b/auth/models.py
+@@ -0,0 +1,4 @@
++    def is_valid(self, max_duration: int = 86400) -> bool:`,
+      },
+      {
+        id: 'auth/models.py::UserProfile.has_role',
+        file: 'auth/models.py',
+        name: 'has_role',
+        kind: 'method',
+        parentModule: 'auth/models.py',
+        lineStart: 62,
+        lineEnd: 68,
+        changeStatus: 'added',
+        description: 'Verifies user profile includes the specified permission role tag.',
+        sourceSnippet: `    def has_role(self, role_name: str) -> bool:
+        return role_name in self.roles`,
+        gitDiff: `+++ b/auth/models.py
+@@ -0,0 +1,4 @@
++    def has_role(self, role_name: str) -> bool:`,
       },
 
       // --- tests/test_auth.py (6 symbols) ---

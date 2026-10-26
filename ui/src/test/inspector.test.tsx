@@ -106,7 +106,7 @@ describe('InspectorDrawer Component', () => {
 
     // File name and cluster info
     expect(screen.getByText('tokens.py')).toBeDefined();
-    expect(screen.getByText(/Symbols in File \(8\)/i)).toBeDefined();
+    expect(screen.getByText(/Symbols in File \(10\)/i)).toBeDefined();
     expect(screen.getByText(/Tests Touching This File/i)).toBeDefined();
   });
 

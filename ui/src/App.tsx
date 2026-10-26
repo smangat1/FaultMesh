@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FaultMeshAdapter } from './adapter';
 import { FixtureAdapter } from './adapter';
-import type { RunSummary, TestItem, GraphData } from './types';
+import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header } from './components/Header';
-import { TestList } from './components/TestList';
-import { TestDetailsPane } from './components/TestDetailsPane';
+import { Sidebar } from './components/Sidebar';
 import { GraphView } from './components/GraphView';
+import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import './styles/theme.css';
@@ -17,7 +17,7 @@ interface AppProps {
 }
 
 export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
-  const [activeView, setActiveView] = useState<'investigation' | 'evidence_map' | 'diagnostics'>('investigation');
+  const [activeView, setActiveView] = useState<'evidence_map' | 'diagnostics' | 'investigation'>('evidence_map');
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [tests, setTests] = useState<TestItem[]>([]);
@@ -26,9 +26,17 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
     edges: [],
     unresolvedReferences: [],
     parseErrors: [],
+    files: [],
   });
+
+  // Selection states
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+
+  // Shortlist and File cluster collapse states
+  const [pinnedSymbols, setPinnedSymbols] = useState<PinnedSymbol[]>([]);
+  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
 
   // Loading & Error States
   const [isLoadingRuns, setIsLoadingRuns] = useState<boolean>(true);
@@ -47,7 +55,6 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
       const loadedRuns = await adapter.getRuns();
       setRuns(loadedRuns);
       if (loadedRuns.length > 0) {
-        // Adopt first valid run if current ID is null or missing from loaded runs
         setActiveRunId((prev) => {
           if (prev && loadedRuns.some((r) => r.id === prev)) {
             return prev;
@@ -86,13 +93,14 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
       setTests(loadedTests);
       setGraphData(loadedGraph);
 
-      // Default select: failing test > error test > first test > null
+      // Default select: failing test as highlight layer (or first test)
       const failingTest = loadedTests.find((t) => t.status === 'fail');
       const errorTest = loadedTests.find((t) => t.status === 'error');
       const defaultTest = failingTest || errorTest || loadedTests[0] || null;
 
       setSelectedTestId(defaultTest ? defaultTest.id : null);
       setSelectedNodeId(null);
+      setSelectedFile(null);
     } catch (err) {
       if (currentSeq !== requestSeq.current) return;
       setRunDataError(err instanceof Error ? err.message : `Failed to load artifacts for run ${runId}`);
@@ -106,8 +114,10 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
   useEffect(() => {
     if (!activeRunId) {
       setTests([]);
-      setGraphData({ nodes: [], edges: [], unresolvedReferences: [], parseErrors: [] });
+      setGraphData({ nodes: [], edges: [], unresolvedReferences: [], parseErrors: [], files: [] });
       setSelectedTestId(null);
+      setSelectedNodeId(null);
+      setSelectedFile(null);
       return;
     }
     loadActiveRunData(activeRunId);
@@ -121,9 +131,63 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
     (graphData.parseErrors?.length || 0) +
     (activeRun?.errorMessage ? 1 : 0);
 
-  const handleNavigateToEvidenceMap = (testId: string) => {
+  // Shortlist management
+  const handlePinSymbol = (symbol: PinnedSymbol) => {
+    setPinnedSymbols((prev) => {
+      if (prev.some((p) => p.id === symbol.id)) return prev;
+      return [...prev, symbol];
+    });
+  };
+
+  const handleUnpinSymbol = (symbolId: string) => {
+    setPinnedSymbols((prev) => prev.filter((p) => p.id !== symbolId));
+  };
+
+  // File cluster collapse management
+  const handleToggleCollapseFile = (file: string) => {
+    setCollapsedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(file)) next.delete(file);
+      else next.add(file);
+      return next;
+    });
+  };
+
+  const handleCollapseAllFiles = () => {
+    const allFiles = new Set((graphData.files || []).map((fc) => fc.file));
+    setCollapsedFiles(allFiles);
+  };
+
+  const handleExpandAllFiles = () => {
+    setCollapsedFiles(new Set());
+  };
+
+  const handleSelectNode = (nodeId: string | null) => {
+    setSelectedNodeId(nodeId);
+    if (nodeId) {
+      setSelectedFile(null);
+    }
+  };
+
+  const handleSelectFile = (file: string | null) => {
+    setSelectedFile(file);
+    if (file) {
+      setSelectedNodeId(null);
+    }
+  };
+
+  const handleSelectTest = (testId: string | null) => {
     setSelectedTestId(testId);
-    setActiveView('evidence_map');
+    if (testId) {
+      setSelectedNodeId(null);
+      setSelectedFile(null);
+    }
+  };
+
+  const handleCloseInspector = () => {
+    setSelectedNodeId(null);
+    setSelectedFile(null);
+    setSelectedTestId(null);
   };
 
   return (
@@ -134,7 +198,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
         height: '100vh',
         width: '100vw',
         overflow: 'hidden',
-        backgroundColor: 'var(--bg-app)',
+        backgroundColor: '#101114',
         color: 'var(--text-primary)',
       }}
     >
@@ -256,7 +320,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
           </div>
         )}
 
-        {/* Workspace Body */}
+        {/* Holistic Workspace Body */}
         {!runsError && runs.length > 0 && !runDataError && (
           <>
             {activeView === 'diagnostics' ? (
@@ -269,48 +333,74 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
                   height: '100%',
                   minWidth: 0,
                   overflow: 'hidden',
+                  position: 'relative',
                 }}
               >
-                {/* Left Test Rail: Search & Status Filters */}
-                <TestList
+                {/* 1. Left Zotero-like Sidebar (Tests, Pinned Shortlist, Files) */}
+                <Sidebar
                   tests={tests}
                   selectedTestId={selectedTestId}
-                  onSelectTest={(testId) => setSelectedTestId(testId)}
+                  onSelectTest={handleSelectTest}
+                  files={graphData.files}
+                  selectedFile={selectedFile}
+                  onSelectFile={handleSelectFile}
+                  collapsedFiles={collapsedFiles}
+                  onToggleCollapseFile={handleToggleCollapseFile}
+                  nodes={graphData.nodes}
+                  pinnedSymbols={pinnedSymbols}
+                  onPinSymbol={handlePinSymbol}
+                  onUnpinSymbol={handleUnpinSymbol}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={handleSelectNode}
                 />
 
-                {/* Main Content Area */}
+                {/* 2. Center: Dominant Whole-Project Map */}
                 <div
                   style={{
                     flex: 1,
                     minWidth: 0,
                     height: '100%',
                     overflow: 'hidden',
-                    backgroundColor: 'var(--bg-app)',
+                    backgroundColor: '#101114',
+                    position: 'relative',
                   }}
                 >
-                  {activeView === 'investigation' && (
-                    <TestDetailsPane
-                      test={tests.find((t) => t.id === selectedTestId) || null}
-                      allNodes={graphData.nodes}
-                      onNavigateToEvidenceMap={handleNavigateToEvidenceMap}
-                      selectedNodeId={selectedNodeId}
-                      onSelectNode={setSelectedNodeId}
-                    />
-                  )}
-
-                  {activeView === 'evidence_map' && (
-                    <GraphView
-                      graphData={graphData}
-                      tests={tests}
-                      selectedTestId={selectedTestId}
-                      onSelectTest={setSelectedTestId}
-                      selectedNodeId={selectedNodeId}
-                      onSelectNode={setSelectedNodeId}
-                      runStatus={activeRun?.status}
-                      errorMessage={activeRun?.errorMessage}
-                    />
-                  )}
+                  <GraphView
+                    graphData={graphData}
+                    tests={tests}
+                    selectedTestId={selectedTestId}
+                    onSelectTest={handleSelectTest}
+                    selectedNodeId={selectedNodeId}
+                    onSelectNode={handleSelectNode}
+                    selectedFile={selectedFile}
+                    onSelectFile={handleSelectFile}
+                    pinnedSymbolIds={pinnedSymbols.map((p) => p.id)}
+                    collapsedFiles={collapsedFiles}
+                    onToggleCollapseFile={handleToggleCollapseFile}
+                    onCollapseAllFiles={handleCollapseAllFiles}
+                    onExpandAllFiles={handleExpandAllFiles}
+                    runStatus={activeRun?.status}
+                    errorMessage={activeRun?.errorMessage}
+                  />
                 </div>
+
+                {/* 3. Right: Contextual Slide-Out Inspector Drawer */}
+                <InspectorDrawer
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={handleSelectNode}
+                  selectedTestId={selectedTestId}
+                  onSelectTest={handleSelectTest}
+                  selectedFile={selectedFile}
+                  onSelectFile={handleSelectFile}
+                  nodes={graphData.nodes}
+                  edges={graphData.edges}
+                  tests={tests}
+                  files={graphData.files}
+                  pinnedSymbols={pinnedSymbols}
+                  onPinSymbol={handlePinSymbol}
+                  onUnpinSymbol={handleUnpinSymbol}
+                  onClose={handleCloseInspector}
+                />
               </div>
             )}
           </>

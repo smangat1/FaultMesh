@@ -93,17 +93,17 @@ describe('FixtureAdapter', () => {
 
     // Total nodes in graph must match stats
     expect(graph.nodes.length).toBe(run!.stats.totalNodes);
-    expect(run!.stats.totalNodes).toBe(54);
+    expect(run!.stats.totalNodes).toBe(62);
     expect(run!.stats.modifiedNodes).toBe(1);
-    expect(run!.stats.addedNodes).toBe(14);
-    expect(run!.stats.totalChangedNodes).toBe(15);
+    expect(run!.stats.addedNodes).toBe(16);
+    expect(run!.stats.totalChangedNodes).toBe(17);
 
     // Verify 8 file clusters
     expect(graph.files).toBeDefined();
     expect(graph.files?.length).toBe(8);
     const tokensFile = graph.files?.find((f) => f.file === 'auth/tokens.py');
     expect(tokensFile).toBeDefined();
-    expect(tokensFile?.symbolCount).toBe(8);
+    expect(tokensFile?.symbolCount).toBe(10);
 
     // Verify grounded descriptions on code nodes
     const nodeWithDesc = graph.nodes.find((n) => n.id === 'auth/tokens.py::validate_token');
