@@ -151,3 +151,19 @@ def test_missing_git_binary_is_reported(tmp_path: Path, monkeypatch: pytest.Monk
     result = compare_git(tmp_path, build_structure_index(tmp_path))
     assert result.comparison.available is False
     assert result.comparison.error == "git executable is unavailable"
+
+
+def test_project_subdirectory_is_scoped_to_that_project(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    project = root / "examples" / "small"
+    project.mkdir(parents=True)
+    _git(root, "init", "-q")
+    (root / "outside.py").write_text("def outside():\n    return 1\n", encoding="utf-8")
+    (project / "inside.py").write_text("def inside():\n    return 1\n", encoding="utf-8")
+    _commit(root, "base")
+    (project / "inside.py").write_text("def inside():\n    return 2\n", encoding="utf-8")
+
+    result = compare_git(project, build_structure_index(project))
+
+    assert {item.path for item in result.head_index.files} == {"inside.py"}
+    assert {item.path for item in result.comparison.files} == {"inside.py"}

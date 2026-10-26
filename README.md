@@ -15,6 +15,9 @@ V2 optionally records per-test line and symbol observations with coverage.py dyn
 It can inspect and export those records without the checkout, then replay one recorded failed
 pytest node in the same immutable prepared image. Coverage proves observation, not causality.
 
+V3 builds a deterministic, non-executing schema 3.0 map of every Python file and symbol, honest
+static imports and possible calls, Git file/symbol changes, and an optional V2 coverage overlay.
+
 The model is not the oracle. A finding reaches `VERIFIED` only after a validated property is
 violated by a stable, repeated execution.
 
@@ -204,12 +207,18 @@ faultmesh test-cases <run-id> --config /path/to/project-run.toml
 faultmesh test-evidence <run-id> '<exact-node-id>' --config /path/to/project-run.toml
 faultmesh replay-test <run-id> '<exact-failed-node-id>' --config /path/to/project-run.toml
 faultmesh export-run <run-id> --config /path/to/project-run.toml
+faultmesh structure /path/to/project --out structure.json
+faultmesh structure-summary structure.json
 ```
 
 See [docs/architecture.md](docs/architecture.md) for architecture, contracts, risks, the complete
 data flow, and Milestone 1 acceptance criteria. The supported programmatic surface is documented in
 [docs/api.md](docs/api.md). To reproduce the automated, Docker-isolation, and real-model checks, use
 the copy-paste procedure in [docs/testing.md](docs/testing.md).
+
+The schema 3.0 structure contract, static-evidence limits, Git comparison behavior, V2 join, and
+real-project V3 acceptance are documented in
+[docs/v3-static-structure.md](docs/v3-static-structure.md).
 
 ## Safety
 

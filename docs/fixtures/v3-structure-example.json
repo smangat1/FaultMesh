@@ -1,0 +1,208 @@
+{
+  "counts": {
+    "edges_by_kind_and_confidence": {
+      "defines:resolved": 3,
+      "imports:resolved": 2,
+      "possible_call:resolved": 2
+    },
+    "external_modules": 0,
+    "files": 3,
+    "parse_errors": 0,
+    "skipped": 11,
+    "symbols": 3,
+    "unresolved": 0
+  },
+  "coverage_overlay": null,
+  "edges": [
+    {
+      "callsite_line": 1,
+      "callsite_path": "src/buggy_python_project/__init__.py",
+      "confidence": "resolved",
+      "external_module": null,
+      "id": "edge:e653769d118368f59c17",
+      "kind": "imports",
+      "layer": "static",
+      "resolution_reason": "from_import_symbol",
+      "source_id": "file:src/buggy_python_project/__init__.py",
+      "target_id": "symbol:src/buggy_python_project/bounds.py:bounded_increment"
+    },
+    {
+      "callsite_line": 1,
+      "callsite_path": "src/buggy_python_project/bounds.py",
+      "confidence": "resolved",
+      "external_module": null,
+      "id": "edge:dcd19fdf5b55564a7383",
+      "kind": "defines",
+      "layer": "static",
+      "resolution_reason": "ast_definition",
+      "source_id": "file:src/buggy_python_project/bounds.py",
+      "target_id": "symbol:src/buggy_python_project/bounds.py:bounded_increment"
+    },
+    {
+      "callsite_line": 1,
+      "callsite_path": "tests/test_bounds.py",
+      "confidence": "resolved",
+      "external_module": null,
+      "id": "edge:e033142c3b6275f6015e",
+      "kind": "imports",
+      "layer": "static",
+      "resolution_reason": "from_import_symbol",
+      "source_id": "file:tests/test_bounds.py",
+      "target_id": "symbol:src/buggy_python_project/bounds.py:bounded_increment"
+    },
+    {
+      "callsite_line": 4,
+      "callsite_path": "tests/test_bounds.py",
+      "confidence": "resolved",
+      "external_module": null,
+      "id": "edge:9127a237e31e2bd6da76",
+      "kind": "defines",
+      "layer": "static",
+      "resolution_reason": "ast_definition",
+      "source_id": "file:tests/test_bounds.py",
+      "target_id": "symbol:tests/test_bounds.py:test_increments_an_ordinary_value"
+    },
+    {
+      "callsite_line": 5,
+      "callsite_path": "tests/test_bounds.py",
+      "confidence": "resolved",
+      "external_module": null,
+      "id": "edge:dac24948c6c6ba45e115",
+      "kind": "possible_call",
+      "layer": "static",
+      "resolution_reason": "import_binding",
+      "source_id": "symbol:tests/test_bounds.py:test_increments_an_ordinary_value",
+      "target_id": "symbol:src/buggy_python_project/bounds.py:bounded_increment"
+    },
+    {
+      "callsite_line": 8,
+      "callsite_path": "tests/test_bounds.py",
+      "confidence": "resolved",
+      "external_module": null,
+      "id": "edge:b99f00d3251e52121ca8",
+      "kind": "defines",
+      "layer": "static",
+      "resolution_reason": "ast_definition",
+      "source_id": "file:tests/test_bounds.py",
+      "target_id": "symbol:tests/test_bounds.py:test_caps_an_already_out_of_range_value"
+    },
+    {
+      "callsite_line": 9,
+      "callsite_path": "tests/test_bounds.py",
+      "confidence": "resolved",
+      "external_module": null,
+      "id": "edge:505bf2d7b8f2467635de",
+      "kind": "possible_call",
+      "layer": "static",
+      "resolution_reason": "import_binding",
+      "source_id": "symbol:tests/test_bounds.py:test_caps_an_already_out_of_range_value",
+      "target_id": "symbol:src/buggy_python_project/bounds.py:bounded_increment"
+    }
+  ],
+  "envelope": {
+    "base_sha": "81c735276d12befab39b61253fa9b80f12e70dc1",
+    "content_sha256": "ed90ec7760dc91bdadfebd835c3d0321d013159f21975d6622a496581d026fcf",
+    "dirty": false,
+    "head_is_worktree": true,
+    "head_sha": "81c735276d12befab39b61253fa9b80f12e70dc1",
+    "project_name": "buggy_python_project"
+  },
+  "external_modules": [],
+  "files": [
+    {
+      "content_sha256": "ff9c25a2fda1739e80ec1548edc0508d514491599c9bc1751dc54c453f89bbf0",
+      "id": "file:src/buggy_python_project/__init__.py",
+      "is_test": false,
+      "is_test_heuristic": true,
+      "line_count": 4,
+      "module": "buggy_python_project",
+      "parse_error": null,
+      "path": "src/buggy_python_project/__init__.py"
+    },
+    {
+      "content_sha256": "38b6fbeb00deee15e03805d1c86a4794f086c276cd074f799792f0334f926046",
+      "id": "file:src/buggy_python_project/bounds.py",
+      "is_test": false,
+      "is_test_heuristic": true,
+      "line_count": 9,
+      "module": "buggy_python_project.bounds",
+      "parse_error": null,
+      "path": "src/buggy_python_project/bounds.py"
+    },
+    {
+      "content_sha256": "697f05b30633a434a6a38b0bcfa95d7717379ec3d6669917365c0541eb4a56e0",
+      "id": "file:tests/test_bounds.py",
+      "is_test": true,
+      "is_test_heuristic": true,
+      "line_count": 10,
+      "module": "tests.test_bounds",
+      "parse_error": null,
+      "path": "tests/test_bounds.py"
+    }
+  ],
+  "git": {
+    "available": true,
+    "base": "81c735276d12befab39b61253fa9b80f12e70dc1",
+    "detached": false,
+    "dirty": false,
+    "error": null,
+    "files": [
+      {"old_path": null, "path": "src/buggy_python_project/__init__.py", "python": true, "similarity": null, "status": "unchanged", "untracked": false},
+      {"old_path": null, "path": "src/buggy_python_project/bounds.py", "python": true, "similarity": null, "status": "unchanged", "untracked": false},
+      {"old_path": null, "path": "tests/test_bounds.py", "python": true, "similarity": null, "status": "unchanged", "untracked": false}
+    ],
+    "head": "81c735276d12befab39b61253fa9b80f12e70dc1",
+    "head_is_worktree": true,
+    "non_python_changes": 0,
+    "shallow": false,
+    "skipped_submodules": 0,
+    "symbols": [
+      {"method": "line-range overlap and source-segment hash", "old_symbol_id": null, "status": "unchanged", "symbol_id": "symbol:src/buggy_python_project/bounds.py:bounded_increment"},
+      {"method": "line-range overlap and source-segment hash", "old_symbol_id": null, "status": "unchanged", "symbol_id": "symbol:tests/test_bounds.py:test_caps_an_already_out_of_range_value"},
+      {"method": "line-range overlap and source-segment hash", "old_symbol_id": null, "status": "unchanged", "symbol_id": "symbol:tests/test_bounds.py:test_increments_an_ordinary_value"}
+    ],
+    "worktree_content_sha256": "fe989c1926f4ac4b5bd4d02868411392bddd2db48c0e5acafb72b843d2f66d9e"
+  },
+  "limitations": [
+    "Static edges are source-derived possibilities, not proof that a call occurs at runtime.",
+    "Absence of an edge is not proof that no call is possible.",
+    "No type inference is performed; dynamic dispatch can cause false negatives.",
+    "Dynamic imports, getattr, monkeypatching, decorators, native code, and runtime mutation may not resolve.",
+    "Test-file classification is a path-based heuristic.",
+    "Git symbol changes use line-range overlap and source-segment hashes, not semantic equivalence."
+  ],
+  "parse_errors": [],
+  "possible_impact": [],
+  "schema_version": "3.0",
+  "skips": [
+    {"count": 10, "path": ".faultmesh", "reason": "ignored_directory"},
+    {"count": 1, "path": "src/buggy_python_project/__pycache__", "reason": "ignored_directory"}
+  ],
+  "symbols": [
+    {
+      "bases": [],
+      "content_sha256": "ff446b1042aa7ae2d074b9309ea2ee1beb7f475988df2d924791f316c2f0de3a",
+      "decorators": [],
+      "disambiguator": 1,
+      "docstring": {"source": "docstring", "text": "Return ``value + 1`` but never exceed ``maximum``."},
+      "end_line": 8,
+      "id": "symbol:src/buggy_python_project/bounds.py:bounded_increment",
+      "kind": "function",
+      "name": "bounded_increment",
+      "parameter_names": ["value", "maximum"],
+      "parent_id": "file:src/buggy_python_project/bounds.py",
+      "path": "src/buggy_python_project/bounds.py",
+      "qualified_name": "bounded_increment",
+      "removed": false,
+      "signature": "(value: int, maximum: int) -> int",
+      "start_line": 1
+    },
+    {
+      "bases": [], "content_sha256": "81389f41553fdd6f1aad4e6e143b09a76c5c7394b9bb83085c5e4f9a1a4dc2bb", "decorators": [], "disambiguator": 1, "docstring": null, "end_line": 5, "id": "symbol:tests/test_bounds.py:test_increments_an_ordinary_value", "kind": "function", "name": "test_increments_an_ordinary_value", "parameter_names": [], "parent_id": "file:tests/test_bounds.py", "path": "tests/test_bounds.py", "qualified_name": "test_increments_an_ordinary_value", "removed": false, "signature": "() -> None", "start_line": 4
+    },
+    {
+      "bases": [], "content_sha256": "f43f771c0ef869f1c0c621e1e01970d540408880a690f882fd3acdc2873fc684", "decorators": [], "disambiguator": 1, "docstring": null, "end_line": 9, "id": "symbol:tests/test_bounds.py:test_caps_an_already_out_of_range_value", "kind": "function", "name": "test_caps_an_already_out_of_range_value", "parameter_names": [], "parent_id": "file:tests/test_bounds.py", "path": "tests/test_bounds.py", "qualified_name": "test_caps_an_already_out_of_range_value", "removed": false, "signature": "() -> None", "start_line": 8
+    }
+  ],
+  "unresolved": []
+}

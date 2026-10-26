@@ -26,6 +26,8 @@ def _sha256(data: bytes) -> str:
 
 def module_name(path: str) -> str:
     parts = path.removesuffix(".py").split("/")
+    if parts[0] == "src" and len(parts) > 1:
+        parts = parts[1:]
     if parts[-1] == "__init__":
         parts = parts[:-1]
     return ".".join(parts)

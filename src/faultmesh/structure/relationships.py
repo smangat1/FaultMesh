@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import hashlib
 from collections import defaultdict
 from dataclasses import dataclass
@@ -53,6 +54,7 @@ class _RelationshipVisitor(ast.NodeVisitor):
         file_id: str,
         module_files: dict[str, str],
         symbols: list[SymbolNode],
+        exported_symbols: dict[tuple[str, str], list[SymbolNode]],
     ) -> None:
         self.path = path
         self.module = module
@@ -61,13 +63,17 @@ class _RelationshipVisitor(ast.NodeVisitor):
         self.symbols = symbols
         self.symbols_by_id = {item.id: item for item in symbols}
         self.top_by_module_name: dict[tuple[str, str], list[SymbolNode]] = defaultdict(list)
+        self.top_by_module_name.update(exported_symbols)
         self.children: dict[tuple[str, str], list[SymbolNode]] = defaultdict(list)
         for symbol in symbols:
             target_module = next(
                 (name for name, target in module_files.items() if target == f"file:{symbol.path}"),
                 "",
             )
-            if symbol.parent_id == f"file:{symbol.path}":
+            if (
+                symbol.parent_id == f"file:{symbol.path}"
+                and symbol not in self.top_by_module_name[(target_module, symbol.name)]
+            ):
                 self.top_by_module_name[(target_module, symbol.name)].append(symbol)
             self.children[(symbol.parent_id, symbol.name)].append(symbol)
         self.scope_names: list[str] = []
@@ -170,18 +176,6 @@ class _RelationshipVisitor(ast.NodeVisitor):
                 continue
             bound = alias.asname or alias.name
             submodule = f"{base}.{alias.name}" if base else alias.name
-            if submodule in self.module_files:
-                target_id = self.module_files[submodule]
-                self.bindings[-1][bound] = _Binding(module=submodule)
-                self._add_edge(
-                    kind=EdgeKind.IMPORTS,
-                    source_id=self._source_id(),
-                    target_id=target_id,
-                    line=node.lineno,
-                    reason="from_import_submodule",
-                    confidence=EdgeConfidence.RESOLVED,
-                )
-                continue
             candidates = self.top_by_module_name.get((base, alias.name), [])
             if candidates:
                 confidence = (
@@ -202,6 +196,18 @@ class _RelationshipVisitor(ast.NodeVisitor):
                     self.bindings[-1][bound] = _Binding(
                         module=base, target_id=candidates[0].id
                     )
+                continue
+            if submodule in self.module_files:
+                target_id = self.module_files[submodule]
+                self.bindings[-1][bound] = _Binding(module=submodule)
+                self._add_edge(
+                    kind=EdgeKind.IMPORTS,
+                    source_id=self._source_id(),
+                    target_id=target_id,
+                    line=node.lineno,
+                    reason="from_import_submodule",
+                    confidence=EdgeConfidence.RESOLVED,
+                )
                 continue
             if base in self.module_files:
                 self._unresolved(node, ast.unparse(node), "missing_project_export")
@@ -229,6 +235,9 @@ class _RelationshipVisitor(ast.NodeVisitor):
         self._enter_symbol(node.name, "function", node)
 
     def _enter_symbol(self, name: str, kind: str, node: ast.AST) -> None:
+        decorators = getattr(node, "decorator_list", [])
+        for decorator in decorators:
+            self._unresolved(decorator, ast.unparse(decorator), "decorator_semantics")
         qualified = ".".join([*self.scope_names, name])
         self.occurrences[qualified] += 1
         occurrence = self.occurrences[qualified]
@@ -299,6 +308,9 @@ class _RelationshipVisitor(ast.NodeVisitor):
         if binding:
             self.external.add(binding.module)
             self._unresolved(node, name, "external_callable")
+        elif hasattr(builtins, name):
+            self.external.add("builtins")
+            self._unresolved(node, name, "external_builtin")
         else:
             self._unresolved(node, name, "unknown_name")
 
@@ -388,6 +400,37 @@ def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
     all_edges: list[StaticEdge] = []
     unresolved: list[UnresolvedReference] = []
     external: set[str] = set()
+    exported_symbols: dict[tuple[str, str], list[SymbolNode]] = defaultdict(list)
+    file_by_path = {item.path: item for item in index.files}
+    for symbol in index.symbols:
+        if symbol.parent_id == f"file:{symbol.path}":
+            module = file_by_path[symbol.path].module
+            exported_symbols[(module, symbol.name)].append(symbol)
+    for file in index.files:
+        if file.parse_error is not None:
+            continue
+        tree = ast.parse((root / file.path).read_text(encoding="utf-8"), filename=file.path)
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            base = (
+                _relative_module(
+                    file.module,
+                    level=node.level,
+                    module=node.module,
+                    is_package=(
+                        file.path == "__init__.py" or file.path.endswith("/__init__.py")
+                    ),
+                )
+                if node.level
+                else (node.module or "")
+            )
+            for alias in node.names:
+                candidates = exported_symbols.get((base, alias.name), [])
+                key = (file.module, alias.asname or alias.name)
+                for candidate in candidates:
+                    if candidate not in exported_symbols[key]:
+                        exported_symbols[key].append(candidate)
     for symbol in index.symbols:
         kind = EdgeKind.DEFINES if symbol.parent_id.startswith("file:") else EdgeKind.CONTAINS
         all_edges.append(
@@ -413,6 +456,7 @@ def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
             file_id=file.id,
             module_files=module_files,
             symbols=index.symbols,
+            exported_symbols=exported_symbols,
         )
         visitor.visit(tree)
         all_edges.extend(visitor.edges)

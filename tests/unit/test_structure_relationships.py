@@ -57,6 +57,31 @@ def caller():
     assert any(edge.resolution_reason == "from_import_submodule" for edge in result.edges)
 
 
+def test_relationships_resolve_src_layout_modules(tmp_path: Path) -> None:
+    package = tmp_path / "src" / "project"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("from project.value import value\n", encoding="utf-8")
+    (package / "value.py").write_text("def value():\n    return 1\n", encoding="utf-8")
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_value.py").write_text(
+        "from project import value\n\ndef test_value():\n    assert value() == 1\n",
+        encoding="utf-8",
+    )
+
+    index = build_structure_index(tmp_path)
+    result = build_relationships(tmp_path, index)
+
+    modules = {item.path: item.module for item in index.files}
+    assert modules["src/project/__init__.py"] == "project"
+    assert modules["src/project/value.py"] == "project.value"
+    assert any(
+        edge.kind == EdgeKind.POSSIBLE_CALL
+        and edge.target_id == "symbol:src/project/value.py:value"
+        for edge in result.edges
+    )
+
+
 def test_relationships_handle_methods_ambiguity_and_unresolved_references(tmp_path: Path) -> None:
     (tmp_path / "sample.py").write_text(
         """from unknown import *
@@ -74,6 +99,7 @@ class Base:
         return 1
 
 class Child(Base):
+    @decorate
     def direct(self):
         return self.inherited()
 
@@ -100,6 +126,12 @@ def caller(value):
     assert {edge.confidence for edge in repeated} == {EdgeConfidence.AMBIGUOUS}
     assert any(edge.resolution_reason == "self_method" for edge in result.edges)
     reasons = {item.reason for item in result.unresolved}
-    expected = {"star_import", "dynamic_reference", "dynamic_import", "unknown_receiver_type"}
+    expected = {
+        "star_import",
+        "dynamic_reference",
+        "dynamic_import",
+        "unknown_receiver_type",
+        "decorator_semantics",
+    }
     assert expected <= reasons
     assert "importlib" in result.external_modules
