@@ -178,6 +178,13 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setCollapsedFiles(new Set());
   };
 
+  const handleSelectViewMode = (mode: GraphViewMode) => {
+    setViewMode(mode);
+    if (mode === 'changes') {
+      setSelectedTestId(null);
+    }
+  };
+
   const handleSelectNode = (nodeId: string | null) => {
     setSelectedNodeId(nodeId);
     if (nodeId) {
@@ -501,7 +508,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     onCollapseAllFiles={handleCollapseAllFiles}
                     onExpandAllFiles={handleExpandAllFiles}
                     viewMode={viewMode}
-                    onSelectViewMode={setViewMode}
+                    onSelectViewMode={handleSelectViewMode}
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
                     isAgentMode={isAgentActive}

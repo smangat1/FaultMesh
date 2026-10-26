@@ -132,7 +132,9 @@ export function computeDeterministicPositions(
 
     sortedFileNodes.forEach((node, sIdx) => {
       const angle = (sIdx * ((2 * Math.PI) / Math.max(count, 1))) + 0.35;
-      const radius = 45 + ((sIdx * 37) % 35);
+      // Stagger radius between alternating orbits for sibling nodes to prevent cluster crowding
+      const radialOffset = count > 5 ? (sIdx % 2 === 0 ? 0 : 26) : 0;
+      const radius = 50 + radialOffset;
       const symX = Math.round(fileCenterX + Math.cos(angle) * radius);
       const symY = Math.round(fileCenterY + Math.sin(angle) * radius);
       positions[node.id] = { x: symX, y: symY };
@@ -267,11 +269,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     const positions = computeDeterministicPositions(fileClusters, graphData.nodes);
 
-    // Compute execution step order if an active test is being traced
+    // Compute execution step order if an active test is being traced (Structure mode / test selection context only)
     const edgeStepMap = new Map<string, number>();
     const nodeStepMap = new Map<string, number>();
 
-    if (activeTest) {
+    if (activeTest && currentViewMode !== 'changes') {
       const observedEdges = graphData.edges.filter(
         (e) => e.category === 'runtime_observed' && e.testIds?.includes(activeTest.id)
       );
@@ -295,6 +297,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
         });
       }
     }
+
+    // Map deterministic sibling order within each file cluster for minimal label stagger
+    const nodeIndexInFile = new Map<string, number>();
+    fileClusters.forEach((fc) => {
+      const fNodes = graphData.nodes.filter((n) => n.file === fc.file);
+      const sorted = [...fNodes].sort((a, b) => {
+        if (a.changeStatus === 'modified') return -1;
+        if (b.changeStatus === 'modified') return 1;
+        return a.lineStart - b.lineStart;
+      });
+      sorted.forEach((n, idx) => {
+        nodeIndexInFile.set(n.id, idx);
+      });
+    });
 
     // 1. Add File Clusters (clean filename label without cluttering persistent text)
     fileClusters.forEach((fc) => {
@@ -334,6 +350,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const formattedLabel = `${stepPrefix}${n.name}`;
       const short = n.name.length > 18 ? `${n.name.substring(0, 16)}…` : n.name;
 
+      const sIdx = nodeIndexInFile.get(n.id) ?? 0;
+      const isOdd = sIdx % 2 === 1;
+      const staggerClass = isOdd ? 'label-stagger-top' : 'label-stagger-bottom';
+
       nodes.push({
         data: {
           id: n.id,
@@ -350,6 +370,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           stepNumber,
           rawName: n.name,
         },
+        classes: staggerClass,
         position: pos,
       });
 
@@ -561,6 +582,21 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'text-outline-width': 1.0,
               'text-outline-opacity': 0.95,
               'z-index': 15,
+            },
+          },
+          // Minimal label stagger/offset for sibling function nodes in expanded clusters
+          {
+            selector: 'node[!isFileCluster].label-stagger-bottom',
+            style: {
+              'text-valign': 'bottom',
+              'text-margin-y': 4,
+            },
+          },
+          {
+            selector: 'node[!isFileCluster].label-stagger-top',
+            style: {
+              'text-valign': 'top',
+              'text-margin-y': -4,
             },
           },
           // Class nodes
@@ -1330,6 +1366,38 @@ export const GraphView: React.FC<GraphViewProps> = ({
             }
           });
         }
+      } else if (currentViewMode === 'changes') {
+        // Changes Mode: clear test execution trace, highlight modified and added symbols, dim unchanged
+        cy.nodes().forEach((n) => {
+          if (n.data('isFileCluster')) {
+            n.removeClass('dimmed');
+            return;
+          }
+          const status = n.data('changeStatus');
+          if (status === 'modified' || status === 'added') {
+            n.addClass('exercised');
+            n.removeClass('dimmed');
+          } else {
+            n.removeClass('exercised');
+            n.addClass('dimmed');
+          }
+        });
+        // Clear blue test execution path from changes overlay
+        cy.edges().removeClass('observed-for-test');
+        cy.edges().forEach((e) => {
+          const src = cy.getElementById(e.data('source'));
+          const tgt = cy.getElementById(e.data('target'));
+          const isRelatedToChange =
+            src.data('changeStatus') === 'modified' ||
+            src.data('changeStatus') === 'added' ||
+            tgt.data('changeStatus') === 'modified' ||
+            tgt.data('changeStatus') === 'added';
+          if (isRelatedToChange) {
+            e.removeClass('dimmed');
+          } else {
+            e.addClass('dimmed');
+          }
+        });
       } else if (activeTest) {
         // Highlighting active test coverage & runtime calls when no individual node is selected
         const exercisedSet = new Set(activeTest.exercisedNodeIds);
@@ -1362,23 +1430,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
             e.addClass('dimmed');
           }
         });
-      } else if (currentViewMode === 'changes') {
-        // Changes Mode: highlight modified and added symbols, dim unchanged
-        cy.nodes().forEach((n) => {
-          if (n.data('isFileCluster')) {
-            n.removeClass('dimmed');
-            return;
-          }
-          const status = n.data('changeStatus');
-          if (status === 'modified' || status === 'added') {
-            n.addClass('exercised');
-            n.removeClass('dimmed');
-          } else {
-            n.removeClass('exercised');
-            n.addClass('dimmed');
-          }
-        });
-        cy.edges().removeClass('observed-for-test');
       } else {
         // All Code / Structure Mode: full contrast on all elements
         cy.nodes().removeClass('dimmed').removeClass('exercised');

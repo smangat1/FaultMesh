@@ -66,12 +66,12 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
       expect(screen.getAllByText('auth/service.py').length).toBeGreaterThan(0);
     });
 
-    // Verify REAL explanation card is displayed
+    // Verify REAL explanation card is displayed with progressive honesty
     expect(screen.getByText(/Remediation Explanation & Analysis/i)).toBeDefined();
     expect(screen.getByText(/Defect Isolation:/i)).toBeDefined();
-    expect(screen.getByText(/Root Cause:/i)).toBeDefined();
-    expect(screen.getByText(/Fix Applied:/i)).toBeDefined();
-    expect(screen.getByText(/Verification:/i)).toBeDefined();
+    // Fix Applied and Verification are progressively hidden at step 1
+    expect(screen.queryByText(/Fix Applied:/i)).toBeNull();
+    expect(screen.queryByText(/Verification:/i)).toBeNull();
   });
 
   it('swaps active file inspection between tokens, test, and service contracts', async () => {

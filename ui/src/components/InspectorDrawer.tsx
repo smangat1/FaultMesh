@@ -495,22 +495,28 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', lineHeight: 1.5 }}>
-                    <div style={{ opacity: agentPhase === 'diagnosing' || agentPhase === 'resolved' ? 1 : 0.85 }}>
+                    <div>
                       <span style={{ color: '#f87171', fontWeight: 600 }}>Defect Isolation: </span>
                       <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.defectSummary}</span>
                     </div>
-                    <div style={{ opacity: agentPhase === 'inspecting' || agentPhase === 'patching' || agentPhase === 'resolved' ? 1 : 0.75 }}>
-                      <span style={{ color: '#f59e0b', fontWeight: 600 }}>Root Cause: </span>
-                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.rootCause}</span>
-                    </div>
-                    <div style={{ opacity: agentPhase === 'patching' || agentPhase === 'resolved' ? 1 : 0.75 }}>
-                      <span style={{ color: '#38bdf8', fontWeight: 600 }}>Fix Applied: </span>
-                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.remediation}</span>
-                    </div>
-                    <div style={{ opacity: agentPhase === 'verifying' || agentPhase === 'resolved' ? 1 : 0.75 }}>
-                      <span style={{ color: '#34d399', fontWeight: 600 }}>Verification: </span>
-                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.verification}</span>
-                    </div>
+                    {(agentPhase === 'inspecting' || agentPhase === 'patching' || agentPhase === 'verifying' || agentPhase === 'resolved') && (
+                      <div>
+                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>Root Cause: </span>
+                        <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.rootCause}</span>
+                      </div>
+                    )}
+                    {(agentPhase === 'patching' || agentPhase === 'verifying' || agentPhase === 'resolved') && (
+                      <div>
+                        <span style={{ color: '#38bdf8', fontWeight: 600 }}>Fix Applied: </span>
+                        <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.remediation}</span>
+                      </div>
+                    )}
+                    {(agentPhase === 'verifying' || agentPhase === 'resolved') && (
+                      <div>
+                        <span style={{ color: '#34d399', fontWeight: 600 }}>Verification: </span>
+                        <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.verification}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

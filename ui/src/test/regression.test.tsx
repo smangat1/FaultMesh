@@ -468,4 +468,46 @@ describe('Holistic Project Map & Semantic Zoom', () => {
     expect(dist2).toBeGreaterThanOrEqual(40);
     expect(dist2).toBeLessThanOrEqual(90);
   });
+
+  it('staggers sibling node radial distance in expanded file clusters to prevent label collision', () => {
+    const positions = computeDeterministicPositions(graph.files || [], graph.nodes);
+
+    // Verify verify_claims and encode_jwt in tokens.py have distinct radial distances
+    const tokensCenter = positions['file:auth/tokens.py'];
+    const verifyNode = positions['auth/tokens.py::verify_claims'];
+    const encodeNode = positions['auth/tokens.py::encode_jwt'];
+
+    expect(tokensCenter).toBeDefined();
+    expect(verifyNode).toBeDefined();
+    expect(encodeNode).toBeDefined();
+
+    const distVerify = Math.hypot(verifyNode.x - tokensCenter.x, verifyNode.y - tokensCenter.y);
+    const distEncode = Math.hypot(encodeNode.x - tokensCenter.x, encodeNode.y - tokensCenter.y);
+
+    // Distinct tiered radial orbits (~48px vs ~80px)
+    expect(Math.abs(distVerify - distEncode)).toBeGreaterThanOrEqual(15);
+  });
+
+  it('clears test execution trace and maintains clean mode hygiene when switching to Changes mode', async () => {
+    render(<App initialScreen="workspace" />);
+
+    // Select the failing test from the tests sidebar
+    const failItem = await screen.findByTitle('tests/test_auth.py::test_login_expired_token');
+    fireEvent.click(failItem);
+
+    // Verify test was selected and Clear button appears
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /clear test highlight/i })).toBeDefined();
+    });
+
+    // Switch to Changes tab
+    const changesTab = screen.getByRole('radio', { name: /changes/i });
+    fireEvent.click(changesTab);
+
+    // In changes mode, selectedTestId is cleared and changes tab is active
+    await waitFor(() => {
+      expect(changesTab.getAttribute('aria-checked')).toBe('true');
+      expect(screen.queryByRole('button', { name: /clear test highlight/i })).toBeNull();
+    });
+  });
 });
