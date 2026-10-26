@@ -1,0 +1,37 @@
+{
+  "name": "faultmesh-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "bin": {
+    "faultmesh-ui": "./bin/faultmesh-ui"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "desktop": "tsc && vite build && electron electron/main.cjs",
+    "start": "npm run desktop",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "cytoscape": "^3.30.4",
+    "lucide-react": "^0.475.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.2.0",
+    "@types/cytoscape": "^3.21.9",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^45.0.0",
+    "jsdom": "^26.0.0",
+    "puppeteer-core": "^25.16.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}

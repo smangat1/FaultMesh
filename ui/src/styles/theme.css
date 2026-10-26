@@ -1,0 +1,282 @@
+:root {
+  /* Coherent Neutral Graphite Palette */
+  --bg-app: #0e1117;
+  --bg-surface: #151922;
+  --bg-raised: #1c222e;
+  --bg-active: #232a38;
+  --bg-code: #0b0e14;
+
+  --border-default: #262f3f;
+  --border-subtle: #1c2330;
+  --border-focus: #3b82f6;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --accent: #3b82f6;
+  --accent-muted: rgba(59, 130, 246, 0.15);
+
+  /* Semantic status colors with text/icon companions */
+  --status-fail: #ef4444;
+  --status-fail-bg: rgba(239, 68, 68, 0.12);
+  --status-fail-border: rgba(239, 68, 68, 0.35);
+
+  --status-error: #f97316;
+  --status-error-bg: rgba(249, 115, 22, 0.12);
+  --status-error-border: rgba(249, 115, 22, 0.35);
+
+  --status-pass: #10b981;
+  --status-pass-bg: rgba(16, 185, 129, 0.12);
+  --status-pass-border: rgba(16, 185, 129, 0.35);
+
+  --status-skipped: #8b5cf6;
+  --status-skipped-bg: rgba(139, 92, 246, 0.12);
+  --status-skipped-border: rgba(139, 92, 246, 0.35);
+
+  /* Code change semantics */
+  --change-modified: #f59e0b;
+  --change-modified-bg: rgba(245, 158, 11, 0.12);
+  --change-modified-border: rgba(245, 158, 11, 0.35);
+
+  --change-added: #06b6d4;
+  --change-added-bg: rgba(6, 182, 212, 0.12);
+  --change-added-border: rgba(6, 182, 212, 0.35);
+
+  --change-unchanged: #64748b;
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Accessibility & Keyboard Focus */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Monospace text */
+code, pre, .font-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Fixture notification banner */
+.fixture-banner {
+  background: #78350f;
+  color: #fef3c7;
+  padding: 4px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #92400e;
+}
+
+/* Buttons */
+button {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  line-height: 1.2;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  user-select: none;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: var(--bg-raised);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--bg-active);
+  border-color: var(--text-muted);
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.btn-ghost {
+  color: var(--text-secondary);
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* Badges */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono);
+}
+.badge-status.fail {
+  background-color: var(--status-fail-bg);
+  color: var(--status-fail);
+  border: 1px solid var(--status-fail-border);
+}
+.badge-status.error {
+  background-color: var(--status-error-bg);
+  color: var(--status-error);
+  border: 1px solid var(--status-error-border);
+}
+.badge-status.pass {
+  background-color: var(--status-pass-bg);
+  color: var(--status-pass);
+  border: 1px solid var(--status-pass-border);
+}
+.badge-status.skipped {
+  background-color: var(--status-skipped-bg);
+  color: var(--status-skipped);
+  border: 1px solid var(--status-skipped-border);
+}
+
+.badge-change {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+.badge-change.modified {
+  background-color: var(--change-modified-bg);
+  color: var(--change-modified);
+  border: 1px solid var(--change-modified-border);
+}
+.badge-change.added {
+  background-color: var(--change-added-bg);
+  color: var(--change-added);
+  border: 1px solid var(--change-added-border);
+}
+.badge-change.unchanged {
+  background-color: rgba(100, 116, 139, 0.12);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+/* Diff formatting */
+.diff-container {
+  background-color: var(--bg-code);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.diff-line {
+  padding: 1px 12px;
+  white-space: pre;
+  word-break: normal;
+}
+.diff-line.added {
+  background-color: rgba(16, 185, 129, 0.14);
+  color: #34d399;
+}
+.diff-line.removed {
+  background-color: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+}
+.diff-line.header {
+  color: #94a3b8;
+  background-color: rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+}
+
+/* Honest Contextual Notice */
+.notice-honest {
+  background-color: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-left: 3px solid var(--change-modified);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.notice-honest strong {
+  color: var(--change-modified);
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
