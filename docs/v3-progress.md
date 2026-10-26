@@ -25,4 +25,5 @@ records. The FaultMesh `src/` scan found 42 files and 390 symbols. Full acceptan
   bindings prevent unsupported source-call edges.
 - Path/type phase: complete — NUL-delimited Git paths preserve exact names; revision scans inspect
   tree modes and skip symlinks/gitlinks.
-- Ghost phase: pending — coherent removed file/symbol hierarchy and hunk boundaries.
+- Ghost phase: complete — removed files/symbols retain base-side hierarchy and edges; counts split
+  current/ghost nodes and zero-length hunk boundaries do not touch adjacent symbols.

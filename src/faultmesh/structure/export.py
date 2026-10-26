@@ -16,6 +16,8 @@ from faultmesh.structure.models import (
     CoverageOverlay,
     CoverageOverlayEntry,
     CoverageOverlayUnmatched,
+    EdgeConfidence,
+    EdgeKind,
     FileNode,
     ImpactNeighbor,
     StaticEdge,
@@ -37,6 +39,30 @@ LIMITATIONS = [
     "Git symbol changes use line-range overlap and source-segment hashes, not semantic "
     "equivalence.",
 ]
+
+
+def _ghost_edges(symbols: Sequence[SymbolNode]) -> list[StaticEdge]:
+    result: list[StaticEdge] = []
+    for symbol in symbols:
+        kind = EdgeKind.DEFINES if symbol.parent_id.startswith("file:") else EdgeKind.CONTAINS
+        identity = "\0".join(
+            [kind.value, symbol.parent_id, symbol.id, symbol.path, str(symbol.start_line), "base"]
+        )
+        result.append(
+            StaticEdge(
+                id=f"edge:{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:20]}",
+                kind=kind,
+                source_id=symbol.parent_id,
+                target_id=symbol.id,
+                callsite_path=symbol.path,
+                callsite_line=symbol.start_line,
+                resolution_reason="base_ast_definition",
+                confidence=EdgeConfidence.RESOLVED,
+                removed=True,
+                revision_side="base",
+            )
+        )
+    return result
 
 
 def load_v2_export(path: Path) -> RunEvidenceExport:
@@ -160,9 +186,25 @@ def build_structure_export(
     )
     with view as source_root:
         relationships = build_relationships(source_root, git.head_index)
+    files = sorted(
+        [*git.head_index.files, *git.removed_files],
+        key=lambda item: (item.path, item.revision_side),
+    )
     symbols = sorted(
         [*git.head_index.symbols, *git.removed_symbols],
-        key=lambda item: (item.path, item.start_line, item.id),
+        key=lambda item: (item.path, item.start_line, item.id, item.revision_side),
+    )
+    edges = sorted(
+        [*relationships.edges, *_ghost_edges(git.removed_symbols)],
+        key=lambda item: (
+            item.callsite_path,
+            item.callsite_line,
+            item.kind,
+            item.source_id,
+            item.target_id or "",
+            item.revision_side,
+            item.id,
+        ),
     )
     overlay = (
         build_coverage_overlay(coverage, git.head_index.files, git.head_index.symbols)
@@ -170,24 +212,30 @@ def build_structure_export(
         else None
     )
     edge_counts: dict[str, int] = {}
-    for edge in relationships.edges:
+    for edge in edges:
         key = f"{edge.kind.value}:{edge.confidence.value}"
         edge_counts[key] = edge_counts.get(key, 0) + 1
     counts = StructureCounts(
-        files=len(git.head_index.files),
+        files=len(files),
+        current_files=len(git.head_index.files),
+        ghost_files=len(git.removed_files),
         symbols=len(symbols),
+        current_symbols=len(git.head_index.symbols),
+        ghost_symbols=len(git.removed_symbols),
         edges_by_kind_and_confidence=dict(sorted(edge_counts.items())),
         unresolved=len(relationships.unresolved),
         external_modules=len(relationships.external_modules),
         skipped=sum(item.count for item in git.head_index.skips),
         parse_errors=len(git.head_index.parse_errors),
     )
-    impact = _possible_impact(symbols, relationships.edges, git.comparison.symbols)
+    impact = _possible_impact(
+        git.head_index.symbols, relationships.edges, git.comparison.symbols
+    )
     body = {
         "project_name": root.name,
-        "files": [item.model_dump(mode="json") for item in git.head_index.files],
+        "files": [item.model_dump(mode="json") for item in files],
         "symbols": [item.model_dump(mode="json") for item in symbols],
-        "edges": [item.model_dump(mode="json") for item in relationships.edges],
+        "edges": [item.model_dump(mode="json") for item in edges],
         "unresolved": [item.model_dump(mode="json") for item in relationships.unresolved],
         "external_modules": relationships.external_modules,
         "git": git.comparison.model_dump(mode="json"),
@@ -210,9 +258,9 @@ def build_structure_export(
             dirty=git.comparison.dirty,
             content_sha256=content_hash,
         ),
-        files=git.head_index.files,
+        files=files,
         symbols=symbols,
-        edges=relationships.edges,
+        edges=edges,
         unresolved=relationships.unresolved,
         external_modules=relationships.external_modules,
         git=git.comparison,

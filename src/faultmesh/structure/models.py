@@ -66,6 +66,8 @@ class FileNode(StrictModel):
     is_test: bool
     is_test_heuristic: Literal[True] = True
     parse_error: str | None = None
+    removed: bool = False
+    revision_side: Literal["head", "base"] = "head"
 
     @field_validator("path")
     @classmethod
@@ -92,6 +94,7 @@ class SymbolNode(StrictModel):
     docstring: DocstringMetadata | None = None
     bases: list[str] = Field(default_factory=list)
     removed: bool = False
+    revision_side: Literal["head", "base"] = "head"
 
 
 class StaticEdge(StrictModel):
@@ -105,6 +108,8 @@ class StaticEdge(StrictModel):
     resolution_reason: str
     confidence: EdgeConfidence
     external_module: str | None = None
+    removed: bool = False
+    revision_side: Literal["head", "base"] = "head"
 
 
 class UnresolvedReference(StrictModel):
@@ -208,7 +213,11 @@ class CoverageOverlay(StrictModel):
 
 class StructureCounts(StrictModel):
     files: int = Field(ge=0)
+    current_files: int = Field(default=0, ge=0)
+    ghost_files: int = Field(default=0, ge=0)
     symbols: int = Field(ge=0)
+    current_symbols: int = Field(default=0, ge=0)
+    ghost_symbols: int = Field(default=0, ge=0)
     edges_by_kind_and_confidence: dict[str, int]
     unresolved: int = Field(ge=0)
     external_modules: int = Field(ge=0)

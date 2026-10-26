@@ -18,6 +18,7 @@ from faultmesh.structure.models import (
     ChangeStatus,
     FileChangeKind,
     FileGitStatus,
+    FileNode,
     GitComparison,
     SkipRecord,
     StructureIndex,
@@ -36,6 +37,7 @@ class StructureGitError(RuntimeError):
 class GitAnalysis:
     comparison: GitComparison
     head_index: StructureIndex
+    removed_files: list[FileNode]
     removed_symbols: list[SymbolNode]
 
 
@@ -346,13 +348,27 @@ def _symbol_statuses(
     }
     statuses: list[SymbolGitStatus] = []
     removed: list[SymbolNode] = []
+    old_to_new = {
+        before.id: new_by_key[key].id
+        for key, before in old_by_key.items()
+        if key in new_by_key
+    }
+    old_to_new.update(
+        {f"file:{old_path}": f"file:{new_path}" for old_path, new_path in renames.items()}
+    )
     for key in sorted(set(old_by_key) | set(new_by_key)):
         before = old_by_key.get(key)
         after = new_by_key.get(key)
         if before is None and after is not None:
             statuses.append(SymbolGitStatus(symbol_id=after.id, status=ChangeStatus.ADDED))
         elif after is None and before is not None:
-            ghost = before.model_copy(update={"removed": True})
+            ghost = before.model_copy(
+                update={
+                    "removed": True,
+                    "revision_side": "base",
+                    "parent_id": old_to_new.get(before.parent_id, before.parent_id),
+                }
+            )
             removed.append(ghost)
             statuses.append(SymbolGitStatus(symbol_id=ghost.id, status=ChangeStatus.REMOVED))
         elif before is not None and after is not None:
@@ -371,10 +387,27 @@ def _symbol_statuses(
     return statuses, removed
 
 
+def _removed_files(
+    old: StructureIndex, changes: list[FileGitStatus]
+) -> list[FileNode]:
+    old_by_path = {item.path: item for item in old.files}
+    result: list[FileNode] = []
+    for change in changes:
+        if change.status != FileChangeKind.DELETED:
+            continue
+        before = old_by_path.get(change.path)
+        if before is not None:
+            result.append(
+                before.model_copy(update={"removed": True, "revision_side": "base"})
+            )
+    return sorted(result, key=lambda item: item.path)
+
+
 def _not_repository(root: Path, current: StructureIndex, error: str) -> GitAnalysis:
     return GitAnalysis(
         comparison=GitComparison(available=False, error=error),
         head_index=current,
+        removed_files=[],
         removed_symbols=[],
     )
 
@@ -419,6 +452,7 @@ def compare_git(
                 symbols=symbols,
             ),
             head_index=current,
+            removed_files=[],
             removed_symbols=[],
         )
     base_sha = _resolve(root, base)
@@ -462,6 +496,7 @@ def compare_git(
     symbol_statuses, removed = _symbol_statuses(
         old_index, head_index, renames, old_hunks, new_hunks
     )
+    removed_files = _removed_files(old_index, changes)
     status_args = ["status", "--porcelain=v1", "--untracked-files=all", "-z"]
     if project_prefix:
         status_args.extend(["--", project_prefix])
@@ -485,5 +520,6 @@ def compare_git(
             skipped_submodules=submodules,
         ),
         head_index=head_index,
+        removed_files=removed_files,
         removed_symbols=removed,
     )

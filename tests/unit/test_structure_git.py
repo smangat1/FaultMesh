@@ -288,3 +288,26 @@ def test_revision_scan_records_gitlinks_without_materializing_them(tmp_path: Pat
     assert ("vendor", "git_submodule") in {
         (item.path, item.reason) for item in result.head_index.skips
     }
+
+
+def test_zero_length_hunks_do_not_modify_adjacent_symbols(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q")
+    original = "def kept():\n    return 1\n\n# old boundary\n"
+    (root / "sample.py").write_text(original, encoding="utf-8")
+    base = _commit(root, "base")
+
+    (root / "sample.py").write_text(
+        original + "# inserted after function\n", encoding="utf-8"
+    )
+    inserted = compare_git(root, build_structure_index(root), base=base)
+    inserted_status = {item.symbol_id: item.status for item in inserted.comparison.symbols}
+    assert inserted_status["symbol:sample.py:kept"] == ChangeStatus.UNCHANGED
+
+    (root / "sample.py").write_text(
+        "def kept():\n    return 1\n", encoding="utf-8"
+    )
+    deleted = compare_git(root, build_structure_index(root), base=base)
+    deleted_status = {item.symbol_id: item.status for item in deleted.comparison.symbols}
+    assert deleted_status["symbol:sample.py:kept"] == ChangeStatus.UNCHANGED

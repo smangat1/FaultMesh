@@ -39,15 +39,18 @@ tree modes and skip symlinks and gitlinks instead of materializing their blobs a
   SHA-256 of the export body.
 - `files[]`: every regular Python file, including empty, isolated, tests, package initializers,
   syntax failures, and non-UTF-8 files. IDs are `file:<path>`. Test classification is labeled as a
-  path heuristic.
+  path heuristic. A deleted base-side file remains as a ghost with `removed=true` and
+  `revision_side=base`.
 - `symbols[]`: classes, functions, methods, async variants, and nested functions. The identity is
   project-relative path plus qualified name; `@N` disambiguates repeated definitions. Each item
   carries its own source-segment hash, line range, signature, parameter names, decorators, bases,
   and only the verbatim first docstring line when one exists. Removed Git symbols remain as ghost
-  nodes with `removed=true`.
+  nodes with `removed=true` and base-side provenance. Their parent IDs always resolve to a current
+  or ghost parent.
 - `edges[]`: `defines`, `contains`, `imports`, and `possible_call`. Every edge has layer `static`, a
   source, optional target, source location, resolution reason, and `resolved`, `ambiguous`, or
-  `unresolved` confidence.
+  `unresolved` confidence. Removed containment uses separate base-side edges and is never presented
+  as a current-head fact.
 - `unresolved[]` and `external_modules[]`: dynamic imports/callables, star imports, unknown receiver
   types, decorators, module/class-body calls, builtins, stdlib, and third-party references that V3
   does not pretend to resolve.
@@ -57,7 +60,8 @@ tree modes and skip symlinks and gitlinks instead of materializing their blobs a
   source-segment hashes. This is not semantic equivalence.
 - `possible_impact[]`: one-hop static neighbors of changed symbols, labeled
   `possible_static_impact` rather than proven impact.
-- `skips[]`, `parse_errors[]`, and `counts`: explicit scan accounting.
+- `skips[]`, `parse_errors[]`, and `counts`: explicit scan accounting, including current versus
+  ghost file and symbol totals.
 
 The checked-in [schema example](fixtures/v3-structure-example.json) is real output from
 `examples/buggy_python_project` and contains all three files, including file clusters with no need
