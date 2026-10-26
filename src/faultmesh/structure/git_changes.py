@@ -19,6 +19,7 @@ from faultmesh.structure.models import (
     FileChangeKind,
     FileGitStatus,
     GitComparison,
+    SkipRecord,
     StructureIndex,
     SymbolGitStatus,
     SymbolNode,
@@ -36,6 +37,13 @@ class GitAnalysis:
     comparison: GitComparison
     head_index: StructureIndex
     removed_symbols: list[SymbolNode]
+
+
+@dataclass(frozen=True)
+class _TreeEntry:
+    path: str
+    mode: str
+    object_type: str
 
 
 def _git_environment() -> dict[str, str]:
@@ -96,19 +104,57 @@ def _strip_prefix(path: str, prefix: str) -> str | None:
     return path.removeprefix(marker) if path.startswith(marker) else None
 
 
-def _index_revision(root: Path, revision: str, prefix: str) -> StructureIndex:
-    arguments = ["ls-tree", "-r", "-z", "--name-only", revision]
+def _decode_path(value: bytes) -> str:
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise StructureGitError(
+            "Git path is not valid UTF-8; schema 3.0 requires UTF-8 paths"
+        ) from exc
+
+
+def _revision_entries(
+    root: Path, revision: str, prefix: str
+) -> tuple[list[_TreeEntry], list[SkipRecord]]:
+    arguments = ["ls-tree", "-r", "-z", revision]
     if prefix:
         arguments.extend(["--", prefix])
-    listing = _run_bytes(root, *arguments)
-    paths = [
-        item.decode("utf-8", errors="surrogateescape")
-        for item in listing.split(b"\0")
-        if item
-    ]
+    entries: list[_TreeEntry] = []
+    skips: list[SkipRecord] = []
+    for record in _run_bytes(root, *arguments).split(b"\0"):
+        if not record:
+            continue
+        metadata, separator, raw_path = record.partition(b"\t")
+        fields = metadata.split(b" ")
+        if not separator or len(fields) != 3:
+            raise StructureGitError("unexpected git ls-tree record")
+        path = _decode_path(raw_path)
+        relative = _strip_prefix(path, prefix)
+        if relative is None:
+            continue
+        mode = fields[0].decode("ascii")
+        object_type = fields[1].decode("ascii")
+        if mode == "120000":
+            if relative.endswith(".py"):
+                skips.append(SkipRecord(path=relative, reason="symlink_file", count=1))
+            continue
+        if mode == "160000" or object_type == "commit":
+            skips.append(SkipRecord(path=relative, reason="git_submodule", count=1))
+            continue
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            skips.append(SkipRecord(path=relative, reason="unsupported_git_mode", count=1))
+            continue
+        entries.append(_TreeEntry(path=path, mode=mode, object_type=object_type))
+    return entries, sorted(skips, key=lambda item: (item.path, item.reason))
+
+
+def _index_revision(root: Path, revision: str, prefix: str) -> StructureIndex:
+    entries, tree_skips = _revision_entries(root, revision, prefix)
     with tempfile.TemporaryDirectory(prefix="faultmesh-structure-") as temporary:
         target = Path(temporary)
-        for repository_path in sorted(path for path in paths if path.endswith(".py")):
+        for repository_path in sorted(
+            entry.path for entry in entries if entry.path.endswith(".py")
+        ):
             relative = _strip_prefix(repository_path, prefix)
             if relative is None:
                 continue
@@ -117,7 +163,14 @@ def _index_revision(root: Path, revision: str, prefix: str) -> StructureIndex:
             destination.write_bytes(
                 _run_bytes(root, "show", f"{revision}:{repository_path}")
             )
-        return build_structure_index(target)
+        index = build_structure_index(target)
+        return index.model_copy(
+            update={
+                "skips": sorted(
+                    [*index.skips, *tree_skips], key=lambda item: (item.path, item.reason)
+                )
+            }
+        )
 
 
 @contextmanager
@@ -128,14 +181,12 @@ def materialize_revision(root: Path, revision: str) -> Iterator[Path]:
     prefix = root.relative_to(git_root).as_posix()
     if prefix == ".":
         prefix = ""
-    arguments = ["ls-tree", "-r", "-z", "--name-only", revision]
-    if prefix:
-        arguments.extend(["--", prefix])
-    listing = _run_bytes(git_root, *arguments)
-    paths = [item.decode("utf-8") for item in listing.split(b"\0") if item]
+    entries, _ = _revision_entries(git_root, revision, prefix)
     with tempfile.TemporaryDirectory(prefix="faultmesh-structure-view-") as temporary:
         target = Path(temporary)
-        for repository_path in sorted(path for path in paths if path.endswith(".py")):
+        for repository_path in sorted(
+            entry.path for entry in entries if entry.path.endswith(".py")
+        ):
             relative = _strip_prefix(repository_path, prefix)
             if relative is None:
                 continue
@@ -158,23 +209,28 @@ def _name_status(
         "--find-copies-harder",
         "--no-ext-diff",
         "--no-textconv",
+        "-z",
         base,
     ]
     if head is not None:
         arguments.append(head)
     if prefix:
         arguments.extend(["--", prefix])
-    output = _run(root, *arguments).stdout
+    fields = [item for item in _run_bytes(root, *arguments).split(b"\0") if item]
     changes: list[FileGitStatus] = []
     renames: dict[str, str] = {}
-    for line in output.splitlines():
-        fields = line.split("\t")
-        code = fields[0]
+    position = 0
+    while position < len(fields):
+        code = fields[position].decode("ascii")
+        position += 1
         letter = code[0]
         similarity = int(code[1:]) if len(code) > 1 and code[1:].isdigit() else None
-        if letter in {"R", "C"} and len(fields) == 3:
-            old_path = _strip_prefix(fields[1], prefix)
-            path = _strip_prefix(fields[2], prefix)
+        if letter in {"R", "C"}:
+            if position + 1 >= len(fields):
+                raise StructureGitError("unexpected git rename/copy record")
+            old_path = _strip_prefix(_decode_path(fields[position]), prefix)
+            path = _strip_prefix(_decode_path(fields[position + 1]), prefix)
+            position += 2
             if old_path is None or path is None:
                 continue
             status = FileChangeKind.RENAMED if letter == "R" else FileChangeKind.COPIED
@@ -190,9 +246,10 @@ def _name_status(
             if letter == "R":
                 renames[old_path] = path
             continue
-        if len(fields) != 2:
-            continue
-        path = _strip_prefix(fields[1], prefix)
+        if position >= len(fields):
+            raise StructureGitError("unexpected git name-status record")
+        path = _strip_prefix(_decode_path(fields[position]), prefix)
+        position += 1
         if path is None:
             continue
         status = {
@@ -208,51 +265,49 @@ def _untracked(root: Path, prefix: str) -> list[str]:
     arguments = ["ls-files", "--others", "--exclude-standard", "-z"]
     if prefix:
         arguments.extend(["--", prefix])
-    output = _run(root, *arguments).stdout
+    output = _run_bytes(root, *arguments)
     return sorted(
         stripped
-        for item in output.split("\0")
+        for item in output.split(b"\0")
         if item
-        if (stripped := _strip_prefix(item, prefix)) is not None
+        if (stripped := _strip_prefix(_decode_path(item), prefix)) is not None
     )
 
 
 def _hunks(
-    root: Path, base: str, head: str | None, prefix: str
+    root: Path,
+    base: str,
+    head: str | None,
+    prefix: str,
+    changes: list[FileGitStatus],
 ) -> tuple[dict[str, list[tuple[int, int]]], dict[str, list[tuple[int, int]]]]:
-    arguments = [
-        "diff",
-        "--unified=0",
-        "--no-color",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--find-renames=50%",
-        base,
-    ]
-    if head is not None:
-        arguments.append(head)
-    pathspec = f":(glob){prefix}/**/*.py" if prefix else "*.py"
-    output = _run(root, *arguments, "--", pathspec).stdout
     old_ranges: dict[str, list[tuple[int, int]]] = {}
     new_ranges: dict[str, list[tuple[int, int]]] = {}
-    old_path: str | None = None
-    new_path: str | None = None
-    for line in output.splitlines():
-        if line.startswith("--- "):
-            value = line[4:]
-            old_path = (
-                None
-                if value == "/dev/null"
-                else _strip_prefix(value.removeprefix("a/"), prefix)
+    for change in changes:
+        if not change.python or change.untracked or change.status == FileChangeKind.COPIED:
+            continue
+        repository_paths = [f"{prefix}/{change.path}" if prefix else change.path]
+        if change.old_path is not None:
+            repository_paths.append(
+                f"{prefix}/{change.old_path}" if prefix else change.old_path
             )
-        elif line.startswith("+++ "):
-            value = line[4:]
-            new_path = (
-                None
-                if value == "/dev/null"
-                else _strip_prefix(value.removeprefix("b/"), prefix)
-            )
-        elif line.startswith("@@ "):
+        arguments = [
+            "diff",
+            "--unified=0",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--find-renames=50%",
+            base,
+        ]
+        if head is not None:
+            arguments.append(head)
+        output = _run(root, *arguments, "--", *repository_paths).stdout
+        old_path = change.old_path or change.path
+        new_path = change.path
+        for line in output.splitlines():
+            if not line.startswith("@@ "):
+                continue
             match = _HUNK.match(line)
             if match is None:
                 continue
@@ -262,11 +317,11 @@ def _hunks(
                 int(match[3]),
                 int(match[4] or "1"),
             )
-            if old_path is not None:
-                old_end = old_start if old_count == 0 else old_start + old_count - 1
+            if old_count and change.status != FileChangeKind.ADDED:
+                old_end = old_start + old_count - 1
                 old_ranges.setdefault(old_path, []).append((old_start, old_end))
-            if new_path is not None:
-                new_end = new_start if new_count == 0 else new_start + new_count - 1
+            if new_count and change.status != FileChangeKind.DELETED:
+                new_end = new_start + new_count - 1
                 new_ranges.setdefault(new_path, []).append((new_start, new_end))
     return old_ranges, new_ranges
 
@@ -398,15 +453,19 @@ def compare_git(
     for path in sorted(all_paths - changed_paths - changed_old_paths):
         changes.append(FileGitStatus(path=path, status=FileChangeKind.UNCHANGED))
     old_hunks, new_hunks = _hunks(
-        git_root, base_sha, None if head_is_worktree else head_sha, project_prefix
+        git_root,
+        base_sha,
+        None if head_is_worktree else head_sha,
+        project_prefix,
+        changes,
     )
     symbol_statuses, removed = _symbol_statuses(
         old_index, head_index, renames, old_hunks, new_hunks
     )
-    status_args = ["status", "--porcelain=v1", "--untracked-files=all"]
+    status_args = ["status", "--porcelain=v1", "--untracked-files=all", "-z"]
     if project_prefix:
         status_args.extend(["--", project_prefix])
-    status = _run(git_root, *status_args).stdout
+    status = _run_bytes(git_root, *status_args)
     detached = _run(root, "symbolic-ref", "-q", "HEAD", check=False).returncode != 0
     shallow = _run(root, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
     submodules = sum(1 for item in head_index.skips if item.reason == "git_submodule")

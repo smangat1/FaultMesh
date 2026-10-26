@@ -28,6 +28,11 @@ avoids optional index refresh writes. It is not a general process sandbox: Git i
 metadata are still read from the host, so scans should use a trusted Git executable and repository
 configuration.
 
+Path-bearing Git records use NUL-delimited byte output, then require strict UTF-8 before entering
+the JSON contract. Spaces, tabs, newlines, quotes, backslashes, and Unicode are preserved exactly;
+an undecodable repository path stops the comparison with an explicit error. Revision scans inspect
+tree modes and skip symlinks and gitlinks instead of materializing their blobs as Python source.
+
 ## Contract
 
 - `envelope`: project name, resolved base/head, worktree marker and dirty state, and deterministic

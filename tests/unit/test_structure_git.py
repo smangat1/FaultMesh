@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from faultmesh.project_runner.runner import _content_hash
-from faultmesh.structure import StructureGitError, build_structure_index, compare_git
+from faultmesh.structure import (
+    StructureGitError,
+    build_structure_export,
+    build_structure_index,
+    compare_git,
+)
 from faultmesh.structure.models import ChangeStatus, FileChangeKind
 
 
@@ -167,3 +172,119 @@ def test_project_subdirectory_is_scoped_to_that_project(tmp_path: Path) -> None:
 
     assert {item.path for item in result.head_index.files} == {"inside.py"}
     assert {item.path for item in result.comparison.files} == {"inside.py"}
+
+
+@pytest.mark.parametrize("quote_path", ["true", "false"])
+def test_git_paths_are_exact_and_join_file_nodes(tmp_path: Path, quote_path: str) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q")
+    names = [
+        "café.py",
+        "space name.py",
+        "tab\tname.py",
+        "line\nname.py",
+        'quote"back\\slash.py',
+    ]
+    for position, name in enumerate(names):
+        (root / name).write_text(
+            f"def value_{position}():\n    return 1\n", encoding="utf-8"
+        )
+    base = _commit(root, "paths")
+    _git(root, "config", "core.quotePath", quote_path)
+    for position, name in enumerate(names):
+        (root / name).write_text(
+            f"def value_{position}():\n    return 2\n", encoding="utf-8"
+        )
+
+    exported = build_structure_export(root, base=base)
+
+    changed = [item for item in exported.git.files if item.status != FileChangeKind.UNCHANGED]
+    assert {item.path for item in changed} == set(names)
+    assert len(changed) == len(names)
+    assert all(item.status == FileChangeKind.MODIFIED and item.python for item in changed)
+    file_paths = {item.path for item in exported.files}
+    assert set(names) <= file_paths
+    modified = {
+        item.symbol_id
+        for item in exported.git.symbols
+        if item.status == ChangeStatus.MODIFIED
+    }
+    assert modified == {
+        f"symbol:{name}:value_{position}" for position, name in enumerate(names)
+    }
+
+
+def test_exact_paths_cover_rename_edits_and_project_subdirectories(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    project = root / "projects" / "café area"
+    project.mkdir(parents=True)
+    _git(root, "init", "-q")
+    old_name = "old\tname.py"
+    new_name = 'new\n"name.py'
+    source = "def moved():\n" + "    value = 1\n" * 8 + "    return value\n"
+    (project / old_name).write_text(source, encoding="utf-8")
+    base = _commit(root, "base")
+    (project / old_name).rename(project / new_name)
+    (project / new_name).write_text(source.replace("value = 1", "value = 2", 1), encoding="utf-8")
+    _git(root, "add", "-A")
+
+    exported = build_structure_export(project, base=base)
+
+    renamed = [item for item in exported.git.files if item.status == FileChangeKind.RENAMED]
+    assert len(renamed) == 1
+    assert renamed[0].path == new_name
+    assert renamed[0].old_path == old_name
+    assert renamed[0].python is True
+    assert any(item.path == new_name for item in exported.files)
+
+
+def test_revision_scan_skips_python_symlink_like_worktree_scan(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q")
+    (root / "real.py").write_text("def real():\n    return 1\n", encoding="utf-8")
+    (root / "alias.py").symlink_to("real.py")
+    head = _commit(root, "symlink")
+
+    current = build_structure_index(root)
+    worktree = compare_git(root, current)
+    revision = compare_git(root, current, base=head, head=head)
+
+    assert revision.head_index.files == worktree.head_index.files
+    assert revision.head_index.symbols == worktree.head_index.symbols
+    assert revision.head_index.parse_errors == worktree.head_index.parse_errors
+    revision_skips = {(item.path, item.reason) for item in revision.head_index.skips}
+    worktree_skips = {(item.path, item.reason) for item in worktree.head_index.skips}
+    assert revision_skips == {
+        ("alias.py", "symlink_file")
+    }
+    assert revision_skips <= worktree_skips
+
+
+def test_revision_scan_records_gitlinks_without_materializing_them(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q")
+    (root / "real.py").write_text("def real():\n    return 1\n", encoding="utf-8")
+    commit = _commit(root, "base")
+    _git(root, "update-index", "--add", "--cacheinfo", f"160000,{commit},vendor")
+    _git(
+        root,
+        "-c",
+        "user.name=FaultMesh Test",
+        "-c",
+        "user.email=faultmesh@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "gitlink",
+    )
+    head = _git(root, "rev-parse", "HEAD")
+
+    result = compare_git(root, build_structure_index(root), base=head, head=head)
+
+    assert {item.path for item in result.head_index.files} == {"real.py"}
+    assert ("vendor", "git_submodule") in {
+        (item.path, item.reason) for item in result.head_index.skips
+    }

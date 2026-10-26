@@ -23,5 +23,6 @@ records. The FaultMesh `src/` scan found 42 files and 390 symbols. Full acceptan
   disable optional locks without changing the caller environment.
 - Binding phase: complete — parameters/locals, class scope rules, dotted imports, and resolved base
   bindings prevent unsupported source-call edges.
-- Path/type phase: pending — byte-safe Git paths and revision entry modes.
+- Path/type phase: complete — NUL-delimited Git paths preserve exact names; revision scans inspect
+  tree modes and skip symlinks/gitlinks.
 - Ghost phase: pending — coherent removed file/symbol hierarchy and hunk boundaries.
