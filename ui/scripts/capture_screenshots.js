@@ -5,13 +5,14 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SCREENSHOTS_DIR = path.resolve(__dirname, '../screenshots');
+const DIST_INDEX_PATH = path.resolve(__dirname, '../dist/index.html');
 
 async function main() {
-  console.log('Launching Chrome via puppeteer-core...');
+  console.log('Launching Chrome via puppeteer-core for zero-localhost file:// verification...');
   const browser = await puppeteer.launch({
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--allow-file-access-from-files'],
     defaultViewport: { width: 1400, height: 900, deviceScaleFactor: 2 },
   });
 
@@ -19,14 +20,15 @@ async function main() {
   page.on('console', (m) => console.log('PAGE LOG:', m.text()));
   page.on('pageerror', (err) => console.error('PAGE ERROR:', err));
 
-  console.log('Navigating to http://localhost:5173...');
-  await page.goto('http://localhost:5173', { waitUntil: 'networkidle0' });
+  const fileUrl = `file://${DIST_INDEX_PATH}`;
+  console.log(`Navigating directly to ${fileUrl} (Zero localhost!)...`);
+  await page.goto(fileUrl, { waitUntil: 'networkidle0' });
 
   // Wait for initial data to load
   await page.waitForFunction(() => !document.body.innerText.includes('Loading run artifacts...'), {
     timeout: 5000,
   });
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, 500));
 
   // Screenshot 1: Runs Screen
   console.log('Capturing 01_runs_screen.png...');
@@ -66,7 +68,6 @@ async function main() {
     const scrollContainers = Array.from(document.querySelectorAll('div')).filter(
       (el) => el.style && el.style.overflowY === 'auto'
     );
-    // Find right pane container
     const rightPane = scrollContainers.find((el) => el.textContent && el.textContent.includes('Failure Message'));
     if (rightPane) {
       rightPane.scrollTop = 500;
@@ -80,27 +81,28 @@ async function main() {
     fullPage: false,
   });
 
-  // Screenshot 3: Graph View with Test Selected & Node Drawer Open
-  console.log('Switching to Graph tab...');
+  // Screenshot 3: Obsidian Graph View with Test Selected & Node Drawer Open
+  console.log('Switching to Obsidian Graph tab...');
   await page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll('button'));
-    const graphTab = buttons.find((b) => b.textContent && b.textContent.includes('Execution Graph'));
+    const graphTab = buttons.find((b) => b.textContent && (b.textContent.includes('Graph') || b.textContent.includes('Obsidian')));
     if (graphTab) graphTab.click();
   });
-  await new Promise((r) => setTimeout(r, 700));
+  // Give physics layout 1.5 seconds to settle into beautiful constellation
+  await new Promise((r) => setTimeout(r, 1500));
 
   // Highlight test_login_expired_token and inspect validate_token symbol
   await page.select(
     'select[aria-label="Highlight Test Trace"]',
     'tests/test_auth.py::test_login_expired_token'
   );
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, 500));
 
   await page.select(
     'select[aria-label="Inspect Symbol"]',
     'auth/tokens.py::validate_token'
   );
-  await new Promise((r) => setTimeout(r, 700));
+  await new Promise((r) => setTimeout(r, 800));
 
   console.log('Capturing 03_graph_test_selected.png...');
   await page.screenshot({

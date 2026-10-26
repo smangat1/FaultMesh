@@ -1,34 +1,63 @@
-# FaultMesh UI Prototype: Visual Evidence Explorer
+# FaultMesh Desktop UI: Visual Evidence Explorer
 
 FaultMesh is a local-first, open-source visual debugger for Python projects across three levels: **Understand** (code structure, Git changes), **Observe** (run existing pytest suites, trace code paths, inspect failures, rerun for stability), and **Investigate** (optional local small-model analysis).
 
-This package contains the interactive frontend visual explorer prototype.
+This package contains the interactive desktop visual explorer prototype, designed to run directly from the terminal as a standalone native desktop facet without requiring a localhost web server.
 
 ---
 
-## Quickstart
+## Running from Terminal (Desktop Mode — Zero Localhost)
 
-### Prerequisites
-- Node.js `>= 18` (developed and tested on Node `v22.17.1`)
-- npm `>= 10`
+FaultMesh is built to operate as a native desktop application launched straight from your terminal. No localhost dev servers or browser tabs are required:
 
-### Installation & Development
+### Quickstart (from workspace root):
+```bash
+./run-desktop.sh
+```
+
+### Alternatively (from the `ui` directory):
 ```bash
 cd ui
 npm install
+npm run desktop
+```
 
-# Start Vite dev server on http://localhost:5173
-npm run dev
+Or invoke the direct CLI executable:
+```bash
+./ui/bin/faultmesh-ui
+```
+
+### Automated Testing & Production Builds:
+```bash
+cd ui
 
 # Run automated Vitest component & adapter suite
 npm test
 
-# Build production bundle
+# Build production desktop bundle
 npm run build
-
-# Preview production build
-npm run preview
 ```
+
+---
+
+## Obsidian Dataset Graph View
+
+The graph visualization has been engineered to provide the aesthetic and feel of an **Obsidian dataset / knowledge graph**:
+
+1. **Constellation Force Physics (`cose` physics engine):**
+   - Replaces stiff rectangular flowchart boxes with organic spring physics (Coulomb repulsion, edge elasticity, and central gravity).
+   - Nodes float freely as celestial orbs and particles in an obsidian cosmic canvas (`#080b11`) with subtle starfield depth.
+   - An interactive **Physics HUD** allows real-time adjustment of node repulsion and gravity forces.
+2. **Color Impacts Exclusively on Changes:**
+   - **Modified Code (Glowing Amber `#f59e0b`):** e.g., `validate_token` with glowing gold halo and unified diff.
+   - **Added Code (Glowing Cyan `#06b6d4`):** e.g., `sessions.py` with vibrant cyan halo.
+   - **Failing Tests (Crimson Red `#ef4444`):** e.g., `test_login_expired_token` with crimson pulse.
+   - **Passing Tests (Soft Emerald `#10b981`):** Subtly styled test nodes.
+   - **Unchanged Code (Neutral Slate `#334155`):** All ordinary code symbols remain muted graphite dots fading into the background, eliminating visual noise.
+3. **Animated Moving Dotted Lines (Live Traversal Pulses):**
+   - When a test is highlighted or traversed, the active runtime trace edges feature an animated marching dash offset (`requestAnimationFrame` pulse) representing live electrical signals and data packets traversing through the neural mesh.
+4. **Interactive Node Inspector Drawer:**
+   - Clicking any node opens a slide-out drawer displaying Git unified diffs, syntax-highlighted source snippets, connected relationships (inbound/outbound calls with runtime observation counts), and a 1-hop neighbor isolation toggle.
 
 ---
 
@@ -74,20 +103,18 @@ export interface FaultMeshAdapter {
 
 ---
 
-## Visual Semantics & Integrity Principles
+## Integrity Principles
 
-- **Modified Code (Amber):** Code modified between base revision and HEAD.
-- **Added Code (Teal):** Newly added functions/classes.
-- **Unchanged Code (Slate):** Neutral baseline code.
-- **Failing Tests (Red) / Passing Tests (Green):** Pytest execution status.
-- **Runtime Observed Edges (Solid Light Blue):** Actual call traces observed during test execution. Selecting a test highlights its path in glowing red.
-- **Static Edges (Dashed Muted Slate):** AST call and import relationships.
-- **"Observed, not proven cause":** FaultMesh never claims an executed modified function is the defect root cause without independent proof.
+- **"Observed, not proven cause":** FaultMesh never claims an executed modified function is the defect root cause without independent proof. Real traces show observed execution, not proven causality.
+- **Zero Localhost Ports:** Packaged as an Electron desktop bundle loading directly via the `file://` protocol.
 
 ---
 
-## Known Limits
+## Verification Screenshots
 
-- Read-only prototype; does not invoke local Python interpreters or run shell commands.
-- AI features are disabled.
-- Graph layout uses deterministic Cytoscape Dagre to prevent chaotic layout shifts.
+All 5 core states have been visually verified and captured in `ui/screenshots/` and `docs/screenshots/`:
+- `01_runs_screen.png`: Run overview, metadata, pass/fail ratios, honest causality notice, and static diagnostics.
+- `02_failing_test_details.png`: Failing test details, failure message, python traceback, 3x rerun fingerprint proof, and inline git diff.
+- `03_graph_test_selected.png`: Obsidian dataset constellation with circular glowing nodes, moving dotted line trace, and node inspector.
+- `04_empty_state.png`: Diagnostic empty repository scan view.
+- `05_error_state.png`: Harness collection failure error view.

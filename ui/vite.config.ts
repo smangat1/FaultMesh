@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  base: './', // Ensures relative assets so index.html loads offline / in Electron file://
   server: {
     port: 5173,
     host: true,

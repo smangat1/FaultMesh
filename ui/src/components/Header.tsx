@@ -8,6 +8,7 @@ import {
   Moon,
   Clock,
   AlertTriangle,
+  Monitor,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -32,31 +33,64 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
   failedTestCount = 0,
 }) => {
+  // Check if running inside Electron desktop app
+  const isDesktop =
+    typeof window !== 'undefined' &&
+    (Boolean((window as unknown as { process?: { type?: string } }).process?.type) ||
+      navigator.userAgent.includes('Electron'));
+
   return (
-    <header style={{ borderBottom: '1px solid var(--border-color)' }}>
+    <header
+      style={{
+        borderBottom: '1px solid var(--border-color)',
+        // Native desktop window draggable area
+        // @ts-expect-error WebkitAppRegion
+        WebkitAppRegion: 'drag',
+        userSelect: 'none',
+      }}
+    >
       {/* Required Visible Fixture Banner */}
       {activeRun?.isFixture && (
-        <div className="fixture-banner" role="banner" aria-label="Fixture Notice">
+        <div
+          className="fixture-banner"
+          role="banner"
+          aria-label="Fixture Notice"
+          style={{
+            // @ts-expect-error WebkitAppRegion
+            WebkitAppRegion: 'no-drag',
+            paddingLeft: isDesktop ? '78px' : '14px',
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertTriangle size={14} />
             <span>{activeRun.fixtureLabel}</span>
           </div>
-          <span className="badge">Read-only offline preview</span>
+          <span className="badge">Local Desktop Evidence View</span>
         </div>
       )}
 
-      {/* Main Bar */}
+      {/* Main Desktop Bar */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '8px 16px',
+          paddingLeft: !activeRun?.isFixture && isDesktop ? '78px' : '16px',
           backgroundColor: 'var(--bg-secondary)',
+          minHeight: '44px',
         }}
       >
         {/* Brand & Active Run Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            // @ts-expect-error WebkitAppRegion
+            WebkitAppRegion: 'no-drag',
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div
               style={{
@@ -69,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 800,
-                fontSize: '13px',
+                fontSize: '12px',
               }}
             >
               FM
@@ -86,9 +120,13 @@ export const Header: React.FC<HeaderProps> = ({
                 padding: '2px 6px',
                 borderRadius: '3px',
                 color: 'var(--text-muted)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
               }}
             >
-              prototype
+              <Monitor size={10} />
+              desktop
             </span>
           </div>
 
@@ -138,7 +176,15 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* View Navigation & Theme Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            // @ts-expect-error WebkitAppRegion
+            WebkitAppRegion: 'no-drag',
+          }}
+        >
           <nav
             style={{
               display: 'flex',
@@ -183,7 +229,7 @@ export const Header: React.FC<HeaderProps> = ({
               style={{ borderRadius: '3px' }}
             >
               <Layers size={13} />
-              Execution Graph
+              Obsidian Graph
             </button>
           </nav>
 

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# FaultMesh Desktop Runner CLI
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ ! -d "dist" ]; then
+  echo "Building FaultMesh desktop bundle..."
+  npm run build
+fi
+
+echo "Launching FaultMesh Desktop..."
+npx electron electron/main.cjs "$@"

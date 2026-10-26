@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import cytoscape, { Core, EventObject } from 'cytoscape';
-import dagre from 'cytoscape-dagre';
 import type { GraphData, TestItem } from '../types';
 import { DiffViewer } from './DiffViewer';
 import {
@@ -13,12 +12,11 @@ import {
   Info,
   Eye,
   GitCommit,
+  Sparkles,
+  Sliders,
+  Play,
+  RotateCcw,
 } from 'lucide-react';
-
-// Register dagre layout plugin safely
-if (typeof cytoscape('core', 'dagre') === 'undefined') {
-  cytoscape.use(dagre);
-}
 
 interface GraphViewProps {
   graphData: GraphData;
@@ -37,6 +35,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const dashOffsetRef = useRef<number>(0);
 
   const [granularity, setGranularity] = useState<'function' | 'module'>('function');
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,9 +44,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const [filterShowTests, setFilterShowTests] = useState(true);
   const [filterShowStatic, setFilterShowStatic] = useState(true);
   const [filterShowRuntime, setFilterShowRuntime] = useState(true);
+  const [animatePulses, setAnimatePulses] = useState(true);
   const [isolatedNodeId, setIsolatedNodeId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showLegend, setShowLegend] = useState(true);
+  const [showPhysicsControls, setShowPhysicsControls] = useState(false);
+  const [repulsionStrength, setRepulsionStrength] = useState(14000);
+  const [gravityStrength, setGravityStrength] = useState(0.18);
 
   // Selected Node data
   const selectedNode = useMemo(() => {
@@ -61,13 +65,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
     );
   }, [graphData.edges, selectedNodeId]);
 
-  // Build Cytoscape elements based on filters and granularity
+  // Build Cytoscape elements (Obsidian Constellation mode: circular nodes, no blocky group boxes)
   const elements = useMemo(() => {
     const nodes: cytoscape.NodeDefinition[] = [];
     const edges: cytoscape.EdgeDefinition[] = [];
-
-    // Module grouping
-    const moduleMap = new Set<string>();
 
     if (granularity === 'module') {
       // In module view, collapse functions into their parent modules
@@ -75,6 +76,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         string,
         {
           hasModified: boolean;
+          hasAdded: boolean;
           hasFailedTest: boolean;
           hasPassingTest: boolean;
           testCount: number;
@@ -87,15 +89,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
         if (!moduleNodes[mod]) {
           moduleNodes[mod] = {
             hasModified: false,
+            hasAdded: false,
             hasFailedTest: false,
             hasPassingTest: false,
             testCount: 0,
             functionCount: 0,
           };
         }
-        if (n.changeStatus === 'modified' || n.changeStatus === 'added') {
-          moduleNodes[mod].hasModified = true;
-        }
+        if (n.changeStatus === 'modified') moduleNodes[mod].hasModified = true;
+        if (n.changeStatus === 'added') moduleNodes[mod].hasAdded = true;
+
         const test = tests.find((t) => t.id === n.id);
         if (test) {
           moduleNodes[mod].testCount++;
@@ -109,6 +112,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       Object.entries(moduleNodes).forEach(([mod, info]) => {
         let changeStatus = 'unchanged';
         if (info.hasModified) changeStatus = 'modified';
+        else if (info.hasAdded) changeStatus = 'added';
+
         let status = 'neutral';
         if (info.hasFailedTest) status = 'fail';
         else if (info.hasPassingTest) status = 'pass';
@@ -116,10 +121,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
         nodes.push({
           data: {
             id: mod,
-            label: `${mod}\n(${info.functionCount} fns, ${info.testCount} tests)`,
+            label: `${mod} (${info.functionCount} fns)`,
+            name: mod,
             kind: 'module',
             changeStatus,
             status,
+            degree: info.functionCount + info.testCount,
           },
         });
       });
@@ -149,8 +156,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       return { nodes, edges };
     }
 
-    // Function-level granularity
-    // Optional isolation filter
+    // Function-level granularity (Obsidian dataset view: clean circular celestial nodes)
     const allowedNodeIds = new Set<string>();
     if (isolatedNodeId) {
       allowedNodeIds.add(isolatedNodeId);
@@ -160,6 +166,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
       });
     }
 
+    // Node degree calculation for dynamic Obsidian particle scaling
+    const degreeMap: Record<string, number> = {};
+    graphData.edges.forEach((e) => {
+      degreeMap[e.source] = (degreeMap[e.source] || 0) + 1;
+      degreeMap[e.target] = (degreeMap[e.target] || 0) + 1;
+    });
+
     graphData.nodes.forEach((n) => {
       if (isolatedNodeId && !allowedNodeIds.has(n.id)) return;
       if (filterModifiedOnly && n.changeStatus === 'unchanged') return;
@@ -167,28 +180,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const test = tests.find((t) => t.id === n.id);
       if (!filterShowTests && test) return;
 
-      // Group by parent module
-      if (!moduleMap.has(n.parentModule)) {
-        moduleMap.add(n.parentModule);
-        nodes.push({
-          data: {
-            id: `grp_${n.parentModule}`,
-            label: n.parentModule,
-            isGroup: true,
-          },
-        });
-      }
+      const deg = degreeMap[n.id] || 1;
 
       nodes.push({
         data: {
           id: n.id,
           label: n.name,
-          parent: `grp_${n.parentModule}`,
+          name: n.name,
           kind: n.kind,
           file: n.file,
+          parentModule: n.parentModule,
           changeStatus: n.changeStatus,
           status: test ? test.status : 'neutral',
           isTest: !!test,
+          degree: deg,
         },
       });
     });
@@ -226,7 +231,37 @@ export const GraphView: React.FC<GraphViewProps> = ({
     isolatedNodeId,
   ]);
 
-  // Initialize and update Cytoscape
+  // Run or restart the Obsidian Force Physics layout
+  const runPhysicsLayout = useCallback(
+    (cy: Core) => {
+      const layout = cy.layout({
+        name: 'cose',
+        animate: true,
+        animationDuration: 1000,
+        refresh: 20,
+        fit: true,
+        padding: 70,
+        randomize: false,
+        componentSpacing: 130,
+        nodeRepulsion: () => repulsionStrength,
+        nodeOverlap: 40,
+        idealEdgeLength: (edge: cytoscape.EdgeSingular) => {
+          return edge.data('category') === 'runtime_observed' ? 110 : 150;
+        },
+        edgeElasticity: () => 0.45,
+        nestingFactor: 0.1,
+        gravity: gravityStrength,
+        numIter: 1000,
+        initialTemp: 200,
+        coolingFactor: 0.95,
+        minTemp: 1.0,
+      });
+      layout.run();
+    },
+    [repulsionStrength, gravityStrength]
+  );
+
+  // Initialize Cytoscape with Obsidian dataset aesthetics
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -234,154 +269,209 @@ export const GraphView: React.FC<GraphViewProps> = ({
       container: containerRef.current,
       elements: [...elements.nodes, ...elements.edges],
       style: [
-        // Default node
+        // Base Node: Sleek Circular Particle (Obsidian style)
         {
           selector: 'node',
           style: {
-            label: 'data(label)',
-            'font-family': 'ui-monospace, Menlo, Monaco, monospace',
-            'font-size': '11px',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+            shape: 'ellipse',
+            width: 12,
+            height: 12,
             'background-color': '#334155',
-            'border-width': '2px',
+            'border-width': 1.5,
             'border-color': '#475569',
-            shape: 'round-rectangle',
-            width: 'label',
-            height: 'label',
-            padding: '8px',
-            'text-wrap': 'wrap',
-          },
-        },
-        // Compound parent groups (modules)
-        {
-          selector: 'node[?isGroup]',
-          style: {
-            'background-color':
-              theme === 'dark'
-                ? 'rgba(30, 41, 59, 0.65)'
-                : 'rgba(241, 245, 249, 0.75)',
-            'border-color': theme === 'dark' ? '#334155' : '#cbd5e1',
-            'border-width': '1px',
-            'border-style': 'dashed',
-            'text-valign': 'top',
+            label: 'data(label)',
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            'font-size': '9.5px',
+            'text-valign': 'bottom',
             'text-halign': 'center',
-            'font-size': '10px',
-            'font-weight': 'bold',
-            color: theme === 'dark' ? '#94a3b8' : '#64748b',
-            padding: '14px',
+            'text-margin-y': 6,
+            color: '#64748b',
+            'text-max-width': '130px',
+            'text-wrap': 'ellipsis',
+            'text-background-color': '#080b11',
+            'text-background-opacity': 0.75,
+            'text-background-padding': '2px',
+            'text-background-shape': 'roundrectangle',
+            'text-border-color': 'rgba(51, 65, 85, 0.4)',
+            'text-border-width': 0.5,
+            'text-border-opacity': 0.5,
+            'transition-property':
+              'background-color, border-color, border-width, width, height, opacity',
+            'transition-duration': 0.25,
           },
         },
-        // Modified Code Node: AMBER
+        // Hovered node
+        {
+          selector: 'node:active, node.hovered',
+          style: {
+            'border-color': '#38bdf8',
+            'border-width': 3,
+            color: '#f8fafc',
+            'font-weight': 'bold',
+          },
+        },
+        // Color accents ONLY on actively changed items:
+        // MODIFIED CODE: Glowing Amber Orb
         {
           selector: 'node[changeStatus = "modified"]',
           style: {
-            'background-color': '#d97706',
-            'border-color': '#f59e0b',
-            'border-width': '3px',
-            color: '#ffffff',
+            'background-color': '#f59e0b',
+            'border-color': '#fef08a',
+            'border-width': 3.5,
+            width: 24,
+            height: 24,
+            color: '#fbbf24',
             'font-weight': 'bold',
+            'font-size': '11px',
+            'z-index': 100,
           },
         },
-        // Added Code Node: TEAL/CYAN
+        // ADDED CODE: Glowing Cyan / Teal Orb
         {
           selector: 'node[changeStatus = "added"]',
           style: {
-            'background-color': '#0891b2',
-            'border-color': '#06b6d4',
-            'border-width': '3px',
-            color: '#ffffff',
+            'background-color': '#06b6d4',
+            'border-color': '#a5f3fc',
+            'border-width': 3.5,
+            width: 24,
+            height: 24,
+            color: '#22d3ee',
+            'font-weight': 'bold',
+            'font-size': '11px',
+            'z-index': 100,
           },
         },
-        // Failing Test Node: RED
+        // FAILING TEST: Glowing Crimson Orb
         {
           selector: 'node[status = "fail"]',
           style: {
-            'background-color': '#dc2626',
-            'border-color': '#ef4444',
-            'border-width': '3px',
-            shape: 'rectangle',
-            color: '#ffffff',
+            'background-color': '#ef4444',
+            'border-color': '#fca5a5',
+            'border-width': 4,
+            width: 26,
+            height: 26,
+            color: '#f87171',
             'font-weight': 'bold',
+            'font-size': '11px',
+            'z-index': 110,
           },
         },
-        // Passing Test Node: GREEN
+        // PASSING TEST: Subtle Emerald Orb
         {
           selector: 'node[status = "pass"]',
           style: {
-            'background-color': '#059669',
-            'border-color': '#10b981',
-            'border-width': '2px',
-            shape: 'rectangle',
-            color: '#ffffff',
+            'background-color': '#10b981',
+            'border-color': '#6ee7b7',
+            'border-width': 2,
+            width: 14,
+            height: 14,
+            color: '#a7f3d0',
+            'font-size': '10px',
           },
         },
-        // Errored Test Node: ORANGE
+        // ERRORED TEST: Vivid Orange Orb
         {
           selector: 'node[status = "error"]',
           style: {
-            'background-color': '#ea580c',
-            'border-color': '#f97316',
-            'border-width': '3px',
-            shape: 'rectangle',
-            color: '#ffffff',
+            'background-color': '#f97316',
+            'border-color': '#fdba74',
+            'border-width': 3,
+            width: 20,
+            height: 20,
+            color: '#fb923c',
+            'font-weight': 'bold',
           },
         },
-        // Edges: Default
+        // MODULE NODES (When in Module Granularity)
+        {
+          selector: 'node[kind = "module"]',
+          style: {
+            shape: 'ellipse',
+            width: 32,
+            height: 32,
+            'background-color': '#1e293b',
+            'border-color': '#64748b',
+            'border-width': 2,
+            color: '#e2e8f0',
+            'font-size': '11px',
+            'font-weight': 'bold',
+          },
+        },
+        // Slender Filaments: Base Edge
         {
           selector: 'edge',
           style: {
-            width: 2,
+            width: 1,
+            'line-color': 'rgba(148, 163, 184, 0.18)',
             'curve-style': 'bezier',
-            'target-arrow-shape': 'triangle',
-            'arrow-scale': 0.9,
+            'target-arrow-shape': 'none',
+            'arrow-scale': 0.6,
+            'transition-property': 'line-color, width, opacity',
+            'transition-duration': 0.2,
           },
         },
-        // Runtime Observed Edges: Solid colored line with observation evidence
+        // Runtime Observed Edges: Subtle Cyan filament
         {
           selector: 'edge[category = "runtime_observed"]',
           style: {
-            'line-color': '#38bdf8',
-            'target-arrow-color': '#38bdf8',
-            width: 2.5,
-            'line-style': 'solid',
+            'line-color': 'rgba(56, 189, 248, 0.35)',
+            'target-arrow-shape': 'chevron',
+            'target-arrow-color': 'rgba(56, 189, 248, 0.45)',
+            width: 1.5,
           },
         },
-        // Static Call/Import Edges: Dashed line
+        // Static Call/Import Edges: Faint Dashed filament
         {
           selector: 'edge[category = "static_call"], edge[category = "static_import"]',
           style: {
-            'line-color': '#64748b',
-            'target-arrow-color': '#64748b',
-            width: 1.5,
+            'line-color': 'rgba(100, 116, 139, 0.22)',
             'line-style': 'dashed',
-            'line-dash-pattern': [4, 4],
+            'line-dash-pattern': [3, 4],
+            width: 1,
           },
         },
-        // Highlighted Execution Path (when a test is selected)
+        // HIGHLIGHTED TEST TRACE: Moving Dotted / Pulsing Line
         {
           selector: '.highlighted-edge',
           style: {
-            'line-color': '#f43f5e',
-            'target-arrow-color': '#f43f5e',
-            width: 4,
+            'line-color': '#38bdf8',
+            'line-style': 'dashed',
+            'line-dash-pattern': [6, 4],
+            width: 3,
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': '#38bdf8',
+            'arrow-scale': 0.8,
             'z-index': 999,
+          },
+        },
+        {
+          selector: '.highlighted-edge-failing',
+          style: {
+            'line-color': '#f43f5e',
+            'line-style': 'dashed',
+            'line-dash-pattern': [6, 4],
+            width: 3.5,
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': '#f43f5e',
+            'arrow-scale': 0.9,
+            'z-index': 1000,
           },
         },
         {
           selector: '.highlighted-node',
           style: {
-            'border-width': '4px',
-            'border-color': '#f43f5e',
+            'border-color': '#38bdf8',
+            'border-width': 4,
             'z-index': 999,
+            color: '#ffffff',
+            'font-weight': 'bold',
           },
         },
-        // Dimmed nodes and edges when focusing on a specific test path
+        // Dimmed constellation elements when focusing on an active trace
         {
           selector: '.dimmed',
           style: {
-            opacity: 0.2,
+            opacity: 0.15,
           },
         },
         // Selected node border
@@ -389,25 +479,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
           selector: ':selected',
           style: {
             'border-color': '#38bdf8',
-            'border-width': '4px',
+            'border-width': 4,
+            'z-index': 1000,
           },
         },
       ],
       layout: {
-        name: 'dagre',
-        // @ts-expect-error dagre layout options
-        rankDir: 'TB',
-        nodeSep: 40,
-        rankSep: 60,
-        animate: false,
+        name: 'preset',
       },
     });
 
     cy.on('tap', 'node', (evt: EventObject) => {
-      const node = evt.target;
-      if (!node.data('isGroup')) {
-        setSelectedNodeId(node.id());
-      }
+      setSelectedNodeId(evt.target.id());
     });
 
     cy.on('tap', (evt: EventObject) => {
@@ -418,27 +501,65 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     cyRef.current = cy;
 
+    // Run physics simulation
+    runPhysicsLayout(cy);
+
     return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
       cy.destroy();
     };
-  }, [elements, theme]);
+  }, [elements, theme, runPhysicsLayout]);
 
-  // Resize Cytoscape canvas when drawer toggles
+  // Moving Dotted Line Animation Loop for Active Traversal Paths
   useEffect(() => {
-    if (cyRef.current) {
-      setTimeout(() => {
-        cyRef.current?.resize();
-      }, 50);
+    if (!animatePulses) {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      return;
     }
-  }, [selectedNode]);
 
-  // Handle Test Highlighting Effect
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    let isRunning = true;
+
+    const animateDash = () => {
+      if (!isRunning) return;
+      dashOffsetRef.current = (dashOffsetRef.current + 0.6) % 20;
+
+      const activeEdges = cy.$('.highlighted-edge, .highlighted-edge-failing');
+      if (activeEdges.length > 0) {
+        // Update animated dash offset for marching-ants / particle pulse
+        activeEdges.style('line-dash-offset', -dashOffsetRef.current);
+      }
+
+      animFrameRef.current = requestAnimationFrame(animateDash);
+    };
+
+    animFrameRef.current = requestAnimationFrame(animateDash);
+
+    return () => {
+      isRunning = false;
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, [animatePulses, selectedTestId]);
+
+  // Handle Test Highlighting Effect (Live Trace Traversal)
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
 
     cy.batch(() => {
-      cy.elements().removeClass('highlighted-node highlighted-edge dimmed');
+      cy.elements().removeClass(
+        'highlighted-node highlighted-edge highlighted-edge-failing dimmed'
+      );
 
       if (!selectedTestId) {
         return;
@@ -448,12 +569,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
       if (!activeTest) return;
 
       const exercisedNodeIds = new Set(activeTest.exercisedNodeIds);
-
-      // Highlight active test node
       exercisedNodeIds.add(activeTest.id);
 
+      const isFailing = activeTest.status === 'fail';
+
       cy.nodes().forEach((n) => {
-        if (n.data('isGroup')) return;
         if (exercisedNodeIds.has(n.id())) {
           n.addClass('highlighted-node');
         } else {
@@ -470,13 +590,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
             e.data('category') === 'runtime_observed');
 
         if (isTraversed) {
-          e.addClass('highlighted-edge');
+          e.addClass(isFailing ? 'highlighted-edge-failing' : 'highlighted-edge');
         } else {
           e.addClass('dimmed');
         }
       });
     });
   }, [selectedTestId, tests]);
+
+  // Resize Cytoscape canvas when drawer toggles
+  useEffect(() => {
+    if (cyRef.current) {
+      setTimeout(() => {
+        cyRef.current?.resize();
+      }, 50);
+    }
+  }, [selectedNode]);
 
   // Search handler
   const handleSearch = (query: string) => {
@@ -485,7 +614,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
     if (!cy || !query.trim()) return;
 
     const matched = cy.nodes().filter((n) => {
-      if (n.data('isGroup')) return false;
       const label = n.data('label') || '';
       const id = n.id();
       return (
@@ -497,25 +625,25 @@ export const GraphView: React.FC<GraphViewProps> = ({
     if (matched.length > 0) {
       cy.animate({
         center: { eles: matched.first() },
-        zoom: 1.2,
-        duration: 300,
+        zoom: 1.5,
+        duration: 350,
       });
       setSelectedNodeId(matched.first().id());
     }
   };
 
   const handleFit = () => {
-    cyRef.current?.fit(undefined, 30);
+    cyRef.current?.fit(undefined, 40);
   };
 
   const handleZoomIn = () => {
     const cy = cyRef.current;
-    if (cy) cy.zoom(cy.zoom() * 1.25);
+    if (cy) cy.zoom(cy.zoom() * 1.3);
   };
 
   const handleZoomOut = () => {
     const cy = cyRef.current;
-    if (cy) cy.zoom(cy.zoom() * 0.8);
+    if (cy) cy.zoom(cy.zoom() * 0.75);
   };
 
   const handleIsolateNeighbors = (nodeId: string) => {
@@ -526,14 +654,21 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
   };
 
+  const handleRerunPhysics = () => {
+    if (cyRef.current) {
+      runPhysicsLayout(cyRef.current);
+    }
+  };
+
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: selectedNode ? '1fr 400px' : '1fr',
+        gridTemplateColumns: selectedNode ? '1fr 420px' : '1fr',
         height: 'calc(100vh - 85px)',
         position: 'relative',
         overflow: 'hidden',
+        backgroundColor: '#080b11',
       }}
     >
       {/* Graph Center Area */}
@@ -543,34 +678,39 @@ export const GraphView: React.FC<GraphViewProps> = ({
           flexDirection: 'column',
           height: '100%',
           position: 'relative',
-          backgroundColor: 'var(--bg-primary)',
           minWidth: 0,
         }}
       >
-        {/* Controls Toolbar */}
+        {/* Floating Obsidian-Style HUD Toolbar */}
         <div
           style={{
+            position: 'absolute',
+            top: '12px',
+            left: '14px',
+            right: selectedNode ? '14px' : '14px',
+            zIndex: 10,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '8px 14px',
-            backgroundColor: 'var(--bg-secondary)',
-            borderBottom: '1px solid var(--border-color)',
+            padding: '7px 12px',
+            backgroundColor: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(51, 65, 85, 0.65)',
+            borderRadius: '8px',
             gap: '12px',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
             flexWrap: 'wrap',
-            zIndex: 10,
           }}
         >
-          {/* Granularity & Test Select */}
+          {/* Left: Granularity & Test Trace Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* Function vs Module switch */}
             <div
               style={{
                 display: 'flex',
-                backgroundColor: 'var(--bg-primary)',
-                borderRadius: '4px',
+                backgroundColor: 'rgba(2, 6, 23, 0.6)',
+                borderRadius: '6px',
                 padding: '2px',
-                border: '1px solid var(--border-color)',
+                border: '1px solid rgba(51, 65, 85, 0.5)',
               }}
             >
               <button
@@ -591,25 +731,25 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
             {/* Test Trace Highlight Selector */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Highlight Test Trace:
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                Test Trace:
               </span>
               <select
                 value={selectedTestId || ''}
                 onChange={(e) => onSelectTest(e.target.value || null)}
                 style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '4px',
+                  backgroundColor: 'rgba(2, 6, 23, 0.8)',
+                  color: '#f8fafc',
+                  border: '1px solid rgba(51, 65, 85, 0.7)',
+                  borderRadius: '5px',
                   padding: '3px 8px',
                   fontSize: '11px',
                   fontFamily: 'var(--font-mono)',
-                  maxWidth: '200px',
+                  maxWidth: '220px',
                 }}
                 aria-label="Highlight Test Trace"
               >
-                <option value="">(None - Show Full Topology)</option>
+                <option value="">(None - Full Topology)</option>
                 {tests.map((t) => (
                   <option key={t.id} value={t.id}>
                     [{t.status.toUpperCase()}] {t.name}
@@ -620,18 +760,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 <button
                   onClick={() => onSelectTest(null)}
                   className="btn btn-sm btn-ghost"
-                  title="Clear highlight"
+                  title="Clear trace highlight"
+                  style={{ padding: '2px 4px' }}
                 >
                   <X size={12} />
                 </button>
               )}
             </div>
 
-            {/* Inspect Symbol Selector */}
+            {/* Symbol quick inspect */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Inspect Symbol:
-              </span>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>Inspect:</span>
               <select
                 value={selectedNodeId || ''}
                 onChange={(e) => {
@@ -642,21 +781,21 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     if (targetEle) {
                       cyRef.current.animate({
                         center: { eles: targetEle },
-                        zoom: 1.1,
-                        duration: 300,
+                        zoom: 1.4,
+                        duration: 350,
                       });
                     }
                   }
                 }}
                 style={{
-                  backgroundColor: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '4px',
+                  backgroundColor: 'rgba(2, 6, 23, 0.8)',
+                  color: '#f8fafc',
+                  border: '1px solid rgba(51, 65, 85, 0.7)',
+                  borderRadius: '5px',
                   padding: '3px 8px',
                   fontSize: '11px',
                   fontFamily: 'var(--font-mono)',
-                  maxWidth: '180px',
+                  maxWidth: '220px',
                 }}
                 aria-label="Inspect Symbol"
               >
@@ -671,15 +810,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
           </div>
 
           {/* Search Box */}
-          <div style={{ position: 'relative', width: '200px' }}>
+          <div style={{ position: 'relative', width: '180px' }}>
             <Search
-              size={13}
+              size={12}
               style={{
                 position: 'absolute',
                 left: '8px',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                color: 'var(--text-muted)',
+                color: '#64748b',
               }}
             />
             <input
@@ -689,11 +828,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
               onChange={(e) => handleSearch(e.target.value)}
               style={{
                 width: '100%',
-                backgroundColor: 'var(--bg-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
+                backgroundColor: 'rgba(2, 6, 23, 0.8)',
+                border: '1px solid rgba(51, 65, 85, 0.7)',
+                borderRadius: '5px',
                 padding: '4px 8px 4px 26px',
-                color: 'var(--text-primary)',
+                color: '#f8fafc',
                 fontSize: '11px',
                 outline: 'none',
               }}
@@ -701,8 +840,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
             />
           </div>
 
-          {/* Filter Toggles & Layout Buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Filters & Obsidian Physics Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <label
               style={{
                 fontSize: '11px',
@@ -710,7 +849,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 alignItems: 'center',
                 gap: '4px',
                 cursor: 'pointer',
-                color: filterModifiedOnly ? 'var(--change-modified)' : 'var(--text-secondary)',
+                color: filterModifiedOnly ? '#fbbf24' : '#94a3b8',
+                fontWeight: filterModifiedOnly ? 600 : 400,
               }}
             >
               <input
@@ -728,7 +868,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 alignItems: 'center',
                 gap: '4px',
                 cursor: 'pointer',
-                color: 'var(--text-secondary)',
+                color: '#94a3b8',
               }}
             >
               <input
@@ -736,7 +876,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 checked={filterShowTests}
                 onChange={(e) => setFilterShowTests(e.target.checked)}
               />
-              Show Tests
+              Tests
             </label>
 
             <label
@@ -746,15 +886,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 alignItems: 'center',
                 gap: '4px',
                 cursor: 'pointer',
-                color: 'var(--text-secondary)',
+                color: '#94a3b8',
               }}
+              title="Show runtime observed execution edges"
             >
               <input
                 type="checkbox"
                 checked={filterShowRuntime}
                 onChange={(e) => setFilterShowRuntime(e.target.checked)}
               />
-              Runtime Edges
+              Runtime
             </label>
 
             <label
@@ -764,25 +905,65 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 alignItems: 'center',
                 gap: '4px',
                 cursor: 'pointer',
-                color: 'var(--text-secondary)',
+                color: '#94a3b8',
               }}
+              title="Show static AST call and import edges"
             >
               <input
                 type="checkbox"
                 checked={filterShowStatic}
                 onChange={(e) => setFilterShowStatic(e.target.checked)}
               />
-              Static Edges
+              Static
             </label>
+
+            <label
+              style={{
+                fontSize: '11px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                color: animatePulses ? '#38bdf8' : '#64748b',
+              }}
+              title="Animated moving dotted line pulses along active execution paths"
+            >
+              <input
+                type="checkbox"
+                checked={animatePulses}
+                onChange={(e) => setAnimatePulses(e.target.checked)}
+              />
+              <Sparkles size={11} />
+              Moving Pulses
+            </label>
+
+            <button
+              onClick={() => setShowPhysicsControls(!showPhysicsControls)}
+              className={`btn btn-sm ${showPhysicsControls ? 'btn-primary' : 'btn-ghost'}`}
+              title="Obsidian Graph Physics Settings"
+              style={{ padding: '3px 7px' }}
+            >
+              <Sliders size={12} />
+              Physics
+            </button>
+
+            <button
+              onClick={handleRerunPhysics}
+              className="btn btn-sm btn-ghost"
+              title="Re-scatter & Simulate Physics"
+              style={{ padding: '3px 7px' }}
+            >
+              <RotateCcw size={12} />
+            </button>
 
             {isolatedNodeId && (
               <button
                 onClick={() => setIsolatedNodeId(null)}
                 className="btn btn-sm"
                 style={{
-                  backgroundColor: 'var(--status-fail-bg)',
-                  color: 'var(--status-fail)',
-                  borderColor: 'var(--status-fail)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                  color: '#f87171',
+                  borderColor: '#ef4444',
                 }}
               >
                 Reset Isolation
@@ -791,47 +972,149 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
             <div style={{ display: 'flex', gap: '2px' }}>
               <button onClick={handleZoomIn} className="btn btn-sm btn-ghost" title="Zoom in">
-                <ZoomIn size={13} />
+                <ZoomIn size={12} />
               </button>
               <button onClick={handleZoomOut} className="btn btn-sm btn-ghost" title="Zoom out">
-                <ZoomOut size={13} />
+                <ZoomOut size={12} />
               </button>
               <button onClick={handleFit} className="btn btn-sm btn-ghost" title="Fit to view">
-                <Maximize2 size={13} />
+                <Maximize2 size={12} />
               </button>
             </div>
           </div>
         </div>
 
-        {/* Cytoscape Container */}
+        {/* Floating Physics Controls Popover (Obsidian Style) */}
+        {showPhysicsControls && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '56px',
+              right: selectedNode ? '434px' : '14px',
+              zIndex: 25,
+              width: '260px',
+              backgroundColor: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(51, 65, 85, 0.8)',
+              borderRadius: '8px',
+              padding: '12px 14px',
+              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)',
+              fontSize: '11px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+                fontWeight: 700,
+                color: '#f8fafc',
+              }}
+            >
+              <span>Obsidian Physics Forces</span>
+              <button
+                onClick={() => setShowPhysicsControls(false)}
+                className="btn btn-sm btn-ghost"
+                style={{ padding: '0 4px' }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    color: '#94a3b8',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Repulsion Force (Spacing)</span>
+                  <span>{repulsionStrength}</span>
+                </div>
+                <input
+                  type="range"
+                  min="3000"
+                  max="20000"
+                  step="500"
+                  value={repulsionStrength}
+                  onChange={(e) => setRepulsionStrength(Number(e.target.value))}
+                  style={{ width: '100%', cursor: 'pointer' }}
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    color: '#94a3b8',
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span>Central Gravity</span>
+                  <span>{gravityStrength.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="1.0"
+                  step="0.05"
+                  value={gravityStrength}
+                  onChange={(e) => setGravityStrength(Number(e.target.value))}
+                  style={{ width: '100%', cursor: 'pointer' }}
+                />
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(51, 65, 85, 0.5)', paddingTop: '8px' }}>
+                <button
+                  onClick={handleRerunPhysics}
+                  className="btn btn-sm btn-primary"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                >
+                  <Play size={11} /> Re-Simulate Constellation
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cytoscape Canvas Container (Obsidian Starry Cosmos Background) */}
         <div
           ref={containerRef}
           style={{
             flex: 1,
             width: '100%',
             height: '100%',
-            backgroundColor: theme === 'dark' ? '#090d16' : '#f8fafc',
+            background: 'radial-gradient(circle at 50% 50%, #0d1322 0%, #060910 100%)',
+            backgroundImage:
+              'radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
           }}
         />
 
-        {/* Legend Drawer Toggle & Overlay */}
+        {/* Obsidian-Style Evidence & Color Legend */}
         <div
           style={{
             position: 'absolute',
-            bottom: '12px',
-            left: '12px',
+            bottom: '14px',
+            left: '14px',
             zIndex: 20,
-            maxWidth: showLegend ? '360px' : 'auto',
+            maxWidth: showLegend ? '380px' : 'auto',
           }}
         >
           {showLegend ? (
             <div
               style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
+                backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(51, 65, 85, 0.7)',
+                borderRadius: '8px',
                 padding: '12px 14px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
                 fontSize: '11px',
               }}
             >
@@ -844,10 +1127,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   fontWeight: 700,
                   textTransform: 'uppercase',
                   letterSpacing: '0.04em',
-                  color: 'var(--text-muted)',
+                  color: '#94a3b8',
                 }}
               >
-                <span>Evidence & Semantics Legend</span>
+                <span>Obsidian Dataset Legend</span>
                 <button
                   onClick={() => setShowLegend(false)}
                   className="btn btn-sm btn-ghost"
@@ -857,7 +1140,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 </button>
               </div>
 
-              {/* Node colors */}
+              {/* Node colors: strictly colored only on what is changed */}
               <div
                 style={{
                   display: 'grid',
@@ -866,84 +1149,85 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   marginBottom: '10px',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                   <div
                     style={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '2px',
-                      backgroundColor: '#d97706',
-                      border: '1px solid #f59e0b',
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      backgroundColor: '#f59e0b',
+                      border: '2px solid #fef08a',
+                      boxShadow: '0 0 6px rgba(245, 158, 11, 0.6)',
                     }}
                   />
-                  <span>Modified Code (Amber)</span>
+                  <span style={{ color: '#fbbf24', fontWeight: 600 }}>Modified Code (Amber)</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                   <div
                     style={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '2px',
-                      backgroundColor: '#0891b2',
-                      border: '1px solid #06b6d4',
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      backgroundColor: '#06b6d4',
+                      border: '2px solid #a5f3fc',
+                      boxShadow: '0 0 6px rgba(6, 182, 212, 0.6)',
                     }}
                   />
-                  <span>Added Code (Teal)</span>
+                  <span style={{ color: '#22d3ee', fontWeight: 600 }}>Added Code (Cyan)</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                   <div
                     style={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '2px',
-                      backgroundColor: '#dc2626',
-                      border: '1px solid #ef4444',
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      backgroundColor: '#ef4444',
+                      border: '2px solid #fca5a5',
+                      boxShadow: '0 0 8px rgba(239, 68, 68, 0.7)',
                     }}
                   />
-                  <span>Failing Test (Red)</span>
+                  <span style={{ color: '#f87171', fontWeight: 600 }}>Failing Test (Crimson)</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                   <div
                     style={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '2px',
-                      backgroundColor: '#059669',
-                      border: '1px solid #10b981',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: '#10b981',
+                      border: '1.5px solid #6ee7b7',
                     }}
                   />
-                  <span>Passing Test (Green)</span>
+                  <span style={{ color: '#a7f3d0' }}>Passing Test (Green)</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                   <div
                     style={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '2px',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
                       backgroundColor: '#334155',
                       border: '1px solid #475569',
                     }}
                   />
-                  <span>Unchanged (Slate)</span>
+                  <span style={{ color: '#64748b' }}>Unchanged Code (Slate)</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                   <div
                     style={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '2px',
-                      backgroundColor: 'transparent',
-                      border: '2px solid #f43f5e',
+                      width: '16px',
+                      height: '0',
+                      borderTop: '2px dashed #38bdf8',
                     }}
                   />
-                  <span>Highlighted Path</span>
+                  <span style={{ color: '#38bdf8' }}>Moving Dotted Pulse</span>
                 </div>
               </div>
 
               {/* Edge styles */}
               <div
                 style={{
-                  borderTop: '1px solid var(--border-subtle)',
+                  borderTop: '1px solid rgba(51, 65, 85, 0.6)',
                   paddingTop: '8px',
                   display: 'flex',
                   flexDirection: 'column',
@@ -954,12 +1238,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   <div
                     style={{
                       width: '24px',
-                      height: '3px',
-                      backgroundColor: '#38bdf8',
+                      height: '2px',
+                      backgroundColor: 'rgba(56, 189, 248, 0.6)',
                     }}
                   />
-                  <span>
-                    <strong>Runtime Observed:</strong> Executed during test run
+                  <span style={{ color: '#cbd5e1' }}>
+                    <strong>Runtime Observed:</strong> Executed trace during test run
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -967,27 +1251,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     style={{
                       width: '24px',
                       height: '0px',
-                      borderTop: '2px dashed #64748b',
+                      borderTop: '1px dashed rgba(148, 163, 184, 0.35)',
                     }}
                   />
-                  <span>
-                    <strong>Static Possibility:</strong> AST call / import relation
+                  <span style={{ color: '#94a3b8' }}>
+                    <strong>Static Possibility:</strong> AST call / import filament
                   </span>
                 </div>
               </div>
 
-              {/* Notice */}
+              {/* Honest Causality Notice */}
               <div
                 style={{
                   marginTop: '8px',
                   paddingTop: '6px',
-                  borderTop: '1px solid var(--border-subtle)',
+                  borderTop: '1px solid rgba(51, 65, 85, 0.6)',
                   fontSize: '10px',
-                  color: 'var(--text-muted)',
+                  color: '#94a3b8',
                 }}
               >
-                <strong>Observed, not proven cause:</strong> Graph edges show real observed traces,
-                not proven defect root cause.
+                <strong style={{ color: '#fbbf24' }}>Observed, not proven cause:</strong> Graph
+                edges show real observed traces, not proven defect root cause.
               </div>
             </div>
           ) : (
@@ -995,12 +1279,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
               onClick={() => setShowLegend(true)}
               className="btn btn-sm"
               style={{
-                backgroundColor: 'var(--bg-secondary)',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(51, 65, 85, 0.6)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
               }}
             >
               <Info size={12} />
-              Show Legend
+              Obsidian Legend
             </button>
           )}
         </div>
@@ -1010,8 +1296,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
       {selectedNode && (
         <div
           style={{
-            borderLeft: '1px solid var(--border-color)',
-            backgroundColor: 'var(--bg-secondary)',
+            borderLeft: '1px solid rgba(51, 65, 85, 0.7)',
+            backgroundColor: 'rgba(15, 23, 42, 0.96)',
+            backdropFilter: 'blur(16px)',
             height: '100%',
             overflowY: 'auto',
             display: 'flex',
@@ -1022,8 +1309,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           <div
             style={{
               padding: '14px 16px',
-              borderBottom: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-surface)',
+              borderBottom: '1px solid rgba(51, 65, 85, 0.7)',
+              backgroundColor: 'rgba(2, 6, 23, 0.5)',
             }}
           >
             <div
@@ -1051,6 +1338,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 fontWeight: 700,
                 fontFamily: 'var(--font-mono)',
                 wordBreak: 'break-all',
+                color: '#f8fafc',
               }}
             >
               {selectedNode.name}
@@ -1058,7 +1346,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             <div
               style={{
                 fontSize: '11px',
-                color: 'var(--text-muted)',
+                color: '#94a3b8',
                 fontFamily: 'var(--font-mono)',
                 marginTop: '2px',
               }}
@@ -1070,12 +1358,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
               <button
                 onClick={() => handleIsolateNeighbors(selectedNode.id)}
                 className="btn btn-sm"
-                title="Isolate 1-hop connected neighbors"
+                title="Isolate 1-hop connected constellation neighbors"
               >
                 <Eye size={12} />
                 {isolatedNodeId === selectedNode.id
-                  ? 'Show Full Graph'
-                  : 'Isolate Neighbors'}
+                  ? 'Show Full Constellation'
+                  : 'Isolate 1-Hop Neighbors'}
               </button>
             </div>
           </div>
@@ -1090,7 +1378,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     fontWeight: 700,
                     textTransform: 'uppercase',
                     letterSpacing: '0.04em',
-                    color: 'var(--change-modified)',
+                    color: '#fbbf24',
                     marginBottom: '6px',
                     display: 'flex',
                     alignItems: 'center',
@@ -1111,7 +1399,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   fontWeight: 700,
                   textTransform: 'uppercase',
                   letterSpacing: '0.04em',
-                  color: 'var(--text-muted)',
+                  color: '#94a3b8',
                   marginBottom: '6px',
                   display: 'flex',
                   alignItems: 'center',
@@ -1134,7 +1422,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   fontWeight: 700,
                   textTransform: 'uppercase',
                   letterSpacing: '0.04em',
-                  color: 'var(--text-muted)',
+                  color: '#94a3b8',
                   marginBottom: '8px',
                 }}
               >
@@ -1142,7 +1430,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               </div>
 
               {relatedEdges.length === 0 ? (
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
                   No inbound or outbound connections recorded.
                 </div>
               ) : (
@@ -1155,12 +1443,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         key={e.id}
                         onClick={() => setSelectedNodeId(counterpart)}
                         style={{
-                          backgroundColor: 'var(--bg-surface)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '4px',
+                          backgroundColor: 'rgba(2, 6, 23, 0.6)',
+                          border: '1px solid rgba(51, 65, 85, 0.6)',
+                          borderRadius: '5px',
                           padding: '6px 8px',
                           fontSize: '11px',
                           cursor: 'pointer',
+                          transition: 'border-color 0.15s ease',
                         }}
                       >
                         <div
@@ -1175,8 +1464,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
                             style={{
                               color:
                                 e.category === 'runtime_observed'
-                                  ? 'var(--accent)'
-                                  : 'var(--text-muted)',
+                                  ? '#38bdf8'
+                                  : '#94a3b8',
                               fontWeight: 600,
                               fontSize: '10px',
                               textTransform: 'uppercase',
@@ -1185,7 +1474,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                             {isOutbound ? '→ Calls' : '← Called by'} ({e.category.replace('_', ' ')})
                           </span>
                           {e.observedCount && (
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
                               {e.observedCount}x observed
                             </span>
                           )}
@@ -1193,7 +1482,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         <div
                           style={{
                             fontFamily: 'var(--font-mono)',
-                            color: 'var(--text-primary)',
+                            color: '#f8fafc',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -1204,7 +1493,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                         <div
                           style={{
                             fontSize: '10px',
-                            color: 'var(--text-muted)',
+                            color: '#64748b',
                             marginTop: '2px',
                           }}
                         >
