@@ -131,7 +131,8 @@ describe('FixtureAdapter', () => {
     );
     expect(validateToken).toBeDefined();
     expect(validateToken?.lineStart).toBe(43);
-    const snippetLines = validateToken!.sourceSnippet.split('\n');
+    expect(validateToken!.sourceSnippet).toBeDefined();
+    const snippetLines = validateToken!.sourceSnippet!.split('\n');
     // Line 52 is line offset 52 - 43 = 9
     expect(snippetLines[9]).toContain('raise InvalidClaimError');
     expect(failingTest?.traceback).toContain('tokens.py", line 52');
