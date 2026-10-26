@@ -1,0 +1,74 @@
+{
+  "acceptance_date": "2026-10-26",
+  "base_sha": "542cc5d070510d3e6ff449bc921c8b63bb0ceae6",
+  "clean_runs": [
+    {
+      "artifacts": "faultmesh-v2-runs/runs/run-27d885ccc99b",
+      "command": ["python", "-m", "pytest", "-q", "tests", "-p", "faultmesh_observer", "--json-report", "--json-report-file=/output/pytest-report.json"],
+      "content_sha256": "df3410df5c8bf6f5608d434bc1d3006625ee58a2036b854662c11bd6e2ed102d",
+      "observation_status": "COMPLETE",
+      "outcome": "PASSED",
+      "run_id": "run-27d885ccc99b",
+      "summary": {"collected": 502, "failed": 0, "passed": 502}
+    },
+    {
+      "artifacts": "faultmesh-v2-runs/runs/run-3d3402eb34e2",
+      "command": ["python", "-m", "pytest", "-q", "tests", "-p", "faultmesh_observer", "--json-report", "--json-report-file=/output/pytest-report.json"],
+      "content_sha256": "df3410df5c8bf6f5608d434bc1d3006625ee58a2036b854662c11bd6e2ed102d",
+      "observation_status": "COMPLETE",
+      "outcome": "PASSED",
+      "run_id": "run-3d3402eb34e2",
+      "summary": {"collected": 502, "failed": 0, "passed": 502}
+    }
+  ],
+  "config": {
+    "limits": {"cpus": 1.0, "max_evidence_bytes": 10000000, "max_output_bytes": 1000000, "memory": "512m", "pids": 128, "timeout_seconds": 300},
+    "pythonpath": ["src"],
+    "schema_version": "2.0",
+    "working_directory": "."
+  },
+  "docker": {"architecture": "arm64", "server_version": "29.5.2"},
+  "environment": {
+    "base_image": "python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377",
+    "installed_packages": [
+      "Pygments==2.21.0", "coverage==7.10.7", "hypothesis==6.152.1",
+      "iniconfig==2.3.1", "packaging==26.3", "pip==24.0", "pluggy==1.7.0",
+      "pytest-json-report==1.5.0", "pytest-metadata==3.1.1", "pytest==9.0.3",
+      "setuptools==79.0.1", "sortedcontainers==2.4.0", "wheel==0.46.3"
+    ],
+    "resolved_image_id": "sha256:41242ff8bcb8bda7755aa1d4a832902523b8b14a1968ffb204ec3296c0268f75"
+  },
+  "injected_failure": {
+    "artifacts": "faultmesh-v2-runs/runs/run-1c31adf64626",
+    "comparison": "SAME_FAILURE",
+    "content_sha256": "4124014cf29a40294a56947c79031811d2d0b0f82220d8eb8e5af91d3849a6ea",
+    "failed_node_id": "tests/test_faultmesh_injected_failure.py::test_faultmesh_injected_wrong_integer_encoding",
+    "failure_fingerprint": "903afcd3b317b31e4efe2707558e22cb70890c1b774fc9affb093485808eb38e",
+    "parent_run_id": "run-1c31adf64626",
+    "replay_run_id": "run-9de6b4cb5a58",
+    "replay_artifacts": "faultmesh-v2-runs/runs/run-9de6b4cb5a58",
+    "summary": {"collected": 503, "failed": 1, "passed": 502}
+  },
+  "license": "MIT",
+  "origin": "https://github.com/python-hyper/hpack.git",
+  "replay_source_change_result": "REFUSED_CONTENT_HASH_MISMATCH",
+  "revision": "c2edbee3b5508e0b1689877fe6f173eafb097aef",
+  "schema_version": "2.0",
+  "selected_evidence": [
+    {
+      "node_id": "tests/test_encode_decode.py::TestIntegerEncoding::test_encoding_10_with_5_bit_prefix",
+      "symbols": ["encode_integer", "TestIntegerEncoding.test_encoding_10_with_5_bit_prefix"]
+    },
+    {
+      "node_id": "tests/test_hpack.py::TestHPACKEncoder::test_literal_header_field_with_indexing",
+      "symbols": ["Encoder.__init__", "Encoder._encode_literal", "Encoder.add", "Encoder.encode", "HeaderTable.__init__", "HeaderTable.add", "HeaderTable.search", "encode_integer"]
+    }
+  ],
+  "timeout": {
+    "artifacts": "faultmesh-v2-runs/runs/run-ea9f64f06520",
+    "observation_status": "INSTRUMENTATION_ERROR",
+    "outcome": "TIMEOUT",
+    "run_id": "run-ea9f64f06520",
+    "test_case_count": 0
+  }
+}

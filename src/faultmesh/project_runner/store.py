@@ -1,13 +1,14 @@
-"""Durable append-only store for V1 project test runs."""
+"""Durable append-only store for project runs and exact test cases."""
 
 from __future__ import annotations
 
+import builtins
 import sqlite3
 from pathlib import Path
 
-from faultmesh.project_runner.models import ProjectTestRun
+from faultmesh.project_runner.models import ProjectTestRun, TestCaseRecord
 
-RUN_STORE_SCHEMA_VERSION = 1
+RUN_STORE_SCHEMA_VERSION = 2
 
 
 class RunStoreError(RuntimeError):
@@ -21,6 +22,7 @@ class RunStore:
         self.connection = sqlite3.connect(self.path)
         self.connection.row_factory = sqlite3.Row
         try:
+            self.connection.execute("PRAGMA foreign_keys = ON")
             self._open_schema()
         except Exception:
             self.connection.close()
@@ -53,6 +55,12 @@ class RunStore:
                     "id TEXT PRIMARY KEY, created_at TEXT NOT NULL, record_json TEXT NOT NULL)"
                 )
                 self.connection.execute(
+                    "CREATE TABLE test_cases ("
+                    "run_id TEXT NOT NULL REFERENCES runs(id), "
+                    "node_id TEXT NOT NULL, record_json TEXT NOT NULL, "
+                    "PRIMARY KEY (run_id, node_id))"
+                )
+                self.connection.execute(
                     "INSERT INTO schema_metadata VALUES (?)", (RUN_STORE_SCHEMA_VERSION,)
                 )
                 self.connection.commit()
@@ -60,18 +68,39 @@ class RunStore:
                 self.connection.rollback()
                 raise
             return
-        if tables != {"schema_metadata", "runs"}:
-            raise RunStoreError("run store schema is unknown; choose a fresh artifact_root")
+        if tables != {"schema_metadata", "runs", "test_cases"}:
+            raise RunStoreError(
+                "run store schema is unsupported; choose a fresh V2 artifact_root"
+            )
         row = self.connection.execute("SELECT version FROM schema_metadata").fetchone()
         if row is None or row["version"] != RUN_STORE_SCHEMA_VERSION:
-            raise RunStoreError("run store version is unsupported; choose a fresh artifact_root")
+            raise RunStoreError(
+                "run store version is unsupported; choose a fresh V2 artifact_root"
+            )
 
-    def add(self, run: ProjectTestRun) -> None:
+    def add(
+        self, run: ProjectTestRun, test_cases: list[TestCaseRecord] | None = None
+    ) -> None:
+        cases = test_cases or []
+        if run.test_case_count != len(cases):
+            raise RunStoreError("run test_case_count does not match supplied test cases")
+        node_ids = [case.node_id for case in cases]
+        if len(node_ids) != len(set(node_ids)):
+            raise RunStoreError("test case node IDs must be unique within a run")
+        if any(case.run_id != run.id for case in cases):
+            raise RunStoreError("test case belongs to a different run")
         try:
             with self.connection:
                 self.connection.execute(
                     "INSERT INTO runs VALUES (?, ?, ?)",
                     (run.id, run.started_at.isoformat(), run.model_dump_json()),
+                )
+                self.connection.executemany(
+                    "INSERT INTO test_cases VALUES (?, ?, ?)",
+                    [
+                        (case.run_id, case.node_id, case.model_dump_json())
+                        for case in cases
+                    ],
                 )
         except sqlite3.IntegrityError as exc:
             raise RunStoreError(f"run already exists: {run.id}") from exc
@@ -89,3 +118,23 @@ class RunStore:
             "SELECT record_json FROM runs ORDER BY created_at, id"
         ).fetchall()
         return [ProjectTestRun.model_validate_json(row["record_json"]) for row in rows]
+
+    def get_test(self, run_id: str, node_id: str) -> TestCaseRecord:
+        row = self.connection.execute(
+            "SELECT record_json FROM test_cases WHERE run_id = ? AND node_id = ?",
+            (run_id, node_id),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown test case: {run_id}/{node_id}")
+        return TestCaseRecord.model_validate_json(row["record_json"])
+
+    def list_tests(self, run_id: str) -> builtins.list[TestCaseRecord]:
+        if self.connection.execute(
+            "SELECT 1 FROM runs WHERE id = ?", (run_id,)
+        ).fetchone() is None:
+            raise KeyError(f"unknown test run: {run_id}")
+        rows = self.connection.execute(
+            "SELECT record_json FROM test_cases WHERE run_id = ? ORDER BY node_id",
+            (run_id,),
+        ).fetchall()
+        return [TestCaseRecord.model_validate_json(row["record_json"]) for row in rows]

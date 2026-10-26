@@ -11,6 +11,10 @@ Markdown incident reports.
 V1 also runs an existing pytest suite in a configured, locked-down Docker container and stores an
 honest machine-readable result. This path does not call an AI model.
 
+V2 optionally records per-test line and symbol observations with coverage.py dynamic contexts.
+It can inspect and export those records without the checkout, then replay one recorded failed
+pytest node in the same immutable prepared image. Coverage proves observation, not causality.
+
 The model is not the oracle. A finding reaches `VERIFIED` only after a validated property is
 violated by a stable, repeated execution.
 
@@ -162,9 +166,9 @@ read-only source mount and root filesystem, a non-root user, no network, no effe
 
 The supported boundary is deliberately small: Git checkouts, digest-pinned Python images, simple
 `name==version` test dependencies, and argv-form pytest commands. It does not install the target
-package or run project setup hooks. Per-test coverage, test-to-code evidence, and failed-test replay
-are V2 work and are not implemented. See [docs/v1-project-runner.md](docs/v1-project-runner.md) for
-the config, acceptance record, and limitations.
+package or run project setup hooks. See [docs/v1-project-runner.md](docs/v1-project-runner.md) for
+the V1 boundary and [docs/v2-test-evidence.md](docs/v2-test-evidence.md) for V2 observation,
+replay, acceptance evidence, and limitations.
 
 ## Install and run
 
@@ -194,8 +198,12 @@ Or configure `.faultmesh.toml` (see [docs/configuration.md](docs/configuration.m
 faultmesh reproduce <incident-id> --repository ./repository
 faultmesh report <incident-id> --repository ./repository --format markdown
 faultmesh inspect ./repository
-faultmesh run-tests /path/to/project-run.toml
+faultmesh run-tests --observe /path/to/project-run.toml
 faultmesh test-run <run-id> --config /path/to/project-run.toml
+faultmesh test-cases <run-id> --config /path/to/project-run.toml
+faultmesh test-evidence <run-id> '<exact-node-id>' --config /path/to/project-run.toml
+faultmesh replay-test <run-id> '<exact-failed-node-id>' --config /path/to/project-run.toml
+faultmesh export-run <run-id> --config /path/to/project-run.toml
 ```
 
 See [docs/architecture.md](docs/architecture.md) for architecture, contracts, risks, the complete

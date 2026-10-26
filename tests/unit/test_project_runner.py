@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from faultmesh.project_runner.config import load_run_config
+from faultmesh.project_runner.config import ResolvedRunConfig, load_run_config
 from faultmesh.project_runner.models import ProjectRunConfig, RunOutcome, RunTermination
 from faultmesh.project_runner.runner import (
     ContainerExecution,
@@ -104,13 +105,32 @@ class FakeDocker(DockerClient):
         run_id: str,
         image_id: str,
         run_dir: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
     ) -> ContainerExecution:
-        del resolved, run_id, image_id
+        del resolved, run_id, image_id, observe, argv
         (run_dir / "pytest-report.json").write_text(
             json.dumps(
                 {
                     "exitcode": 0,
                     "summary": {"passed": 2, "total": 2, "collected": 2},
+                    "tests": [
+                        {
+                            "nodeid": "tests/test_sample.py::test_one",
+                            "outcome": "passed",
+                            "setup": {"duration": 0.001, "outcome": "passed"},
+                            "call": {"duration": 0.001, "outcome": "passed"},
+                            "teardown": {"duration": 0.001, "outcome": "passed"},
+                        },
+                        {
+                            "nodeid": "tests/test_sample.py::test_two",
+                            "outcome": "passed",
+                            "setup": {"duration": 0.001, "outcome": "passed"},
+                            "call": {"duration": 0.001, "outcome": "passed"},
+                            "teardown": {"duration": 0.001, "outcome": "passed"},
+                        },
+                    ],
                 }
             ),
             encoding="utf-8",
@@ -137,8 +157,11 @@ class TimeoutDocker(FakeDocker):
         run_id: str,
         image_id: str,
         run_dir: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
     ) -> ContainerExecution:
-        del resolved, run_id, image_id, run_dir
+        del resolved, run_id, image_id, run_dir, observe, argv
         return ContainerExecution(
             exit_code=None,
             termination=RunTermination.TIMEOUT,
@@ -156,8 +179,11 @@ class CancelledDocker(FakeDocker):
         run_id: str,
         image_id: str,
         run_dir: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
     ) -> ContainerExecution:
-        del resolved, run_id, image_id, run_dir
+        del resolved, run_id, image_id, run_dir, observe, argv
         return ContainerExecution(
             exit_code=None,
             termination=RunTermination.CANCELLED,
@@ -175,8 +201,11 @@ class MissingReportDocker(FakeDocker):
         run_id: str,
         image_id: str,
         run_dir: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
     ) -> ContainerExecution:
-        del resolved, run_id, image_id, run_dir
+        del resolved, run_id, image_id, run_dir, observe, argv
         return ContainerExecution(
             exit_code=0,
             termination=RunTermination.EXITED,
@@ -185,6 +214,25 @@ class MissingReportDocker(FakeDocker):
             stdout_truncated=False,
             stderr_truncated=False,
         )
+
+
+class DisappearingTargetDocker(FakeDocker):
+    def run(
+        self,
+        resolved: object,
+        run_id: str,
+        image_id: str,
+        run_dir: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
+    ) -> ContainerExecution:
+        assert isinstance(resolved, ResolvedRunConfig)
+        result = super().run(
+            resolved, run_id, image_id, run_dir, observe=observe, argv=argv
+        )
+        shutil.rmtree(resolved.target_root)
+        return result
 
 
 def test_config_rejects_unpinned_or_unsafe_values() -> None:
@@ -336,3 +384,29 @@ def test_infrastructure_and_timeout_are_not_test_failures(
     assert run.summary is None
     with RunStore(tmp_path / "artifacts" / "runs.sqlite3") as store:
         assert store.get(run.id).outcome == outcome
+
+
+def test_disappearing_target_leaves_durable_infrastructure_record(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    run = ProjectTestRunner(DisappearingTargetDocker()).run(config)
+    assert run.outcome == RunOutcome.INFRASTRUCTURE_ERROR
+    assert run.error is not None and "unavailable after run" in run.error
+    with RunStore(tmp_path / "artifacts" / "runs.sqlite3") as store:
+        assert store.get(run.id).outcome == RunOutcome.INFRASTRUCTURE_ERROR
+
+
+def test_missing_observation_is_not_an_empty_success(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.write_text(
+        config.read_text().replace('schema_version = "1.0"', 'schema_version = "2.0"')
+    )
+    run = ProjectTestRunner(FakeDocker()).run(config, observe=True)
+    assert run.outcome == RunOutcome.PASSED
+    assert run.observation_status.value == "INSTRUMENTATION_ERROR"
+    with RunStore(tmp_path / "artifacts" / "runs.sqlite3") as store:
+        tests = store.list_tests(run.id)
+    assert all(
+        case.observation is not None
+        and case.observation.status.value == "INSTRUMENTATION_ERROR"
+        for case in tests
+    )

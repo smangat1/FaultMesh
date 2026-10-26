@@ -1,0 +1,68 @@
+{
+  "duration_ms": 2.207335000036892,
+  "failure_fingerprint": "903afcd3b317b31e4efe2707558e22cb70890c1b774fc9affb093485808eb38e",
+  "failure_text": "def test_faultmesh_injected_wrong_integer_encoding() -> None:\n        # Deliberately wrong: 10 with a 5-bit prefix is encoded as b\"\\x0a\".\n>       assert encode_integer(10, 5) == b\"\\x00\"\nE       AssertionError: assert bytearray(b'\\n') == b'\\x00'\nE         \nE         At index 0 diff: 10 != 0\nE         Use -v to get more diff\n\ntests/test_faultmesh_injected_failure.py:6: AssertionError",
+  "failure_truncated": false,
+  "node_id": "tests/test_faultmesh_injected_failure.py::test_faultmesh_injected_wrong_integer_encoding",
+  "observation": {
+    "error": null,
+    "files": [
+      {
+        "content_sha256": "4ab14aab1a856cee45aea3169854167b16dac9ef9ec4cef1ed1d5da82439769d",
+        "lines": [
+          {"line": 55, "phases": ["call"]},
+          {"line": 57, "phases": ["call"]},
+          {"line": 61, "phases": ["call"]},
+          {"line": 65, "phases": ["call"]},
+          {"line": 67, "phases": ["call"]},
+          {"line": 68, "phases": ["call"]}
+        ],
+        "mapping_status": "MAPPED",
+        "path": "src/hpack/hpack.py"
+      },
+      {
+        "content_sha256": "c64644bc96c97749281480c349f89f07c7c01c582de35dbd87a5ef08c3e5621c",
+        "lines": [{"line": 6, "phases": ["call"]}],
+        "mapping_status": "MAPPED",
+        "path": "tests/test_faultmesh_injected_failure.py"
+      }
+    ],
+    "instrumentation_version": "coverage-contexts-1.0",
+    "source_content_sha256": "4124014cf29a40294a56947c79031811d2d0b0f82220d8eb8e5af91d3849a6ea",
+    "source_revision": "c2edbee3b5508e0b1689877fe6f173eafb097aef",
+    "status": "COMPLETE",
+    "symbols": [
+      {
+        "content_sha256": "4ab14aab1a856cee45aea3169854167b16dac9ef9ec4cef1ed1d5da82439769d",
+        "end_line": 78,
+        "evidence_type": "TEST_EXECUTED_SYMBOL",
+        "executed_lines": [55, 57, 61, 65, 67, 68],
+        "path": "src/hpack/hpack.py",
+        "phases": ["call"],
+        "qualified_name": "encode_integer",
+        "start_line": 50
+      },
+      {
+        "content_sha256": "c64644bc96c97749281480c349f89f07c7c01c582de35dbd87a5ef08c3e5621c",
+        "end_line": 6,
+        "evidence_type": "TEST_EXECUTED_SYMBOL",
+        "executed_lines": [6],
+        "path": "tests/test_faultmesh_injected_failure.py",
+        "phases": ["call"],
+        "qualified_name": "test_faultmesh_injected_wrong_integer_encoding",
+        "start_line": 4
+      }
+    ],
+    "unknown_contexts": [],
+    "unmapped": [],
+    "outside_root_files": 0
+  },
+  "outcome": "FAILED",
+  "phases": [
+    {"duration_ms": 0.13815899995961445, "failure_text": null, "failure_truncated": false, "outcome": "PASSED", "phase": "setup"},
+    {"duration_ms": 0.5642600000328457, "failure_text": "AssertionError: assert bytearray(b'\\n') == b'\\x00'", "failure_truncated": false, "outcome": "FAILED", "phase": "call"},
+    {"duration_ms": 1.5049160000444317, "failure_text": null, "failure_truncated": false, "outcome": "PASSED", "phase": "teardown"}
+  ],
+  "run_id": "run-1c31adf64626",
+  "schema_version": "2.0"
+}

@@ -30,24 +30,41 @@ Failures to initialize inference, validate configuration, or initialize the requ
 an exception. No finding is returned as verified unless its `Incident.verification_status` is
 `VERIFIED` and its associated experiment reports a stable explicit violation.
 
-## V1 project runner
+## V2 project runner
 
 ```python
 from pathlib import Path
 
 from faultmesh.project_runner import RunStore, run_project_tests
 from faultmesh.project_runner.config import load_run_config
+from faultmesh.project_runner.replay import export_run, get_test_case, replay_failed_test
 
 config_path = Path("/path/to/project-run.toml")
-run = run_project_tests(config_path)
+run = run_project_tests(config_path, observe=True)
 
 resolved = load_run_config(config_path)
 with RunStore(resolved.artifact_root / "runs.sqlite3") as store:
     same_run = store.get(run.id)
+
+case = get_test_case(config_path, run.id, "tests/test_api.py::test_example[param]")
+exported = export_run(config_path, run.id)
+# Failed tests only; creates a new append-only run.
+replay = replay_failed_test(config_path, run.id, case.node_id)
 ```
 
 `run_project_tests` never falls back to host execution. `ProjectTestRun.outcome` distinguishes test
 failure, collection error, no tests, timeout, cancellation, malformed report, and infrastructure
 error. `summary` values stay `None` when pytest did not report them. Artifact references are relative
 to the configured artifact root.
+
+`TestCaseRecord` keeps exact pytest node IDs, phase results, bounded raw failure text, a normalized
+failure fingerprint, and optional observed files/symbols. `TEST_EXECUTED_SYMBOL` means that the
+named test phase measured at least one executable line owned by that symbol; it is not a direct-call,
+call-path, causality, or complete-coverage claim. `RunEvidenceExport` is deterministic schema 2.0
+JSON and uses the stored source snapshot, so read/export does not need the original checkout.
+
+Replay verifies the recorded revision, worktree content hash, immutable local image ID, and package
+inventory before starting. Its comparison is one of `SAME_FAILURE`, `DIFFERENT_FAILURE`,
+`PASSED_ON_REPLAY`, `MISSING_OR_DESELECTED`, or `INCONCLUSIVE`. One matching replay is evidence of
+one repeat, not a long-term stability claim.
 

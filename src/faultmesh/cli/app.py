@@ -13,8 +13,15 @@ from faultmesh.analysis import ProjectAnalyzer
 from faultmesh.api import AnalysisOptions, analyze_repository, reproduce_incident
 from faultmesh.config import FaultMeshConfig
 from faultmesh.evidence import EvidenceStore
-from faultmesh.project_runner import RunOutcome, RunStore, run_project_tests
-from faultmesh.project_runner.config import load_run_config
+from faultmesh.project_runner import (
+    ReplayComparison,
+    RunOutcome,
+    export_run,
+    get_test_case,
+    replay_failed_test,
+    run_project_tests,
+)
+from faultmesh.project_runner.replay import open_run_store
 from faultmesh.telemetry import configure_json_logging
 
 app = typer.Typer(
@@ -136,10 +143,13 @@ def run_tests(
     config: Annotated[
         Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
     ],
+    observe: Annotated[
+        bool, typer.Option("--observe", help="Record per-test executed source evidence.")
+    ] = False,
 ) -> None:
     """Run an existing pytest suite in its configured Docker environment."""
     try:
-        result = run_project_tests(config)
+        result = run_project_tests(config, observe=observe)
     except Exception as exc:
         typer.secho(f"FaultMesh test run failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
@@ -159,13 +169,104 @@ def test_run(
 ) -> None:
     """Print one durable project test run without executing it again."""
     try:
-        resolved = load_run_config(config)
-        with RunStore(resolved.artifact_root / "runs.sqlite3") as store:
+        with open_run_store(config) as store:
             result = store.get(run_id)
     except Exception as exc:
         typer.secho(f"FaultMesh run lookup failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("test-cases")
+def test_cases(
+    run_id: Annotated[str, typer.Argument()],
+    config: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
+    ],
+) -> None:
+    """List exact pytest node IDs stored for one run."""
+    try:
+        with open_run_store(config) as store:
+            cases = store.list_tests(run_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh test list failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            [
+                {
+                    "node_id": case.node_id,
+                    "outcome": case.outcome.value,
+                    "failure_fingerprint": case.failure_fingerprint,
+                    "observation_status": (
+                        case.observation.status.value if case.observation is not None else None
+                    ),
+                }
+                for case in cases
+            ],
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("test-evidence")
+def test_evidence(
+    run_id: Annotated[str, typer.Argument()],
+    node_id: Annotated[str, typer.Argument()],
+    config: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
+    ],
+) -> None:
+    """Print one test's failure and observed source evidence without executing it."""
+    try:
+        case = get_test_case(config, run_id, node_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh evidence lookup failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(case.model_dump_json(indent=2))
+
+
+@app.command("export-run")
+def export_test_run(
+    run_id: Annotated[str, typer.Argument()],
+    config: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
+    ],
+) -> None:
+    """Print deterministic versioned JSON for a future read-only adapter."""
+    try:
+        exported = export_run(config, run_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh export failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(json.dumps(exported.model_dump(mode="json"), indent=2, sort_keys=True))
+
+
+@app.command("replay-test")
+def replay_test(
+    run_id: Annotated[str, typer.Argument()],
+    node_id: Annotated[str, typer.Argument()],
+    config: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
+    ],
+) -> None:
+    """Rerun exactly one recorded failed pytest node in the original image."""
+    try:
+        replayed = replay_failed_test(config, run_id, node_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh test replay failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(replayed.model_dump_json(indent=2))
+    comparison = replayed.replay.comparison if replayed.replay is not None else None
+    if comparison == ReplayComparison.SAME_FAILURE:
+        return
+    if comparison in {
+        ReplayComparison.DIFFERENT_FAILURE,
+        ReplayComparison.PASSED_ON_REPLAY,
+    }:
+        raise typer.Exit(code=1)
+    raise typer.Exit(code=2)
 
 
 @app.command()
