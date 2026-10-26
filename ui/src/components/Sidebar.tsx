@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
+  ChevronsUpDown,
   Pin,
   PinOff,
   FileCode,
@@ -22,6 +23,8 @@ export interface SidebarProps {
   onSelectFile?: (file: string | null) => void;
   collapsedFiles?: Set<string>;
   onToggleCollapseFile?: (file: string) => void;
+  onCollapseAllFiles?: () => void;
+  onExpandAllFiles?: () => void;
   nodes?: CodeNode[];
   pinnedSymbols?: PinnedSymbol[];
   onPinSymbol?: (symbol: PinnedSymbol) => void;
@@ -40,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectFile,
   collapsedFiles = new Set(),
   onToggleCollapseFile,
+  onCollapseAllFiles,
+  onExpandAllFiles,
   nodes = [],
   pinnedSymbols = [],
   onUnpinSymbol,
@@ -541,6 +546,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Files ({fileClusters.length})
           </span>
         </div>
+
+        {onCollapseAllFiles && onExpandAllFiles && (
+          <button
+            onClick={() => {
+              if (collapsedFiles.size === 0) {
+                onCollapseAllFiles();
+              } else {
+                onExpandAllFiles();
+              }
+            }}
+            className="btn-ghost btn-sm"
+            style={{
+              fontSize: '10px',
+              padding: '1px 6px',
+              color: 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              cursor: 'pointer',
+            }}
+            title={
+              collapsedFiles.size === 0
+                ? 'Fold all files into overview dots'
+                : 'Unfold all files into symbols'
+            }
+          >
+            <ChevronsUpDown size={10} />
+            <span>{collapsedFiles.size === 0 ? 'Fold All' : 'Unfold All'}</span>
+          </button>
+        )}
       </div>
 
       <div style={{ overflowY: 'auto' }}>

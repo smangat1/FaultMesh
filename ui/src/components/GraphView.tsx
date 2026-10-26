@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
-import { ZoomIn, ZoomOut, Maximize2, Search } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp } from 'lucide-react';
 
 export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 
@@ -23,6 +23,15 @@ interface GraphViewProps {
   onSelectViewMode?: (mode: GraphViewMode) => void;
   runStatus?: string;
   errorMessage?: string;
+}
+
+interface HoverTagInfo {
+  x: number;
+  y: number;
+  title: string;
+  subtitle?: string;
+  badge?: { text: string; color: string; bg: string };
+  meta?: string[];
 }
 
 /**
@@ -133,7 +142,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     (propViewMode ? propViewMode === 'structure' : true) && !selectedTestId
   );
   const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoverTag, setHoverTag] = useState<HoverTagInfo | null>(null);
 
   useEffect(() => {
     if (propViewMode && propViewMode !== currentViewMode) {
@@ -217,21 +226,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     }
 
-    // 1. Add File Clusters (with architectural role subtitle)
+    // 1. Add File Clusters (clean filename label without cluttering persistent text)
     fileClusters.forEach((fc) => {
       const fileId = `file:${fc.file}`;
       const isCollapsed = collapsedFiles.has(fc.file);
       const pos = positions[fileId] || { x: 480, y: 360 };
 
-      const subtitle = fc.role ? `\n${fc.role}` : '';
-      const displayLabel = isCollapsed
-        ? `${fc.name}${subtitle ? ` • ${fc.role}` : ` (${fc.symbolCount})`}`
-        : `${fc.name}${subtitle}`;
-
       nodes.push({
         data: {
           id: fileId,
-          label: displayLabel,
+          label: fc.name,
           shortLabel: fc.name,
           file: fc.file,
           isFileCluster: true,
@@ -240,6 +244,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           changeStatus: fc.changeStatus,
           role: fc.role || '',
           tier: fc.tier || '',
+          description: fc.description || '',
+          lineCount: fc.lineCount,
         },
         position: pos,
       });
@@ -272,6 +278,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           lineStart: n.lineStart,
           lineEnd: n.lineEnd,
           stepNumber,
+          rawName: n.name,
         },
         position: pos,
       });
@@ -377,12 +384,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   );
 
   // Priority set for label collision prevention:
-  // selected > pinned > failing > changed > hovered > others
+  // selected > pinned > failing > changed > others
   const priorityNodeIds = useMemo(() => {
     const set = new Set<string>();
     if (selectedNodeId) set.add(selectedNodeId);
     pinnedSymbolIds.forEach((id) => set.add(id));
-    if (hoveredNodeId) set.add(hoveredNodeId);
     tests.forEach((t) => {
       if (t.status === 'fail' || t.status === 'error') set.add(t.id);
     });
@@ -390,7 +396,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       if (n.changeStatus === 'modified' || n.changeStatus === 'added') set.add(n.id);
     });
     return set;
-  }, [selectedNodeId, pinnedSymbolIds, hoveredNodeId, tests, graphData.nodes]);
+  }, [selectedNodeId, pinnedSymbolIds, tests, graphData.nodes]);
 
   // 1. Initialize Cytoscape ONCE on container mount with preset deterministic layout
   useEffect(() => {
@@ -404,157 +410,152 @@ export const GraphView: React.FC<GraphViewProps> = ({
         autounselectify: false,
         wheelSensitivity: 0.25,
         style: [
-          // --- File Cluster Nodes (Clean circular dots with architectural subtitles) ---
+          // --- File Cluster Nodes (Sleek celestial dots, crisp clean labels) ---
           {
             selector: 'node[?isFileCluster]',
             style: {
               shape: 'ellipse',
-              width: 14,
-              height: 14,
-              'background-color': '#94a3b8',
-              'border-width': 0,
+              width: 12,
+              height: 12,
+              'background-color': '#1e293b',
+              'border-width': 1,
+              'border-color': '#475569',
               label: 'data(label)',
-              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              'font-family':
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
               'font-size': '10px',
-              'font-weight': 600,
+              'font-weight': 500,
               'text-valign': 'bottom',
               'text-halign': 'center',
-              'text-margin-y': 5,
+              'text-margin-y': 4,
               color: '#cbd5e1',
-              'text-wrap': 'wrap',
-              'text-max-width': '140px',
-              'text-background-color': '#101114',
-              'text-background-opacity': 0.85,
-              'text-background-padding': '3px',
-              'text-background-shape': 'roundrectangle',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.2,
+              'text-outline-opacity': 0.95,
               'z-index': 20,
             },
           },
-          // Expanded file center anchor
+          // Expanded file center anchor (minimalist subtle hub)
           {
             selector: 'node[?isFileCluster][!isCollapsed]',
             style: {
-              width: 13,
-              height: 13,
-              'background-color': '#475569',
-              'border-width': 1.5,
-              'border-color': '#94a3b8',
-              'border-opacity': 0.8,
-              color: '#94a3b8',
+              width: 5,
+              height: 5,
+              'background-color': '#334155',
+              'border-width': 0,
+              color: '#64748b',
+              'font-size': '9px',
             },
           },
           // Modified file
           {
             selector: 'node[?isFileCluster][changeStatus = "modified"]',
             style: {
-              'background-color': '#d29922',
-              'border-width': 1.5,
-              'border-color': '#f6c156',
-              width: 15,
-              height: 15,
+              'background-color': '#d97706',
+              'border-width': 1,
+              'border-color': '#f59e0b',
+              width: 12,
+              height: 12,
             },
           },
           // Added file
           {
             selector: 'node[?isFileCluster][changeStatus = "added"]',
             style: {
-              'background-color': '#38bdf8',
-              'border-width': 1.5,
-              'border-color': '#7dd3fc',
-              width: 15,
-              height: 15,
+              'background-color': '#0284c7',
+              'border-width': 1,
+              'border-color': '#38bdf8',
+              width: 12,
+              height: 12,
             },
           },
-          // --- Child Symbol Nodes (Functions / Classes: small circular dots) ---
+          // --- Child Symbol Nodes (Functions / Classes: sleek modern dots, no cartoon border) ---
           {
             selector: 'node[!isFileCluster]',
             style: {
               shape: 'ellipse',
-              width: 5.5,
-              height: 5.5,
+              width: 4.5,
+              height: 4.5,
               'background-color': '#64748b',
               'border-width': 0,
               label: '',
-              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              'font-size': '10px',
+              'font-family':
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              'font-size': '9px',
+              'font-weight': 400,
               'text-valign': 'bottom',
               'text-halign': 'center',
-              'text-margin-y': 4,
-              color: '#cbd5e1',
-              'text-max-width': '125px',
-              'text-wrap': 'ellipsis',
-              'text-background-color': '#101114',
-              'text-background-opacity': 0.85,
-              'text-background-padding': '2px',
-              'text-background-shape': 'roundrectangle',
+              'text-margin-y': 3,
+              color: '#94a3b8',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.0,
+              'text-outline-opacity': 0.95,
               'z-index': 15,
             },
           },
-          // Class nodes: slightly larger circular dot
+          // Class nodes
           {
             selector: 'node[kind = "class"]',
             style: {
               shape: 'ellipse',
-              width: 7,
-              height: 7,
-              'background-color': '#7c8c9e',
+              width: 6.5,
+              height: 6.5,
+              'background-color': '#818cf8',
+              'border-width': 0,
             },
           },
-          // Modified Code Node: Amber circle
+          // Modified Code Node: Clean warm amber circle
           {
             selector: 'node[!isFileCluster][changeStatus = "modified"]',
             style: {
-              'background-color': '#d29922',
-              'border-width': 1.5,
-              'border-color': '#f6c156',
-              width: 7.5,
-              height: 7.5,
+              'background-color': '#f59e0b',
+              'border-width': 0,
+              width: 6.5,
+              height: 6.5,
               'z-index': 25,
             },
           },
-          // Added Code Node: Restrained cyan circle
+          // Added Code Node: Clean sky cyan circle
           {
             selector: 'node[!isFileCluster][changeStatus = "added"]',
             style: {
               'background-color': '#38bdf8',
-              'border-width': 1.5,
-              'border-color': '#7dd3fc',
-              width: 7.5,
-              height: 7.5,
+              'border-width': 0,
+              width: 6.5,
+              height: 6.5,
               'z-index': 25,
             },
           },
-          // Failing Test Node: Crimson circle
+          // Failing Test Node: Solid crimson circle
           {
             selector: 'node[!isFileCluster][status = "fail"]',
             style: {
-              'background-color': '#f85149',
-              'border-width': 2,
-              'border-color': '#ff7b72',
-              width: 9,
-              height: 9,
+              'background-color': '#ef4444',
+              'border-width': 0,
+              width: 7.5,
+              height: 7.5,
               'z-index': 30,
             },
           },
-          // Error Test Node: Orange circle
+          // Error Test Node: Solid orange circle
           {
             selector: 'node[!isFileCluster][status = "error"]',
             style: {
-              'background-color': '#db6d28',
-              'border-width': 2,
-              'border-color': '#f0883e',
-              width: 8,
-              height: 8,
+              'background-color': '#f97316',
+              'border-width': 0,
+              width: 7.0,
+              height: 7.0,
               'z-index': 30,
             },
           },
-          // Passing Test Node: Green circle
+          // Passing Test Node: Emerald circle
           {
             selector: 'node[!isFileCluster][status = "pass"]',
             style: {
-              'background-color': '#238636',
-              width: 5,
-              height: 5,
+              'background-color': '#10b981',
+              'border-width': 0,
+              width: 4.5,
+              height: 4.5,
             },
           },
           // --- Containment rays from file center anchor to child symbols ---
@@ -562,9 +563,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
             selector: 'edge[category = "containment"]',
             style: {
               width: 0.75,
-              'line-color': '#243042',
+              'line-color': '#1e293b',
               'line-style': 'solid',
-              opacity: 0.35,
+              opacity: 0.45,
               'curve-style': 'straight',
               'target-arrow-shape': 'none',
               'z-index': 2,
@@ -577,7 +578,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               width: 1.2,
               'line-color': '#2e3b4e',
               'curve-style': 'bezier',
-              opacity: 0.6,
+              opacity: 0.65,
               'target-arrow-shape': 'none',
               'z-index': 5,
             },
@@ -592,7 +593,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'target-arrow-shape': 'triangle',
               'target-arrow-color': '#222d3d',
               'arrow-scale': 0.65,
-              opacity: 0.5,
+              opacity: 0.55,
               'z-index': 5,
             },
           },
@@ -615,50 +616,73 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'line-color': '#38bdf8',
               'target-arrow-color': '#38bdf8',
               'target-arrow-shape': 'triangle',
-              'arrow-scale': 0.85,
-              width: 1.6,
+              'arrow-scale': 0.75,
+              width: 1.75,
               opacity: 1.0,
               'z-index': 40,
               label: 'data(stepLabel)',
               'font-size': '9px',
-              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              'font-weight': 700,
+              'font-family':
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              'font-weight': 600,
               color: '#38bdf8',
-              'text-background-color': '#101114',
-              'text-background-opacity': 0.9,
-              'text-background-padding': '2px',
-              'text-background-shape': 'roundrectangle',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.2,
+              'text-outline-opacity': 0.95,
             },
           },
-          // --- Test Dimming Classes (dims unexercised without removing) ---
+          // --- Dimming Classes ---
           {
             selector: 'node.dimmed',
             style: {
-              opacity: 0.22,
+              opacity: 0.15,
             },
           },
           {
             selector: 'node.exercised',
             style: {
               opacity: 1.0,
-              'border-width': 1.8,
+              'border-width': 1.2,
               'border-color': '#38bdf8',
             },
           },
           {
             selector: 'edge.dimmed',
             style: {
-              opacity: 0.1,
+              opacity: 0.08,
             },
           },
-          // Selected node focus (luminous outline)
+          // Selected node focus (luminous crisp outline ring)
           {
             selector: 'node.selected-node',
             style: {
               'border-color': '#ffffff',
-              'border-width': 2.5,
+              'border-width': 2,
               'border-opacity': 1,
               'z-index': 999,
+            },
+          },
+          // Persistent connected edge highlight when node is selected
+          {
+            selector: 'edge.persistent-connected-edge',
+            style: {
+              'line-color': '#38bdf8',
+              'target-arrow-color': '#38bdf8',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.8,
+              width: 2.0,
+              opacity: 1.0,
+              'z-index': 90,
+            },
+          },
+          // Persistent connected neighbor node highlight when node is selected
+          {
+            selector: 'node.persistent-neighbor',
+            style: {
+              'border-color': '#38bdf8',
+              'border-width': 1.5,
+              opacity: 1.0,
+              'z-index': 80,
             },
           },
           // Neighbor highlighted on hover
@@ -670,7 +694,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 400,
             },
           },
-          // Show label class (driven by semantic zoom and collision prevention)
+          // Show label class
           {
             selector: 'node.show-label',
             style: {
@@ -690,8 +714,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
             selector: 'edge.hovered',
             style: {
               'line-color': '#60a5fa',
-              width: 1.8,
-              opacity: 0.9,
+              'target-arrow-color': '#60a5fa',
+              width: 2.0,
+              opacity: 1.0,
               'z-index': 100,
             },
           },
@@ -703,12 +728,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
         },
       });
 
-      // Zoom listener for semantic zoom level tracking (does not trigger layout destruction)
+      // Zoom listener for semantic zoom level tracking
       cy.on('zoom', () => {
         const z = cy.zoom();
         if (z < 0.8) setZoomLevel('far');
         else if (z < 1.3) setZoomLevel('mid');
         else setZoomLevel('close');
+        setHoverTag(null);
+      });
+
+      cy.on('pan', () => {
+        setHoverTag(null);
       });
 
       // Tap handlers
@@ -747,27 +777,173 @@ export const GraphView: React.FC<GraphViewProps> = ({
         }
       });
 
-      // Mouseover / Mouseout with neighborhood strand illumination
+      // Interactive Hover Floating Tag on Node
       cy.on('mouseover', 'node', (evt: EventObject) => {
         const target = evt.target;
-        setHoveredNodeId(target.id());
         target.addClass('hovered');
         target.neighborhood('edge').addClass('hovered');
         target.neighborhood('node').addClass('neighbor-highlighted');
+
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originalEvt = evt.originalEvent as MouseEvent;
+        const x = originalEvt ? originalEvt.clientX - rect.left : target.renderedPosition().x;
+        const y = originalEvt ? originalEvt.clientY - rect.top : target.renderedPosition().y;
+
+        if (target.data('isFileCluster')) {
+          const isCollapsed = target.data('isCollapsed');
+          const changeStatus = target.data('changeStatus');
+          setHoverTag({
+            x,
+            y,
+            title: target.data('file'),
+            subtitle: target.data('role') || 'File Cluster',
+            badge:
+              changeStatus !== 'unchanged'
+                ? {
+                    text: changeStatus,
+                    color: changeStatus === 'modified' ? '#f59e0b' : '#38bdf8',
+                    bg: changeStatus === 'modified' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                  }
+                : target.data('tier')
+                ? { text: target.data('tier'), color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.15)' }
+                : undefined,
+            meta: [
+              `${target.data('symbolCount')} symbols • ${target.data('lineCount') || 100} lines`,
+              isCollapsed ? 'Collapsed dot (double-click to unfold)' : 'Unfolded constellation',
+            ],
+          });
+        } else {
+          const kind = target.data('kind');
+          const isTest = target.data('isTest');
+          const status = target.data('status');
+          const changeStatus = target.data('changeStatus');
+          const stepNumber = target.data('stepNumber');
+
+          let badge;
+          if (isTest && status !== 'neutral') {
+            badge = {
+              text: status.toUpperCase(),
+              color: status === 'fail' ? '#ef4444' : status === 'pass' ? '#10b981' : '#f97316',
+              bg:
+                status === 'fail'
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : status === 'pass'
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : 'rgba(249, 115, 22, 0.15)',
+            };
+          } else if (changeStatus !== 'unchanged') {
+            badge = {
+              text: changeStatus.toUpperCase(),
+              color: changeStatus === 'modified' ? '#f59e0b' : '#38bdf8',
+              bg: changeStatus === 'modified' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+            };
+          }
+
+          const meta: string[] = [];
+          if (stepNumber !== undefined) {
+            meta.push(`Execution Order: Step [${stepNumber}]`);
+          }
+          if (target.data('description')) {
+            meta.push(target.data('description'));
+          }
+
+          setHoverTag({
+            x,
+            y,
+            title: target.data('rawName') || target.data('label'),
+            subtitle: `${kind} in ${target.data('file')} (L${target.data('lineStart')}-${target.data('lineEnd')})`,
+            badge,
+            meta,
+          });
+        }
       });
 
       cy.on('mouseout', 'node', (evt: EventObject) => {
-        setHoveredNodeId(null);
         evt.target.removeClass('hovered');
         cy.elements().removeClass('hovered').removeClass('neighbor-highlighted');
+        setHoverTag(null);
       });
 
+      // Interactive Hover Floating Tag on Edge
       cy.on('mouseover', 'edge', (evt: EventObject) => {
-        evt.target.addClass('hovered');
+        const edge = evt.target;
+        edge.addClass('hovered');
+
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originalEvt = evt.originalEvent as MouseEvent;
+        const x = originalEvt ? originalEvt.clientX - rect.left : rect.width / 2;
+        const y = originalEvt ? originalEvt.clientY - rect.top : rect.height / 2;
+
+        const src = edge.source().data('rawName') || edge.source().data('label') || edge.source().id();
+        const tgt = edge.target().data('rawName') || edge.target().data('label') || edge.target().id();
+        const category = edge.data('category');
+        const stepNumber = edge.data('stepNumber');
+        const testIds = edge.data('testIds') as string[] | undefined;
+
+        let categoryLabel = 'Static AST Call';
+        let badgeText = 'Static Call';
+        let badgeColor = '#94a3b8';
+        let badgeBg = 'rgba(148, 163, 184, 0.15)';
+
+        if (category === 'runtime_observed') {
+          categoryLabel = 'Runtime Observed Call';
+          badgeText = 'Runtime Call';
+          badgeColor = '#38bdf8';
+          badgeBg = 'rgba(56, 189, 248, 0.15)';
+        } else if (category === 'containment') {
+          categoryLabel = 'Cluster Membership';
+          badgeText = 'Cluster Ray';
+          badgeColor = '#64748b';
+          badgeBg = 'rgba(100, 116, 139, 0.15)';
+        } else if (category === 'aggregated_structural') {
+          categoryLabel = 'Cross-File Dependency';
+          badgeText = 'Cross-File';
+          badgeColor = '#818cf8';
+          badgeBg = 'rgba(129, 140, 248, 0.15)';
+        }
+
+        const meta: string[] = [];
+        if (stepNumber !== undefined) {
+          meta.push(`Execution Order: Step [${stepNumber}]`);
+        }
+        if (testIds && testIds.length > 0) {
+          meta.push(`Observed in: ${testIds.join(', ')}`);
+        }
+        if (edge.data('provenance')) {
+          meta.push(edge.data('provenance'));
+        }
+
+        setHoverTag({
+          x,
+          y,
+          title: `${src} → ${tgt}`,
+          subtitle: categoryLabel,
+          badge: {
+            text: badgeText,
+            color: badgeColor,
+            bg: badgeBg,
+          },
+          meta,
+        });
+      });
+
+      // Track cursor movement on hovered nodes and edges for smooth positioning
+      cy.on('mousemove', 'node, edge', (evt: EventObject) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originalEvt = evt.originalEvent as MouseEvent;
+        if (originalEvt) {
+          const x = originalEvt.clientX - rect.left;
+          const y = originalEvt.clientY - rect.top;
+          setHoverTag((prev) => (prev ? { ...prev, x, y } : null));
+        }
       });
 
       cy.on('mouseout', 'edge', (evt: EventObject) => {
         evt.target.removeClass('hovered');
+        setHoverTag(null);
       });
 
       cyRef.current = cy;
@@ -825,23 +1001,70 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, []);
 
-  // Update classes and dynamic highlights
+  // Update dynamic classes, selection focus, and persistent connection highlights
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
 
     cy.batch(() => {
-      // 1. Clear selection styling
-      cy.nodes().removeClass('selected-node');
-      if (selectedNodeId) {
-        cy.getElementById(selectedNodeId).addClass('selected-node');
-      } else if (selectedFile) {
-        cy.getElementById(`file:${selectedFile}`).addClass('selected-node');
-      }
+      // 1. Clear previous selection & connection focus classes
+      cy.nodes().removeClass('selected-node').removeClass('persistent-neighbor');
+      cy.edges().removeClass('persistent-connected-edge');
 
-      // 2. Mode-aware highlight & dimming
-      if (activeTest) {
-        // Highlighting active test coverage & runtime calls
+      // 2. Persistent Connection Highlight on Node/File Selection
+      if (selectedNodeId) {
+        const target = cy.getElementById(selectedNodeId);
+        if (target.length > 0) {
+          target.addClass('selected-node').addClass('show-label');
+          const connectedEdges = target.connectedEdges();
+          connectedEdges.addClass('persistent-connected-edge');
+          const neighborNodes = target.neighborhood('node');
+          neighborNodes.addClass('persistent-neighbor').addClass('show-label');
+
+          // Dim everything else to give an intuitive persistent focused ego-graph
+          cy.nodes().forEach((n) => {
+            if (n.id() !== selectedNodeId && !neighborNodes.contains(n)) {
+              n.addClass('dimmed');
+            } else {
+              n.removeClass('dimmed');
+            }
+          });
+
+          cy.edges().forEach((e) => {
+            if (!connectedEdges.contains(e)) {
+              e.addClass('dimmed');
+            } else {
+              e.removeClass('dimmed');
+            }
+          });
+        }
+      } else if (selectedFile) {
+        const fileNode = cy.getElementById(`file:${selectedFile}`);
+        if (fileNode.length > 0) {
+          fileNode.addClass('selected-node').addClass('show-label');
+          const connectedEdges = fileNode.connectedEdges();
+          connectedEdges.addClass('persistent-connected-edge');
+          const neighborNodes = fileNode.neighborhood('node');
+          neighborNodes.addClass('persistent-neighbor').addClass('show-label');
+
+          cy.nodes().forEach((n) => {
+            if (n.id() !== `file:${selectedFile}` && !neighborNodes.contains(n)) {
+              n.addClass('dimmed');
+            } else {
+              n.removeClass('dimmed');
+            }
+          });
+
+          cy.edges().forEach((e) => {
+            if (!connectedEdges.contains(e)) {
+              e.addClass('dimmed');
+            } else {
+              e.removeClass('dimmed');
+            }
+          });
+        }
+      } else if (activeTest) {
+        // Highlighting active test coverage & runtime calls when no individual node is selected
         const exercisedSet = new Set(activeTest.exercisedNodeIds);
         exercisedSet.add(activeTest.id);
 
@@ -1007,17 +1230,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
     );
   }
 
-  const isAllCollapsed =
-    fileClusters.length > 0 && fileClusters.every((fc) => collapsedFiles.has(fc.file));
-
-  const handleToggleAllCollapse = () => {
-    if (isAllCollapsed) {
-      onExpandAllFiles?.();
-    } else {
-      onCollapseAllFiles?.();
-    }
-  };
-
   return (
     <div
       style={{
@@ -1045,9 +1257,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
           minHeight: '38px',
         }}
       >
-        {/* Left: Clear Layer Controls + Active Test Scope */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
-          {/* Layer Selector: All Code vs Changed Code */}
+        {/* Left: Clear Layer Controls + Unfold Toggle + Active Test Scope */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+          {/* Layer Selector: Structure vs Changes */}
           <div
             style={{
               display: 'flex',
@@ -1098,6 +1310,64 @@ export const GraphView: React.FC<GraphViewProps> = ({
               title="Highlight modified and added files/functions in this commit"
             >
               Changes
+            </button>
+          </div>
+
+          {/* Quick Unfold All / Fold All Segmented Control */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              backgroundColor: '#161e2e',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-default)',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            <button
+              onClick={onExpandAllFiles}
+              className={collapsedFiles.size === 0 ? 'btn-ghost' : 'btn-secondary'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                border: 'none',
+                borderRight: '1px solid var(--border-default)',
+                color: collapsedFiles.size > 0 ? '#38bdf8' : 'var(--text-secondary)',
+              }}
+              title="Unfold all files to reveal smaller function and class nodes"
+              aria-label="Unfold All Files"
+            >
+              <ChevronsDown size={11} />
+              <span>Unfold All</span>
+            </button>
+            <button
+              onClick={onCollapseAllFiles}
+              className={collapsedFiles.size === fileClusters.length ? 'btn-ghost' : 'btn-secondary'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                border: 'none',
+                color:
+                  collapsedFiles.size === fileClusters.length
+                    ? 'var(--text-primary)'
+                    : 'var(--text-secondary)',
+              }}
+              title="Fold all files into overview dots"
+              aria-label="Fold All Files"
+            >
+              <ChevronsUp size={11} />
+              <span>Fold to Files</span>
             </button>
           </div>
 
@@ -1184,22 +1454,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           )}
         </div>
 
-        {/* Right: Level Toggle, Static Context Toggle, Search, Zoom Controls */}
+        {/* Right: Static Context Toggle, Search, Zoom Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-          {/* Level Toggle Button */}
-          <button
-            onClick={handleToggleAllCollapse}
-            className="btn-ghost btn-sm"
-            style={{ fontSize: '11px', padding: '2px 7px' }}
-            title={
-              isAllCollapsed
-                ? 'Expand all files into function constellations'
-                : 'Collapse all files into overview dots'
-            }
-          >
-            {isAllCollapsed ? 'Expand All' : 'Collapse to Files'}
-          </button>
-
           <label
             style={{
               fontSize: '11px',
@@ -1296,6 +1552,108 @@ export const GraphView: React.FC<GraphViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Floating Glassmorphic Tag Card on Hover */}
+      {hoverTag && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${
+              hoverTag.x + 310 > (containerRef.current?.clientWidth || 800)
+                ? Math.max(10, hoverTag.x - 300)
+                : hoverTag.x + 14
+            }px`,
+            top: `${
+              hoverTag.y + 140 > (containerRef.current?.clientHeight || 600)
+                ? Math.max(10, hoverTag.y - 120)
+                : hoverTag.y + 14
+            }px`,
+            pointerEvents: 'none',
+            zIndex: 1000,
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            boxShadow: '0 10px 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+            borderRadius: '6px',
+            padding: '8px 12px',
+            maxWidth: '320px',
+            backdropFilter: 'blur(10px)',
+            color: '#f8fafc',
+            fontFamily:
+              '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+            fontSize: '11px',
+            lineHeight: 1.4,
+            animation: 'fadeIn 0.1s ease',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+            {hoverTag.badge && (
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: hoverTag.badge.color,
+                  display: 'inline-block',
+                  flexShrink: 0,
+                }}
+              />
+            )}
+            <span
+              style={{
+                fontWeight: 600,
+                color: '#ffffff',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '11px',
+                wordBreak: 'break-word',
+              }}
+            >
+              {hoverTag.title}
+            </span>
+            {hoverTag.badge && (
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: hoverTag.badge.color,
+                  backgroundColor: hoverTag.badge.bg,
+                  border: `1px solid ${hoverTag.badge.color}40`,
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                  marginLeft: 'auto',
+                  flexShrink: 0,
+                }}
+              >
+                {hoverTag.badge.text}
+              </span>
+            )}
+          </div>
+          {hoverTag.subtitle && (
+            <div style={{ fontSize: '11px', color: '#93c5fd', marginBottom: '4px' }}>
+              {hoverTag.subtitle}
+            </div>
+          )}
+          {hoverTag.meta && hoverTag.meta.length > 0 && (
+            <div
+              style={{
+                fontSize: '10px',
+                color: '#94a3b8',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                paddingTop: '4px',
+                marginTop: '2px',
+              }}
+            >
+              {hoverTag.meta.map((m, i) => (
+                <div key={i}>{m}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Cytoscape Canvas */}
       <div

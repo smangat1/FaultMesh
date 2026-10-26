@@ -36,6 +36,7 @@ if (typeof HTMLCanvasElement !== 'undefined') {
         drawImage: vi.fn(),
         save: vi.fn(),
         fillText: vi.fn(),
+        strokeText: vi.fn(),
         restore: vi.fn(),
         beginPath: vi.fn(),
         moveTo: vi.fn(),

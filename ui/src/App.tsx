@@ -168,6 +168,15 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setSelectedNodeId(nodeId);
     if (nodeId) {
       setSelectedFile(null);
+      // Auto-unfold parent file if currently collapsed so the node is visible
+      const node = graphData.nodes.find((n) => n.id === nodeId);
+      if (node && collapsedFiles.has(node.file)) {
+        setCollapsedFiles((prev) => {
+          const next = new Set(prev);
+          next.delete(node.file);
+          return next;
+        });
+      }
     }
   };
 
@@ -183,6 +192,23 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     if (testId) {
       setSelectedNodeId(null);
       setSelectedFile(null);
+      // Auto-unfold files involved in the selected test trace
+      const test = tests.find((t) => t.id === testId);
+      if (test && test.exercisedNodeIds) {
+        const filesToUnfold = new Set<string>();
+        graphData.nodes.forEach((n) => {
+          if (test.exercisedNodeIds.includes(n.id) || n.id === testId) {
+            filesToUnfold.add(n.file);
+          }
+        });
+        if (filesToUnfold.size > 0) {
+          setCollapsedFiles((prev) => {
+            const next = new Set(prev);
+            filesToUnfold.forEach((f) => next.delete(f));
+            return next;
+          });
+        }
+      }
     }
   };
 
@@ -299,6 +325,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   onSelectFile={handleSelectFile}
                   collapsedFiles={collapsedFiles}
                   onToggleCollapseFile={handleToggleCollapseFile}
+                  onCollapseAllFiles={handleCollapseAllFiles}
+                  onExpandAllFiles={handleExpandAllFiles}
                   nodes={graphData.nodes}
                   pinnedSymbols={pinnedSymbols}
                   onPinSymbol={handlePinSymbol}
