@@ -1,0 +1,131 @@
+/**
+ * FaultMesh UI Types
+ *
+ * FaultMesh is a local-first, open-source visual debugger for Python projects.
+ * These types define the contract needed for visualizing run summaries,
+ * pytest execution results, AST code nodes, and runtime/static evidence graphs.
+ */
+
+export type RunStatus = 'completed' | 'failed' | 'empty' | 'running';
+
+export type TestStatus = 'pass' | 'fail' | 'error' | 'skipped';
+
+export type ChangeStatus = 'added' | 'modified' | 'removed' | 'unchanged';
+
+export type NodeKind = 'module' | 'function' | 'class' | 'method';
+
+export type EdgeCategory = 'runtime_observed' | 'static_call' | 'static_import';
+
+export interface RerunRecord {
+  rerunIndex: number;
+  status: TestStatus;
+  durationMs: number;
+  timestamp: string;
+  failureFingerprint?: string;
+  sameFailureRecurred?: boolean;
+  message?: string;
+}
+
+export interface TestItem {
+  id: string; // e.g. "tests/test_auth.py::test_login_expired_token"
+  name: string;
+  file: string;
+  status: TestStatus;
+  durationMs: number;
+  failureMessage?: string;
+  traceback?: string;
+  rerunHistory: RerunRecord[];
+  exercisedNodeIds: string[];
+  unresolvedReferences?: string[];
+}
+
+export interface CodeNode {
+  id: string; // e.g. "auth/tokens.py::validate_token"
+  file: string;
+  name: string;
+  kind: NodeKind;
+  lineStart: number;
+  lineEnd: number;
+  changeStatus: ChangeStatus;
+  sourceSnippet: string;
+  gitDiff?: string;
+  parentModule: string;
+  isUnresolved?: boolean;
+  complexity?: number;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  category: EdgeCategory;
+  provenance: string; // e.g., "pytest-trace: test_login_expired_token:L42" or "ast: import"
+  observedCount?: number;
+  testIds?: string[];
+}
+
+export interface UnresolvedReference {
+  symbol: string;
+  referencedFrom: string;
+  line: number;
+  reason: string;
+}
+
+export interface ParseError {
+  file: string;
+  line: number;
+  message: string;
+}
+
+export interface GraphData {
+  nodes: CodeNode[];
+  edges: GraphEdge[];
+  unresolvedReferences: UnresolvedReference[];
+  parseErrors: ParseError[];
+}
+
+export interface RunSummary {
+  id: string;
+  project: string;
+  gitRevision: string;
+  gitBranch: string;
+  commitMessage: string;
+  status: RunStatus;
+  startedAt: string;
+  completedAt?: string;
+  durationMs: number;
+  isFixture: boolean;
+  fixtureLabel: string;
+  errorMessage?: string;
+  stats: {
+    totalTests: number;
+    passed: number;
+    failed: number;
+    errored: number;
+    skipped: number;
+    totalNodes: number;
+    modifiedNodes: number;
+    coveragePct?: number;
+  };
+  limitations: string[];
+  notes?: string[];
+}
+
+export interface TestEvidence {
+  test: TestItem;
+  coveredNodes: CodeNode[];
+  executedEdges: GraphEdge[];
+  unresolvedReferences: string[];
+  observationNote: string;
+}
+
+export interface SourceViewData {
+  nodeId: string;
+  file: string;
+  name: string;
+  lineStart: number;
+  lineEnd: number;
+  snippet: string;
+  gitDiff?: string;
+  changeStatus: ChangeStatus;
+}
