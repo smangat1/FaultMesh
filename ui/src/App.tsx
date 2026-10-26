@@ -8,6 +8,8 @@ import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
+import { AgentDock } from './components/AgentDock';
+import { AGENT_SIMULATION_STEPS, type AgentLogEntry } from './agent/agentSimulation';
 import './styles/theme.css';
 
 const DEFAULT_ADAPTER = new FixtureAdapter(0);
@@ -46,6 +48,14 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   const [runsError, setRunsError] = useState<string | null>(null);
   const [isLoadingRunData, setIsLoadingRunData] = useState<boolean>(false);
   const [runDataError, setRunDataError] = useState<string | null>(null);
+
+  // Autonomous Agent Repair Simulation State
+  const [isAgentActive, setIsAgentActive] = useState<boolean>(false);
+  const [agentStepIndex, setAgentStepIndex] = useState<number>(0);
+  const [isAgentPlaying, setIsAgentPlaying] = useState<boolean>(false);
+  const [agentSpeed, setAgentSpeed] = useState<number>(1);
+  const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
+  const agentTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Request cancellation token / sequence counter to guard against async race conditions
   const requestSeq = useRef<number>(0);
@@ -218,6 +228,101 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setSelectedTestId(null);
   };
 
+  const currentAgentStep = isAgentActive ? AGENT_SIMULATION_STEPS[agentStepIndex] : null;
+
+  const applyAgentStep = useCallback((idx: number) => {
+    const step = AGENT_SIMULATION_STEPS[idx];
+    if (!step) return;
+
+    setAgentStepIndex(idx);
+
+    // Target node selection & unfolding
+    setSelectedNodeId(step.targetNodeId);
+    setSelectedFile(null);
+    setCollapsedFiles((prev) => {
+      const next = new Set(prev);
+      next.delete(step.targetFile);
+      return next;
+    });
+
+    // Active test status update
+    if (step.activeTestStatus) {
+      setTests((prev) =>
+        prev.map((t) =>
+          t.id === 'tests/test_auth.py::test_login_expired_token'
+            ? { ...t, status: step.activeTestStatus as any }
+            : t
+        )
+      );
+    }
+
+    // Patched snippet & diff update
+    if (step.patchedSnippet && step.patchedDiff) {
+      setGraphData((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((n) =>
+          n.id === 'auth/tokens.py::validate_token'
+            ? { ...n, sourceSnippet: step.patchedSnippet!, gitDiff: step.patchedDiff! }
+            : n
+        ),
+      }));
+    }
+
+    // Append to agent thought logs
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    setAgentLogs((prev) => [
+      ...prev,
+      {
+        id: `agent-log-${Date.now()}-${idx}`,
+        timestamp: timeStr,
+        phase: step.phase,
+        title: step.log.title,
+        message: step.log.message,
+        badge: step.log.badge,
+        codeTarget: step.targetNodeId,
+      },
+    ]);
+  }, []);
+
+  const startAgentSimulation = useCallback(() => {
+    setIsAgentActive(true);
+    setIsAgentPlaying(true);
+    setAgentLogs([]);
+    applyAgentStep(0);
+  }, [applyAgentStep]);
+
+  const stopAgentSimulation = useCallback(() => {
+    setIsAgentActive(false);
+    setIsAgentPlaying(false);
+    if (agentTimerRef.current) clearTimeout(agentTimerRef.current);
+    if (activeRunId) {
+      loadActiveRunData(activeRunId);
+    }
+  }, [activeRunId, loadActiveRunData]);
+
+  // Playback timer effect
+  useEffect(() => {
+    if (!isAgentActive || !isAgentPlaying) {
+      if (agentTimerRef.current) clearTimeout(agentTimerRef.current);
+      return;
+    }
+
+    if (agentStepIndex >= AGENT_SIMULATION_STEPS.length - 1) {
+      setIsAgentPlaying(false);
+      return;
+    }
+
+    const delay = Math.round(2400 / agentSpeed);
+    agentTimerRef.current = setTimeout(() => {
+      applyAgentStep(agentStepIndex + 1);
+    }, delay);
+
+    return () => {
+      if (agentTimerRef.current) clearTimeout(agentTimerRef.current);
+    };
+  }, [isAgentActive, isAgentPlaying, agentStepIndex, agentSpeed, applyAgentStep]);
+
   return (
     <div
       style={{
@@ -238,11 +343,14 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
           onSelectRun={(runId) => {
             setActiveRunId(runId);
           }}
-          onOpenWorkspace={(testId) => {
+          onOpenWorkspace={(testId, startAgent) => {
             if (testId) {
               setSelectedTestId(testId);
             }
             setCurrentScreen('workspace');
+            if (startAgent) {
+              startAgentSimulation();
+            }
           }}
           onOpenDiagnostics={() => {
             setActiveView('diagnostics');
@@ -365,6 +473,11 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     onSelectViewMode={setViewMode}
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
+                    isAgentMode={isAgentActive}
+                    onToggleAgentMode={isAgentActive ? stopAgentSimulation : startAgentSimulation}
+                    agentActiveNodeId={currentAgentStep?.targetNodeId}
+                    agentPhase={currentAgentStep?.phase}
+                    agentPhaseLabel={currentAgentStep?.phaseLabel}
                   />
                 </div>
 
@@ -386,7 +499,34 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   onPinSymbol={handlePinSymbol}
                   onUnpinSymbol={handleUnpinSymbol}
                   onClose={handleCloseInspector}
+                  isAgentActive={isAgentActive}
+                  agentPhase={currentAgentStep?.phase}
+                  agentPatchedSnippet={currentAgentStep?.patchedSnippet}
+                  agentPatchedDiff={currentAgentStep?.patchedDiff}
                 />
+
+                {/* 4. Autonomous Agent Floating Dock */}
+                {isAgentActive && currentAgentStep && (
+                  <AgentDock
+                    currentStep={currentAgentStep}
+                    totalSteps={AGENT_SIMULATION_STEPS.length}
+                    isPlaying={isAgentPlaying}
+                    speed={agentSpeed}
+                    onTogglePlay={() => setIsAgentPlaying(!isAgentPlaying)}
+                    onStepForward={() => {
+                      if (agentStepIndex < AGENT_SIMULATION_STEPS.length - 1) {
+                        applyAgentStep(agentStepIndex + 1);
+                      }
+                    }}
+                    onReset={() => {
+                      applyAgentStep(0);
+                      setIsAgentPlaying(true);
+                    }}
+                    onSetSpeed={setAgentSpeed}
+                    onClose={stopAgentSimulation}
+                    logs={agentLogs}
+                  />
+                )}
               </div>
             )}
           </main>

@@ -12,6 +12,7 @@ import {
   Terminal,
   Activity,
   RotateCcw,
+  Bot,
 } from 'lucide-react';
 
 interface ProjectSelectorScreenProps {
@@ -19,7 +20,7 @@ interface ProjectSelectorScreenProps {
   activeRun: RunSummary | null;
   tests: TestItem[];
   onSelectRun: (runId: string) => void;
-  onOpenWorkspace: (testId?: string) => void;
+  onOpenWorkspace: (testId?: string, startAgent?: boolean) => void;
   onOpenDiagnostics?: () => void;
   isLoading?: boolean;
   error?: string | null;
@@ -474,6 +475,29 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {failedTests.length > 0 && onOpenWorkspace && (
+                    <button
+                      onClick={() => onOpenWorkspace(undefined, true)}
+                      className="btn-secondary"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '7px 14px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                        color: '#38bdf8',
+                        border: '1px solid rgba(56, 189, 248, 0.4)',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                      }}
+                      title="Watch an autonomous AI agent diagnose the failure, patch code live, and re-run pytest"
+                    >
+                      <Bot size={14} />
+                      Watch Agent Repair
+                    </button>
+                  )}
                   {onOpenDiagnostics && (activeRun.errorMessage || activeRun.status === 'failed') && (
                     <button onClick={onOpenDiagnostics} className="btn-secondary btn-sm">
                       <Activity size={13} />

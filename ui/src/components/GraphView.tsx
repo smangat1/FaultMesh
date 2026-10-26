@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
-import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp, Bot } from 'lucide-react';
+import type { AgentPhase } from '../agent/agentSimulation';
 
 export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 
@@ -23,6 +24,11 @@ interface GraphViewProps {
   onSelectViewMode?: (mode: GraphViewMode) => void;
   runStatus?: string;
   errorMessage?: string;
+  isAgentMode?: boolean;
+  onToggleAgentMode?: () => void;
+  agentActiveNodeId?: string | null;
+  agentPhase?: AgentPhase;
+  agentPhaseLabel?: string;
 }
 
 interface HoverTagInfo {
@@ -132,6 +138,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   onExpandAllFiles,
   viewMode: propViewMode,
   onSelectViewMode,
+  isAgentMode,
+  onToggleAgentMode,
+  agentActiveNodeId,
+  agentPhase,
+  agentPhaseLabel,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
@@ -143,6 +154,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   );
   const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
   const [hoverTag, setHoverTag] = useState<HoverTagInfo | null>(null);
+  const [agentScreenPos, setAgentScreenPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (propViewMode && propViewMode !== currentViewMode) {
@@ -720,6 +732,34 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 100,
             },
           },
+          // --- Autonomous Agent Live Animation Classes ---
+          {
+            selector: 'node.agent-focused',
+            style: {
+              'border-color': '#38bdf8',
+              'border-width': 2.2,
+              'border-opacity': 1.0,
+              'z-index': 999,
+            },
+          },
+          {
+            selector: 'node.agent-editing',
+            style: {
+              'border-color': '#f59e0b',
+              'border-width': 2.5,
+              'border-opacity': 1.0,
+              'z-index': 999,
+            },
+          },
+          {
+            selector: 'node.agent-resolved',
+            style: {
+              'border-color': '#10b981',
+              'border-width': 2.5,
+              'border-opacity': 1.0,
+              'z-index': 999,
+            },
+          },
         ],
         layout: {
           name: 'preset',
@@ -1132,8 +1172,47 @@ export const GraphView: React.FC<GraphViewProps> = ({
           }
         });
       }
+      // 4. Autonomous Agent Active Highlighting
+      cy.nodes().removeClass('agent-focused').removeClass('agent-editing').removeClass('agent-resolved');
+      if (agentActiveNodeId) {
+        const agentTarget = cy.getElementById(agentActiveNodeId);
+        if (agentTarget.length > 0) {
+          if (agentPhase === 'patching') {
+            agentTarget.addClass('agent-editing').addClass('show-label');
+          } else if (agentPhase === 'resolved') {
+            agentTarget.addClass('agent-resolved').addClass('show-label');
+          } else {
+            agentTarget.addClass('agent-focused').addClass('show-label');
+          }
+        }
+      }
     });
-  }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds, currentViewMode]);
+  }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds, currentViewMode, agentActiveNodeId, agentPhase]);
+
+  // Synchronize agent active node screen coordinates for 60fps CSS beacon overlay
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !agentActiveNodeId) {
+      setAgentScreenPos(null);
+      return;
+    }
+
+    const updateAgentPos = () => {
+      const node = cy.getElementById(agentActiveNodeId);
+      if (node && node.length > 0) {
+        setAgentScreenPos(node.renderedPosition());
+      } else {
+        setAgentScreenPos(null);
+      }
+    };
+
+    updateAgentPos();
+    cy.on('pan zoom render', updateAgentPos);
+
+    return () => {
+      cy.removeListener('pan zoom render', updateAgentPos);
+    };
+  }, [agentActiveNodeId, elements]);
 
   // ResizeObserver to handle container size changes cleanly
   useEffect(() => {
@@ -1370,6 +1449,33 @@ export const GraphView: React.FC<GraphViewProps> = ({
               <span>Fold to Files</span>
             </button>
           </div>
+
+          {/* Autonomous Agent Simulation Toggle */}
+          {onToggleAgentMode && (
+            <button
+              onClick={onToggleAgentMode}
+              className={isAgentMode ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                backgroundColor: isAgentMode ? 'rgba(56, 189, 248, 0.2)' : undefined,
+                color: isAgentMode ? '#38bdf8' : undefined,
+                border: isAgentMode ? '1px solid rgba(56, 189, 248, 0.4)' : undefined,
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+              }}
+              title="Simulate autonomous agent actively repairing code defects"
+              aria-label="Agent Auto-Repair"
+            >
+              <Bot size={12} style={{ color: isAgentMode ? '#38bdf8' : 'var(--text-secondary)' }} />
+              <span>{isAgentMode ? 'Agent Active' : 'Agent Auto-Repair'}</span>
+            </button>
+          )}
 
           {/* Active Test Scope or Overview Scope */}
           {activeTest ? (
@@ -1665,6 +1771,52 @@ export const GraphView: React.FC<GraphViewProps> = ({
           backgroundColor: '#101114',
         }}
       />
+
+      {/* Floating Animated Radar Beacon on Agent Active Node */}
+      {agentScreenPos && agentActiveNodeId && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${agentScreenPos.x}px`,
+            top: `${agentScreenPos.y}px`,
+            pointerEvents: 'none',
+            zIndex: 250,
+          }}
+        >
+          <div
+            className={`agent-radar-ring ${
+              agentPhase === 'patching'
+                ? 'editing'
+                : agentPhase === 'resolved'
+                ? 'resolved'
+                : ''
+            }`}
+          />
+          <div
+            className={`agent-radar-ring-delayed ${
+              agentPhase === 'patching'
+                ? 'editing'
+                : agentPhase === 'resolved'
+                ? 'resolved'
+                : ''
+            }`}
+          />
+          <div className="agent-floating-target-tag">
+            <Bot
+              size={11}
+              style={{
+                color:
+                  agentPhase === 'patching'
+                    ? '#f59e0b'
+                    : agentPhase === 'resolved'
+                    ? '#10b981'
+                    : '#38bdf8',
+              }}
+            />
+            <span>{agentPhaseLabel || 'Agent Focus'}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

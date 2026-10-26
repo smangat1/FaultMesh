@@ -271,6 +271,110 @@ button:disabled {
   color: var(--change-modified);
 }
 
+/* --- Live Autonomous Agent Visual Animations --- */
+
+@keyframes agentRadarBloom {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.2);
+    opacity: 0;
+  }
+}
+
+@keyframes agentBreathingPulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes agentSpinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes livePatchFlash {
+  0%, 100% {
+    background-color: rgba(245, 158, 11, 0.1);
+  }
+  50% {
+    background-color: rgba(245, 158, 11, 0.25);
+  }
+}
+
+.agent-radar-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid #38bdf8;
+  pointer-events: none;
+  animation: agentRadarBloom 2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+.agent-radar-ring.editing {
+  border-color: #f59e0b;
+}
+
+.agent-radar-ring.resolved {
+  border-color: #10b981;
+}
+
+.agent-radar-ring-delayed {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid #38bdf8;
+  pointer-events: none;
+  animation: agentRadarBloom 2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite 0.7s;
+}
+
+.agent-radar-ring-delayed.editing {
+  border-color: #f59e0b;
+}
+
+.agent-radar-ring-delayed.resolved {
+  border-color: #10b981;
+}
+
+.agent-floating-target-tag {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  background-color: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: #f8fafc;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
 /* Reduced motion accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {

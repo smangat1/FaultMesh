@@ -21,7 +21,10 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
+import type { AgentPhase } from '../agent/agentSimulation';
 
 export interface InspectorDrawerProps {
   selectedNodeId: string | null;
@@ -40,6 +43,10 @@ export interface InspectorDrawerProps {
   onPinSymbol?: (symbol: PinnedSymbol) => void;
   onUnpinSymbol?: (symbolId: string) => void;
   onClose: () => void;
+  isAgentActive?: boolean;
+  agentPhase?: AgentPhase;
+  agentPatchedSnippet?: string | null;
+  agentPatchedDiff?: string | null;
 }
 
 export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
@@ -59,6 +66,10 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onPinSymbol,
   onUnpinSymbol,
   onClose,
+  isAgentActive = false,
+  agentPhase = 'idle',
+  agentPatchedSnippet,
+  agentPatchedDiff,
 }) => {
   const [activeCodeTab, setActiveCodeTab] = useState<'source' | 'diff'>('source');
   const [isTracebackOpen, setIsTracebackOpen] = useState(true);
@@ -287,6 +298,62 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
             {/* 3. Source Viewer & Diff */}
             <div>
+              {/* Active Agent Live Mutation Notice */}
+              {isAgentActive && selectedNode.id === 'auth/tokens.py::validate_token' && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor:
+                      agentPhase === 'patching'
+                        ? 'rgba(245, 158, 11, 0.15)'
+                        : agentPhase === 'resolved'
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : 'rgba(56, 189, 248, 0.12)',
+                    border: `1px solid ${
+                      agentPhase === 'patching'
+                        ? 'rgba(245, 158, 11, 0.35)'
+                        : agentPhase === 'resolved'
+                        ? 'rgba(16, 185, 129, 0.35)'
+                        : 'rgba(56, 189, 248, 0.3)'
+                    }`,
+                    borderRadius: 'var(--radius-sm)',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '11px',
+                  }}
+                >
+                  {agentPhase === 'resolved' ? (
+                    <Sparkles size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                  ) : (
+                    <Bot
+                      size={14}
+                      style={{
+                        color: agentPhase === 'patching' ? '#f59e0b' : '#38bdf8',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+                      {agentPhase === 'patching'
+                        ? '🤖 Agent actively mutating auth/tokens.py: applying numeric coercion patch...'
+                        : agentPhase === 'resolved'
+                        ? '✨ Agent Patch Verified: test_login_expired_token Passed'
+                        : '🤖 Agent inspecting code structure & AST relationships'}
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                      {agentPhase === 'patching'
+                        ? 'Converting string timestamps to float before range check to accept numeric strings.'
+                        : agentPhase === 'resolved'
+                        ? 'Replay trial #4 confirmed 0 regression failures. Verified green.'
+                        : 'Call graph traced from test_login_expired_token.'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div
                 style={{
                   display: 'flex',
@@ -296,7 +363,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', gap: '4px' }}>
-                  {selectedNode.gitDiff && (
+                  {(agentPatchedDiff || selectedNode.gitDiff) && (
                     <button
                       onClick={() => setActiveCodeTab('diff')}
                       className={`btn-ghost btn-sm ${activeCodeTab === 'diff' ? 'active' : ''}`}
@@ -324,11 +391,33 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 </div>
               </div>
 
-              {activeCodeTab === 'diff' && selectedNode.gitDiff ? (
-                <DiffViewer diff={selectedNode.gitDiff} />
-              ) : selectedNode.sourceSnippet ? (
+              {activeCodeTab === 'diff' && (agentPatchedDiff || selectedNode.gitDiff) ? (
+                <div style={{ position: 'relative' }}>
+                  {isAgentActive && agentPhase === 'patching' && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '6px',
+                        right: '8px',
+                        zIndex: 10,
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        backgroundColor: 'rgba(245, 158, 11, 0.25)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        padding: '1px 6px',
+                        borderRadius: '3px',
+                        animation: 'livePatchFlash 1.5s infinite',
+                      }}
+                    >
+                      LIVE AGENT PATCH
+                    </div>
+                  )}
+                  <DiffViewer diff={agentPatchedDiff || selectedNode.gitDiff || ''} />
+                </div>
+              ) : selectedNode.sourceSnippet || agentPatchedSnippet ? (
                 <DiffViewer
-                  source={selectedNode.sourceSnippet}
+                  source={agentPatchedSnippet || selectedNode.sourceSnippet}
                   lineStart={selectedNode.lineStart}
                 />
               ) : (
