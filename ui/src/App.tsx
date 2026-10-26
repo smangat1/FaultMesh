@@ -251,18 +251,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setSelectedNodeId(step.targetNodeId);
     setSelectedFile(null);
 
-    // 2. Unfold target files deterministically (Time-Travel across files)
-    if (step.unfoldedFiles && step.unfoldedFiles.length > 0) {
-      setCollapsedFiles(() => {
-        const next = new Set<string>();
-        graphData.files?.forEach((f) => {
-          if (!step.unfoldedFiles.includes(f.file)) {
-            next.add(f.file);
-          }
-        });
-        return next;
-      });
-    }
+    // 2. Keep all file clusters expanded during simulation replay so architectural understanding remains
+    setCollapsedFiles(new Set());
 
     // 3. Test Status Time-Travel (revert to fail if jumping back to steps 0..3)
     if (step.activeTestStatus) {

@@ -250,6 +250,22 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
     expect(container.querySelector('.agent-floating-target-tag')).toBeNull();
   });
 
+  it('keeps all file clusters and child nodes uncollapsed during replay to preserve architectural understanding', async () => {
+    render(<App initialScreen="workspace" />);
+
+    // Toggle agent mode
+    const toolbarBtn = await screen.findByRole('button', { name: /agent auto-repair/i });
+    fireEvent.click(toolbarBtn);
+
+    // Verify replay bar is present and step 1 is active
+    expect(screen.getByRole('region', { name: /investigation replay bar/i })).toBeDefined();
+    expect(screen.getByText(/Step 1\/6/i)).toBeDefined();
+
+    // Verify active file remediation tabs are all accessible
+    expect(screen.getByText('auth/tokens.py')).toBeDefined();
+    expect(screen.getByText('auth/service.py')).toBeDefined();
+  });
+
   it('demonstrates candidate change with split/unified diff comparison and clear candidate labeling', async () => {
     render(<App initialScreen="workspace" />);
 

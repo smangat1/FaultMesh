@@ -315,7 +315,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     // 1. Add File Clusters (clean filename label without cluttering persistent text)
     fileClusters.forEach((fc) => {
       const fileId = `file:${fc.file}`;
-      const isCollapsed = collapsedFiles.has(fc.file);
+      const isCollapsed = isAgentMode ? false : collapsedFiles.has(fc.file);
       const pos = positions[fileId] || { x: 480, y: 360 };
 
       nodes.push({
@@ -337,9 +337,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
       });
     });
 
-    // 2. Add Symbol child nodes (ONLY for uncollapsed files - genuine semantic zooming)
+    // 2. Add Symbol child nodes (ONLY for uncollapsed files in manual mode; ALL files during agent replay)
     graphData.nodes.forEach((n) => {
-      if (collapsedFiles.has(n.file)) return;
+      if (collapsedFiles.has(n.file) && !isAgentMode) return;
 
       const pos = positions[n.id] || { x: 480, y: 360 };
       const isTestItem = tests.some((t) => t.id === n.id);
@@ -827,18 +827,37 @@ export const GraphView: React.FC<GraphViewProps> = ({
             },
           },
           // --- Autonomous Agent Investigation Classes: Refined Obsidian Aesthetics ---
-          // Decisively grey out all unimpacted nodes in agent mode: clean Obsidian dark, no borders, no labels
+          // --- Autonomous Agent Investigation Classes: Refined Obsidian Aesthetics ---
+          // Greyed out unimpacted child nodes in agent mode: quiet architectural dots (no labels, clean slate)
           {
-            selector: 'node.agent-unimpacted',
+            selector: 'node[!isFileCluster].agent-unimpacted',
             style: {
-              'background-color': '#161a22',
+              'background-color': '#334155',
               'border-width': 0,
-              opacity: 0.12,
+              opacity: 0.28,
+              width: 4.5,
+              height: 4.5,
               label: '',
-              'z-index': 1,
+              'z-index': 5,
             },
           },
-          // Decisively grey out all unimpacted edges in agent mode
+          // Greyed out unimpacted file cluster anchors: subtle celestial hubs preserving repository structure
+          {
+            selector: 'node[?isFileCluster].agent-unimpacted',
+            style: {
+              'background-color': '#1e293b',
+              'border-width': 1,
+              'border-color': '#334155',
+              opacity: 0.40,
+              width: 8,
+              height: 8,
+              label: 'data(shortLabel)',
+              color: '#64748b',
+              'font-size': '8.5px',
+              'z-index': 10,
+            },
+          },
+          // Decisively grey out all non-containment unimpacted edges in agent mode
           {
             selector: 'edge.agent-unimpacted',
             style: {
@@ -848,6 +867,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
               width: 0.5,
               label: '',
               'z-index': 1,
+            },
+          },
+          // Faint containment edges for unimpacted clusters so the architectural structure remains clear
+          {
+            selector: 'edge[category = "containment"].agent-unimpacted',
+            style: {
+              'line-color': '#1e293b',
+              opacity: 0.20,
+              width: 0.5,
+              'z-index': 2,
             },
           },
           // Impacted nodes: stable size (8.5px), high contrast, restrained colors
