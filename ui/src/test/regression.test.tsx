@@ -281,7 +281,7 @@ describe('Regression: Replay History & Determinism Honesty', () => {
 });
 
 describe('Regression: Keyboard Accessibility & Navigation', () => {
-  it('allows keyboard navigation across test list items', () => {
+  it('allows keyboard navigation across test list items', async () => {
     const tests = FIXTURE_TESTS['run-auth-regression'];
 
     render(
@@ -298,7 +298,7 @@ describe('Regression: Keyboard Accessibility & Navigation', () => {
       />
     );
 
-    waitFor(() => {
+    await waitFor(() => {
       const testButtons = screen.getAllByRole('button');
       const testBtn = testButtons.find((b) => b.textContent?.includes('test_login_valid_token'));
       expect(testBtn).toBeDefined();
@@ -429,5 +429,43 @@ describe('Holistic Project Map & Semantic Zoom', () => {
     );
 
     expect(screen.getByText(/Whole Project Map/i)).toBeDefined();
+  });
+
+  it('opens in Structure mode with zero preselected test and Whole Project Map', () => {
+    render(
+      <GraphView
+        graphData={graph}
+        tests={tests}
+        selectedTestId={null}
+        viewMode="structure"
+      />
+    );
+
+    const structureRadio = screen.getByRole('radio', { name: /structure/i });
+    expect(structureRadio).toBeDefined();
+    expect(structureRadio.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('Whole Project Map')).toBeDefined();
+  });
+
+  it('computes non-grid celestial starburst coordinates for file and child nodes', () => {
+    const positions = computeDeterministicPositions(graph.files || [], graph.nodes);
+
+    // Tokens file center
+    const tokensCenter = positions['file:auth/tokens.py'];
+    expect(tokensCenter).toBeDefined();
+
+    // Verify child symbols radiate in starburst around center rather than a 2-column rectangular grid
+    const child1 = positions['auth/tokens.py::validate_token'];
+    const child2 = positions['auth/tokens.py::decode_jwt_header'];
+    expect(child1).toBeDefined();
+    expect(child2).toBeDefined();
+
+    // Distances from center are in celestial radius band (40px - 85px)
+    const dist1 = Math.hypot(child1.x - tokensCenter.x, child1.y - tokensCenter.y);
+    const dist2 = Math.hypot(child2.x - tokensCenter.x, child2.y - tokensCenter.y);
+    expect(dist1).toBeGreaterThanOrEqual(40);
+    expect(dist1).toBeLessThanOrEqual(90);
+    expect(dist2).toBeGreaterThanOrEqual(40);
+    expect(dist2).toBeLessThanOrEqual(90);
   });
 });

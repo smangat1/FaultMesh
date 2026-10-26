@@ -50,6 +50,8 @@ if (typeof HTMLCanvasElement !== 'undefined') {
         measureText: vi.fn().mockReturnValue({ width: 50 }),
         transform: vi.fn(),
         rect: vi.fn(),
+        quadraticCurveTo: vi.fn(),
+        bezierCurveTo: vi.fn(),
         clip: vi.fn(),
         setLineDash: vi.fn(),
         getLineDash: vi.fn().mockReturnValue([]),

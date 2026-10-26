@@ -4,7 +4,7 @@ import { FixtureAdapter } from './adapter';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { GraphView } from './components/GraphView';
+import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
@@ -33,6 +33,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<GraphViewMode>('structure');
 
   // Shortlist and File cluster collapse states
   const [pinnedSymbols, setPinnedSymbols] = useState<PinnedSymbol[]>([]);
@@ -93,12 +94,11 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
       setTests(loadedTests);
       setGraphData(loadedGraph);
 
-      // Default select: failing test as highlight layer (or first test)
-      const failingTest = loadedTests.find((t) => t.status === 'fail');
-      const errorTest = loadedTests.find((t) => t.status === 'error');
-      const defaultTest = failingTest || errorTest || loadedTests[0] || null;
+      // Structure mode by default on open: all files collapsed into clean overview constellation, no test preselected
+      const allFiles = new Set((loadedGraph.files || []).map((fc) => fc.file));
+      setCollapsedFiles(allFiles);
 
-      setSelectedTestId(defaultTest ? defaultTest.id : null);
+      setSelectedTestId(null);
       setSelectedNodeId(null);
       setSelectedFile(null);
     } catch (err) {
@@ -352,6 +352,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
                   onUnpinSymbol={handleUnpinSymbol}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={handleSelectNode}
+                  viewMode={viewMode}
                 />
 
                 {/* 2. Center: Dominant Whole-Project Map */}
@@ -379,6 +380,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
                     onToggleCollapseFile={handleToggleCollapseFile}
                     onCollapseAllFiles={handleCollapseAllFiles}
                     onExpandAllFiles={handleExpandAllFiles}
+                    viewMode={viewMode}
+                    onSelectViewMode={setViewMode}
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
                   />

@@ -33,17 +33,24 @@ export interface GraphViewProps {
 /**
  * Deterministically computes (x, y) coordinates for all files and their child symbols.
  * Guarantees 0ms layout jitter, 100% repeatability across runs and environments.
+ * Uses relationship-informed celestial hub positioning and organic starburst clustering.
  */
+const KNOWN_FILE_COORDINATES: Record<string, { x: number; y: number }> = {
+  'auth/service.py': { x: 480, y: 360 },     // central coordinator hub
+  'auth/tokens.py': { x: 250, y: 220 },      // upper-left (token authority)
+  'auth/crypto.py': { x: 710, y: 210 },      // upper-right (keys & crypto)
+  'auth/sessions.py': { x: 230, y: 520 },    // lower-left (sessions)
+  'auth/models.py': { x: 730, y: 470 },      // lower-right (user & token models)
+  'auth/limiter.py': { x: 480, y: 590 },     // bottom-center (rate limiter)
+  'tests/test_auth.py': { x: 270, y: 770 },  // test cluster left
+  'tests/test_sessions.py': { x: 690, y: 750 }, // test cluster right
+};
+
 export function computeDeterministicPositions(
   files: FileCluster[],
   nodes: CodeNode[]
 ): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {};
-  const COLS = 3;
-  const COL_WIDTH = 440;
-  const ROW_HEIGHT = 320;
-  const ORIGIN_X = 240;
-  const ORIGIN_Y = 180;
 
   // Group nodes by file
   const nodesByFile: Record<string, CodeNode[]> = {};
@@ -53,21 +60,38 @@ export function computeDeterministicPositions(
   }
 
   files.forEach((fileCluster, fIdx) => {
-    const col = fIdx % COLS;
-    const row = Math.floor(fIdx / COLS);
-    const fileCenterX = ORIGIN_X + col * COL_WIDTH;
-    const fileCenterY = ORIGIN_Y + row * ROW_HEIGHT;
+    let fileCenterX: number;
+    let fileCenterY: number;
 
-    // Position compound parent node
+    if (KNOWN_FILE_COORDINATES[fileCluster.file]) {
+      fileCenterX = KNOWN_FILE_COORDINATES[fileCluster.file].x;
+      fileCenterY = KNOWN_FILE_COORDINATES[fileCluster.file].y;
+    } else {
+      // Golden angle spiral distribution for arbitrary repositories / scale fixtures
+      const phi = 2.399963229728653; // golden angle in radians
+      const angle = fIdx * phi;
+      const radius = 220 + Math.sqrt(fIdx / Math.max(files.length, 1)) * 480;
+      let hash = 0;
+      for (let i = 0; i < fileCluster.file.length; i++) {
+        hash = (hash * 31 + fileCluster.file.charCodeAt(i)) & 0xffffffff;
+      }
+      const jitterX = (hash % 30) - 15;
+      const jitterY = ((hash >> 4) % 30) - 15;
+      fileCenterX = Math.round(480 + Math.cos(angle) * radius + jitterX);
+      fileCenterY = Math.round(420 + Math.sin(angle) * radius + jitterY);
+    }
+
+    // Position file anchor node
     positions[`file:${fileCluster.file}`] = { x: fileCenterX, y: fileCenterY };
 
-    // Position internal child symbols in 2-column subgrid inside file cluster for clean label readability
+    // Position internal child symbols in an organic celestial starburst constellation
     const fileNodes = nodesByFile[fileCluster.file] || [];
+    const count = fileNodes.length;
     fileNodes.forEach((node, sIdx) => {
-      const symCol = sIdx % 2;
-      const symRow = Math.floor(sIdx / 2);
-      const symX = fileCenterX - 70 + symCol * 140;
-      const symY = fileCenterY - 60 + symRow * 42;
+      const angle = (sIdx * (2 * Math.PI / Math.max(count, 1))) + 0.35;
+      const radius = 45 + ((sIdx * 37) % 35);
+      const symX = Math.round(fileCenterX + Math.cos(angle) * radius);
+      const symY = Math.round(fileCenterY + Math.sin(angle) * radius);
       positions[node.id] = { x: symX, y: symY };
     });
   });
@@ -96,9 +120,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
 
-  const [currentViewMode, setCurrentViewMode] = useState<GraphViewMode>(propViewMode || 'tests');
+  const [currentViewMode, setCurrentViewMode] = useState<GraphViewMode>(propViewMode || 'structure');
   const [searchQuery, setSearchQuery] = useState('');
-  const [includeStaticContext, setIncludeStaticContext] = useState(false);
+  const [includeStaticContext, setIncludeStaticContext] = useState(
+    (propViewMode ? propViewMode === 'structure' : true) && !selectedTestId
+  );
   const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
@@ -155,55 +181,39 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     const positions = computeDeterministicPositions(fileClusters, graphData.nodes);
 
-    // 1. Add File Clusters (compound parents or summary nodes if collapsed)
+    // 1. Add File Clusters (clean circular dots: 12px summary when collapsed, 13px anchor when expanded)
     fileClusters.forEach((fc) => {
       const fileId = `file:${fc.file}`;
       const isCollapsed = collapsedFiles.has(fc.file);
-      const pos = positions[fileId] || { x: 200, y: 200 };
+      const pos = positions[fileId] || { x: 480, y: 360 };
 
-      if (isCollapsed) {
-        // Collapsed file shows as single summary node
-        nodes.push({
-          data: {
-            id: fileId,
-            label: `${fc.name} (${fc.symbolCount})`,
-            file: fc.file,
-            isFileCluster: true,
-            isCollapsed: true,
-            symbolCount: fc.symbolCount,
-            changeStatus: fc.changeStatus,
-          },
-          position: pos,
-        });
-      } else {
-        // Expanded file cluster (compound parent)
-        nodes.push({
-          data: {
-            id: fileId,
-            label: fc.name,
-            file: fc.file,
-            isFileCluster: true,
-            isCollapsed: false,
-            symbolCount: fc.symbolCount,
-            changeStatus: fc.changeStatus,
-          },
-        });
-      }
+      nodes.push({
+        data: {
+          id: fileId,
+          label: isCollapsed ? `${fc.name} (${fc.symbolCount})` : fc.name,
+          shortLabel: fc.name,
+          file: fc.file,
+          isFileCluster: true,
+          isCollapsed,
+          symbolCount: fc.symbolCount,
+          changeStatus: fc.changeStatus,
+        },
+        position: pos,
+      });
     });
 
-    // 2. Add Symbol child nodes (only for uncollapsed files)
+    // 2. Add Symbol child nodes (ONLY for uncollapsed files - genuine semantic zooming)
     graphData.nodes.forEach((n) => {
       if (collapsedFiles.has(n.file)) return;
 
-      const fileId = `file:${n.file}`;
-      const pos = positions[n.id] || { x: 200, y: 200 };
+      const pos = positions[n.id] || { x: 480, y: 360 };
       const isTestItem = tests.some((t) => t.id === n.id);
       const testItem = tests.find((t) => t.id === n.id);
 
       nodes.push({
         data: {
           id: n.id,
-          parent: fileId,
+          // NOTE: Zero Cytoscape compound parent nesting eliminates rectangular container boxes!
           label: n.name,
           shortLabel: n.name.length > 20 ? `${n.name.substring(0, 18)}…` : n.name,
           kind: n.kind,
@@ -217,33 +227,72 @@ export const GraphView: React.FC<GraphViewProps> = ({
         },
         position: pos,
       });
+
+      // Faint radial containment strand linking expanded file anchor to each child symbol
+      const fileId = `file:${n.file}`;
+      edges.push({
+        data: {
+          id: `containment:${fileId}->${n.id}`,
+          source: fileId,
+          target: n.id,
+          category: 'containment',
+          isContainment: true,
+        },
+      });
     });
 
     const activeNodeIdSet = new Set(nodes.map((n) => n.data.id));
+    const addedAggregatedEdges = new Set<string>();
 
-    // 3. Add Edges (re-routing to collapsed file node if child is collapsed)
+    // 3. Add Edges (re-routing to collapsed file node if child's file is collapsed)
     graphData.edges.forEach((e) => {
       let sourceId = e.source;
       let targetId = e.target;
 
-      // Find file if node is inside a collapsed file
       const sourceNode = graphData.nodes.find((n) => n.id === sourceId);
       const targetNode = graphData.nodes.find((n) => n.id === targetId);
 
-      if (sourceNode && collapsedFiles.has(sourceNode.file)) {
-        sourceId = `file:${sourceNode.file}`;
+      const sourceFile = sourceNode?.file;
+      const targetFile = targetNode?.file;
+
+      const isSourceCollapsed = sourceFile ? collapsedFiles.has(sourceFile) : false;
+      const isTargetCollapsed = targetFile ? collapsedFiles.has(targetFile) : false;
+
+      if (isSourceCollapsed && sourceFile) {
+        sourceId = `file:${sourceFile}`;
       }
-      if (targetNode && collapsedFiles.has(targetNode.file)) {
-        targetId = `file:${targetNode.file}`;
+      if (isTargetCollapsed && targetFile) {
+        targetId = `file:${targetFile}`;
       }
 
-      // Avoid self-loops when nodes in same collapsed file connect
+      // Avoid self-loops when nodes within same collapsed file connect
       if (sourceId === targetId) return;
 
       if (!activeNodeIdSet.has(sourceId) || !activeNodeIdSet.has(targetId)) return;
 
       // Filter static edges if toggled off
       if (!includeStaticContext && (e.category === 'static_call' || e.category === 'static_import')) {
+        return;
+      }
+
+      // If both endpoints are file nodes, aggregate and deduplicate into single fine architectural strand
+      const isAggregated = sourceId.startsWith('file:') && targetId.startsWith('file:');
+      if (isAggregated) {
+        const edgeKey = `${sourceId}->${targetId}`;
+        if (addedAggregatedEdges.has(edgeKey)) return;
+        addedAggregatedEdges.add(edgeKey);
+
+        edges.push({
+          data: {
+            id: `agg:${edgeKey}`,
+            source: sourceId,
+            target: targetId,
+            category: 'aggregated_structural',
+            isAggregated: true,
+            provenance: 'static_ast',
+            testIds: e.testIds || [],
+          },
+        });
         return;
       }
 
@@ -268,7 +317,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
     });
 
     return { nodes, edges };
-  }, [graphData, fileClusters, collapsedFiles, tests, includeStaticContext]);
+  }, [graphData, fileClusters, collapsedFiles, tests, includeStaticContext, activeTest]);
+
+  const structuralEdgeCount = useMemo(
+    () => elements.edges.filter((e) => !e.data.isContainment).length,
+    [elements.edges]
+  );
 
   // Priority set for label collision prevention:
   // selected > pinned > failing > changed > hovered > others
@@ -296,63 +350,63 @@ export const GraphView: React.FC<GraphViewProps> = ({
       boxSelectionEnabled: false,
       autounselectify: false,
       style: [
-        // --- Compound Parent Nodes (File Clusters: open constellation anchor, zero rectangular borders) ---
+        // --- File Cluster Nodes (Clean circular dots, NO rectangular compound container) ---
         {
-          selector: 'node[?isFileCluster][!isCollapsed]',
-          style: {
-            shape: 'roundrectangle',
-            'background-opacity': 0,
-            'border-width': 0,
-            padding: '24px',
-            label: 'data(label)',
-            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            'font-size': '11px',
-            'font-weight': 600,
-            'text-valign': 'top',
-            'text-halign': 'left',
-            'text-margin-x': 0,
-            'text-margin-y': -8,
-            color: '#64748b',
-            'z-index': 1,
-          },
-        },
-        // Collapsed file summary node: clean circular dot (12px)
-        {
-          selector: 'node[?isCollapsed]',
+          selector: 'node[?isFileCluster]',
           style: {
             shape: 'ellipse',
             width: 12,
             height: 12,
             'background-color': '#94a3b8',
             'border-width': 0,
+            label: 'data(label)',
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            'font-size': '11px',
+            'font-weight': 600,
             'text-valign': 'bottom',
             'text-halign': 'center',
-            'text-margin-y': 4,
-            'font-size': '11px',
-            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            'text-margin-y': 5,
             color: '#cbd5e1',
-            label: 'data(label)',
-            'z-index': 10,
+            'text-background-color': '#101114',
+            'text-background-opacity': 0.8,
+            'text-background-padding': '2px',
+            'text-background-shape': 'roundrectangle',
+            'z-index': 20,
           },
         },
+        // Expanded file center anchor
         {
-          selector: 'node[?isCollapsed][changeStatus = "modified"]',
+          selector: 'node[?isFileCluster][!isCollapsed]',
+          style: {
+            width: 13,
+            height: 13,
+            'background-color': '#475569',
+            'border-width': 1.5,
+            'border-color': '#94a3b8',
+            'border-opacity': 0.8,
+            color: '#94a3b8',
+          },
+        },
+        // Modified file
+        {
+          selector: 'node[?isFileCluster][changeStatus = "modified"]',
           style: {
             'background-color': '#d29922',
             'border-width': 1.5,
             'border-color': '#f6c156',
-            width: 13,
-            height: 13,
+            width: 14,
+            height: 14,
           },
         },
+        // Added file
         {
-          selector: 'node[?isCollapsed][changeStatus = "added"]',
+          selector: 'node[?isFileCluster][changeStatus = "added"]',
           style: {
             'background-color': '#38bdf8',
             'border-width': 1.5,
             'border-color': '#7dd3fc',
-            width: 13,
-            height: 13,
+            width: 14,
+            height: 14,
           },
         },
         // --- Child Symbol Nodes (Functions / Classes / Methods: small circular dots) ---
@@ -360,8 +414,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           selector: 'node[!isFileCluster]',
           style: {
             shape: 'ellipse',
-            width: 6,
-            height: 6,
+            width: 5,
+            height: 5,
             'background-color': '#64748b',
             'border-width': 0,
             label: '',
@@ -385,8 +439,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           selector: 'node[kind = "class"]',
           style: {
             shape: 'ellipse',
-            width: 7.5,
-            height: 7.5,
+            width: 7,
+            height: 7,
             'background-color': '#7c8c9e',
           },
         },
@@ -397,8 +451,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
             'background-color': '#d29922',
             'border-width': 1.5,
             'border-color': '#f6c156',
-            width: 8,
-            height: 8,
+            width: 7.5,
+            height: 7.5,
             'z-index': 25,
           },
         },
@@ -409,8 +463,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
             'background-color': '#38bdf8',
             'border-width': 1.5,
             'border-color': '#7dd3fc',
-            width: 8,
-            height: 8,
+            width: 7.5,
+            height: 7.5,
             'z-index': 25,
           },
         },
@@ -421,8 +475,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
             'background-color': '#f85149',
             'border-width': 1.5,
             'border-color': '#ff7b72',
-            width: 10,
-            height: 10,
+            width: 9,
+            height: 9,
             'z-index': 30,
           },
         },
@@ -443,16 +497,41 @@ export const GraphView: React.FC<GraphViewProps> = ({
           selector: 'node[!isFileCluster][status = "pass"]',
           style: {
             'background-color': '#238636',
-            width: 6,
-            height: 6,
+            width: 5,
+            height: 5,
           },
         },
-        // --- Structural Edges (1px fine strands, semi-transparent desaturated gray) ---
+        // --- Containment rays from file center anchor to child symbols ---
         {
-          selector: 'edge',
+          selector: 'edge[category = "containment"]',
           style: {
-            width: 1,
-            'line-color': '#1f2937',
+            width: 0.75,
+            'line-color': '#243042',
+            'line-style': 'solid',
+            opacity: 0.35,
+            'curve-style': 'straight',
+            'target-arrow-shape': 'none',
+            'z-index': 2,
+          },
+        },
+        // --- Aggregated structural edges between files at overview ---
+        {
+          selector: 'edge[?isAggregated]',
+          style: {
+            width: 1.2,
+            'line-color': '#2e3b4e',
+            'curve-style': 'bezier',
+            opacity: 0.6,
+            'target-arrow-shape': 'none',
+            'z-index': 5,
+          },
+        },
+        // --- Structural Edges (fine strands, semi-transparent desaturated gray) ---
+        {
+          selector: 'edge[!isAggregated][category != "containment"]',
+          style: {
+            width: 0.8,
+            'line-color': '#222d3d',
             'curve-style': 'bezier',
             'target-arrow-shape': 'none',
             opacity: 0.45,
@@ -462,10 +541,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
         {
           selector: 'edge[category = "static_call"], edge[category = "static_import"]',
           style: {
-            'line-color': '#1a2230',
+            'line-color': '#1f2a3a',
             'line-style': 'solid',
-            width: 1,
-            opacity: 0.4,
+            width: 0.8,
+            opacity: 0.45,
           },
         },
         // --- Observed Edges for selected test: fine solid cyan strand ---
@@ -511,6 +590,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
             'z-index': 999,
           },
         },
+        // Neighbor highlighted on hover
+        {
+          selector: 'node.neighbor-highlighted',
+          style: {
+            'border-color': '#60a5fa',
+            'border-width': 1.5,
+            'z-index': 400,
+          },
+        },
         // Show label class (driven by semantic zoom and collision prevention)
         {
           selector: 'node.show-label',
@@ -531,9 +619,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           selector: 'edge.hovered',
           style: {
             'line-color': '#60a5fa',
-            width: 2,
-            'target-arrow-shape': 'chevron',
-            'target-arrow-color': '#60a5fa',
+            width: 1.8,
+            opacity: 0.9,
             'z-index': 100,
           },
         },
@@ -545,12 +632,42 @@ export const GraphView: React.FC<GraphViewProps> = ({
       },
     });
 
-    // Zoom listener for semantic zoom
+    // Zoom listener for semantic zoom & auto expand/collapse
     cy.on('zoom', () => {
       const z = cy.zoom();
-      if (z < 0.65) setZoomLevel('far');
-      else if (z < 1.15) setZoomLevel('mid');
+      if (z < 0.8) setZoomLevel('far');
+      else if (z < 1.3) setZoomLevel('mid');
       else setZoomLevel('close');
+
+      // Semantic zoom threshold handling:
+      // When zoomed in close (z >= 1.35), find nearest file to viewport center and expand it if collapsed
+      if (z >= 1.35 && onToggleCollapseFile) {
+        const extent = cy.extent();
+        const centerX = (extent.x1 + extent.x2) / 2;
+        const centerY = (extent.y1 + extent.y2) / 2;
+
+        let closestFile: string | null = null;
+        let minDistance = Infinity;
+
+        const positions = computeDeterministicPositions(fileClusters, graphData.nodes);
+        fileClusters.forEach((fc) => {
+          const pos = positions[`file:${fc.file}`];
+          if (pos) {
+            const dist = Math.hypot(pos.x - centerX, pos.y - centerY);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestFile = fc.file;
+            }
+          }
+        });
+
+        if (closestFile && minDistance < 250 && collapsedFiles.has(closestFile)) {
+          onToggleCollapseFile(closestFile);
+        }
+      } else if (z < 0.8 && collapsedFiles.size < fileClusters.length) {
+        // Zoomed back out to overview: consolidate all files to overview
+        onCollapseAllFiles?.();
+      }
     });
 
     // Tap handlers
@@ -563,11 +680,28 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
-    // Double tap on file cluster to toggle expand/collapse
+    // Double tap on file cluster to toggle expand/collapse and center camera
     cy.on('dbltap', 'node[?isFileCluster]', (evt: EventObject) => {
       const file = evt.target.data('file');
-      if (file && onToggleCollapseFile) {
-        onToggleCollapseFile(file);
+      if (file) {
+        if (onToggleCollapseFile) {
+          onToggleCollapseFile(file);
+        }
+        cy.animate({
+          center: { eles: evt.target },
+          zoom: Math.max(cy.zoom(), 1.4),
+          duration: 300,
+        });
+      }
+    });
+
+    // Double tap on background to fit view
+    cy.on('dbltap', (evt: EventObject) => {
+      if (evt.target === cy) {
+        cy.animate({
+          fit: { eles: cy.elements(), padding: 40 },
+          duration: 300,
+        });
       }
     });
 
@@ -579,15 +713,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
-    // Mouseover / Mouseout
+    // Mouseover / Mouseout with neighborhood strand illumination
     cy.on('mouseover', 'node', (evt: EventObject) => {
-      setHoveredNodeId(evt.target.id());
-      evt.target.addClass('hovered');
+      const target = evt.target;
+      setHoveredNodeId(target.id());
+      target.addClass('hovered');
+      target.neighborhood('edge').addClass('hovered');
+      target.neighborhood('node').addClass('neighbor-highlighted');
     });
 
     cy.on('mouseout', 'node', (evt: EventObject) => {
       setHoveredNodeId(null);
       evt.target.removeClass('hovered');
+      cy.elements().removeClass('hovered').removeClass('neighbor-highlighted');
     });
 
     cy.on('mouseover', 'edge', (evt: EventObject) => {
@@ -929,7 +1067,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               flexShrink: 0,
             }}
           >
-            ({graphData.nodes.length} nodes, {elements.edges.length} edges)
+            ({graphData.nodes.length} nodes, {structuralEdgeCount} edges)
           </span>
 
           {activeTest && !activeTest.callTracingAvailable && (

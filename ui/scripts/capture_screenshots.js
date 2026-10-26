@@ -50,20 +50,12 @@ async function main() {
   ];
 
   for (const res of resolutions) {
-    console.log(`\n=== Capturing 7 Visual States for ${res.name} ===`);
+    console.log(`\n=== Capturing 7 Visual Scenarios for ${res.name} ===`);
     await page.setViewport({ width: res.width, height: res.height, deviceScaleFactor: 2 });
     await page.goto(fileUrl, { waitUntil: 'networkidle0' });
     await new Promise((r) => setTimeout(r, 600));
 
-    // 1. Opening state, zoomed out, all clusters visible, no selection
-    // Clear test highlight if any preselected
-    await page.evaluate(() => {
-      const clearBtn = Array.from(document.querySelectorAll('button')).find(
-        (b) => b.textContent && b.textContent.trim() === 'Clear'
-      );
-      if (clearBtn) clearBtn.click();
-    });
-    // Click zoom out / fit
+    // Scenario 1: Opening state — clean Obsidian-style constellation in Structure mode
     await page.evaluate(() => {
       const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
       if (fitBtn) fitBtn.click();
@@ -71,8 +63,11 @@ async function main() {
     await new Promise((r) => setTimeout(r, 400));
     await captureState(page, `01_opening_zoomed_out_${res.name}.png`, res.width, res.height);
 
-    // 2. Zoomed in on one expanded cluster with symbol labels, no overlap
+    // Scenario 2: Zoomed into tokens.py — expand tokens cluster into functions while other files remain collapsed
     await page.evaluate(() => {
+      // Find tokens.py expand chevron in sidebar or double click
+      const expandBtn = document.querySelector('button[aria-label*="Expand tokens.py"]');
+      if (expandBtn) expandBtn.click();
       const zoomInBtn = document.querySelector('button[aria-label="Zoom in"]');
       if (zoomInBtn) {
         zoomInBtn.click();
@@ -82,64 +77,59 @@ async function main() {
     await new Promise((r) => setTimeout(r, 500));
     await captureState(page, `02_cluster_zoomed_in_${res.name}.png`, res.width, res.height);
 
-    // 3. Failing test selected: highlight inside the full map, rest dimmed but present
+    // Scenario 3: Failing test selected — highlight inside full map, rest dimmed, observed runtime call strands
     await page.evaluate(() => {
       const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
       if (fitBtn) fitBtn.click();
 
-      // Click failing test
+      // Click failing test in sidebar
       const testBtns = Array.from(document.querySelectorAll('button[aria-label*="Test test_login_expired_token"]'));
       if (testBtns.length > 0) testBtns[0].click();
     });
     await new Promise((r) => setTimeout(r, 500));
     await captureState(page, `03_failing_test_highlight_${res.name}.png`, res.width, res.height);
 
-    // 4. A function selected with the inspector open (source lines highlighted, explanation, pin button)
-    await page.evaluate(() => {
-      // Find validate_token in exercised symbols list or search
-      const btns = Array.from(document.querySelectorAll('button'));
-      const validateBtn = btns.find((b) => b.textContent && b.textContent.includes('validate_token'));
-      if (validateBtn) validateBtn.click();
-    });
-    await new Promise((r) => setTimeout(r, 500));
+    // Scenario 4: Function inspector — validate_token selected with inspector open (diff, source, traceback)
+    const searchInputForInspect = await page.$('input[placeholder*="Filter tests by name or file"]');
+    if (searchInputForInspect) {
+      await searchInputForInspect.focus();
+      await searchInputForInspect.type('validate_token');
+      await new Promise((r) => setTimeout(r, 300));
+      await page.keyboard.press('Enter');
+      await new Promise((r) => setTimeout(r, 600));
+    }
     await captureState(page, `04_function_inspector_${res.name}.png`, res.width, res.height);
 
-    // 5. Shortlist with a few pinned items
+    // Scenario 5: Changes mode overlay — modified and added files/functions highlighted
     await page.evaluate(() => {
-      // Pin current function
-      const pinBtn = document.querySelector('button[aria-label*="Pin validate_token"]');
-      if (pinBtn) pinBtn.click();
-
-      // Find and select verify_signature in relationships
-      const btns = Array.from(document.querySelectorAll('button'));
-      const verifyBtn = btns.find((b) => b.textContent && b.textContent.includes('verify_signature'));
-      if (verifyBtn) verifyBtn.click();
-    });
-    await new Promise((r) => setTimeout(r, 500));
-    await page.evaluate(() => {
-      // Pin second function
-      const pinBtn = document.querySelector('button[aria-label*="Pin verify_signature"]');
-      if (pinBtn) pinBtn.click();
+      // Switch to changes mode
+      const changesBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.trim().toLowerCase() === 'changes'
+      );
+      if (changesBtn) changesBtn.click();
     });
     await new Promise((r) => setTimeout(r, 500));
     await captureState(page, `05_pinned_shortlist_${res.name}.png`, res.width, res.height);
 
-    // 6. A search result jump (typing in sidebar search)
+    // Scenario 6: Search result jump — typing in sidebar search to navigate
     const sidebarSearchInput = await page.$('input[placeholder*="Filter tests by name or file"]');
     if (sidebarSearchInput) {
       await sidebarSearchInput.focus();
-      await sidebarSearchInput.type('login');
+      await sidebarSearchInput.type('tokens');
       await new Promise((r) => setTimeout(r, 400));
     }
     await captureState(page, `06_search_jump_${res.name}.png`, res.width, res.height);
 
-    // 7. The large sample (60+ symbols) at default zoom
+    // Scenario 7: Full repository at default overview with closed panels
     await page.evaluate(() => {
-      // Close search and inspector
       const closeBtn = document.querySelector('button[aria-label="Close inspector"]');
       if (closeBtn) closeBtn.click();
       const clearSearchBtn = document.querySelector('button[aria-label="Clear search"]');
       if (clearSearchBtn) clearSearchBtn.click();
+      const structureBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.trim().toLowerCase() === 'structure'
+      );
+      if (structureBtn) structureBtn.click();
       const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
       if (fitBtn) fitBtn.click();
     });

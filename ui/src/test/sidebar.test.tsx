@@ -139,4 +139,31 @@ describe('Sidebar Component (Zotero-like Layout)', () => {
     fireEvent.click(collapseBtn);
     expect(onToggleCollapseFile).toHaveBeenCalledWith('auth/tokens.py');
   });
+
+  it('supports collapsible sidebar rail toggle to maximize canvas area', () => {
+    render(
+      <Sidebar
+        tests={tests}
+        selectedTestId={null}
+        onSelectTest={vi.fn()}
+        files={graph.files}
+        nodes={graph.nodes}
+      />
+    );
+
+    // Initial state: collapse button present
+    const collapseBtn = screen.getByLabelText('Collapse sidebar');
+    expect(collapseBtn).toBeDefined();
+
+    // Click collapse button
+    fireEvent.click(collapseBtn);
+
+    // Sidebar rail should show expand button
+    const expandBtn = screen.getByLabelText('Expand sidebar');
+    expect(expandBtn).toBeDefined();
+
+    // Click expand button to restore
+    fireEvent.click(expandBtn);
+    expect(screen.getByLabelText('Collapse sidebar')).toBeDefined();
+  });
 });
