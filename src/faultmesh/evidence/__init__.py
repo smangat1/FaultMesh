@@ -1,4 +1,22 @@
-from faultmesh.evidence.store import EvidenceStore, InvalidStatusTransition
+from faultmesh.evidence.store import (
+    EVIDENCE_SCHEMA_VERSION,
+    EvidenceConflict,
+    EvidenceOwnershipError,
+    EvidenceSchemaError,
+    EvidenceStore,
+    EvidenceStoreError,
+    InvalidStatusTransition,
+    LegacyEvidenceStoreError,
+)
 
-__all__ = ["EvidenceStore", "InvalidStatusTransition"]
+__all__ = [
+    "EVIDENCE_SCHEMA_VERSION",
+    "EvidenceConflict",
+    "EvidenceOwnershipError",
+    "EvidenceSchemaError",
+    "EvidenceStore",
+    "EvidenceStoreError",
+    "InvalidStatusTransition",
+    "LegacyEvidenceStoreError",
+]
 
