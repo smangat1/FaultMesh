@@ -126,7 +126,7 @@ faultmesh structure src --out /tmp/faultmesh-v3-self-src.json
 
 Hpack produced 19 files, 171 symbols, 130 `contains`, 41 `defines`, 48 resolved imports, 56
 external/unresolved imports, and 171 resolved possible calls. It also retained 461 unresolved
-references, 20 external modules, 28 skipped entries, and zero parse errors. The source checkout was
+references, 21 external modules, 28 skipped entries, and zero parse errors. The source checkout was
 clean before and after. Manual source-line checks confirmed these resolved edges:
 
 1. `bench/test_bench_hpack.py:1` imports `encode_integer` and `decode_integer` from `hpack.hpack`.
@@ -135,21 +135,27 @@ clean before and after. Manual source-line checks confirmed these resolved edges
 4. `src/hpack/hpack.py:169` constructs imported `HeaderTable`.
 5. `src/hpack/hpack.py:249` calls `self._encode_table_size_change`.
 
-Manual checks also confirmed five honest unresolved records: pytest's injected `benchmark` value at
-`bench/test_bench_hpack.py:9`, builtin `bytes` at line 23, module-body `sys.path.insert` at
-`docs/source/conf.py:17`, module-body `open` at line 22, and unknown receiver `match.group` at line
-25. These are retained because V3 does not infer fixture or receiver types.
+Manual checks also confirmed five honest unresolved records: pytest's injected local `benchmark`
+value at `bench/test_bench_hpack.py:9`, builtin `bytes` at line 23, and the module-body calls
+`sys.path.insert`, `open`, and `match.group` in `docs/source/conf.py`. These are retained because V3
+does not infer fixture or receiver types or present module-body calls as function call edges.
 
 The real V2 acceptance export joined 7,910 observed test-symbol entries, zero stale entries, and
 1,149 explicit unmatched/ambiguous entries. The injected failure's `encode_integer` observation
 mapped to `symbol:src/hpack/hpack.py:encode_integer`; its disposable injected test file correctly
 remained unmatched in the clean upstream tree.
 
-The FaultMesh `src/` scan produced 42 files, 390 symbols, 150 `contains`, 240 `defines`, 254 resolved
-imports, 203 unresolved imports, 486 resolved possible calls, 1,683 unresolved references, 45
+The FaultMesh `src/` scan produced 42 files, 417 symbols, 167 `contains`, 250 `defines`, 258 resolved
+imports, 205 unresolved imports, 530 resolved possible calls, 1,764 unresolved references, 44
 external modules, 40 skipped entries, and zero parse errors.
 
 Finally, a separate disposable hpack clone received a real edit to `_to_bytes`, a Git rename of
 `huffman_constants.py` to `huffman_codes.py`, and a new `v3_added.py`. V3 reported the file states
 as modified, renamed at 100% Git similarity, and untracked/added respectively; `_to_bytes` was
 modified, `added_for_v3` was added, and eight one-hop possible-impact records were emitted.
+
+The PR #5 corrective pass reran Ruff, strict mypy, and the complete non-container suite: Ruff was
+clean, mypy found no issues in 61 files, and pytest reported 95 passed with 3 container tests
+deselected. Dedicated regressions cover disabled external diff/textconv helpers, Python binding
+shadowing and class scopes, exact Git paths and tree modes, coherent removed hierarchies, and
+zero-length hunk boundaries. Two consecutive hpack exports were byte-identical.
