@@ -21,6 +21,13 @@ fail as missing/ambiguous. Git commands never checkout, reset, stash, clean, fet
 index. A non-Git project still gets a structure export with `git.available=false`. No-commit,
 detached, shallow, untracked, renamed, copied, and submodule states remain explicit.
 
+Diff commands pass `--no-ext-diff` and `--no-textconv`, remove inherited
+`GIT_EXTERNAL_DIFF`/`GIT_DIFF_OPTS`, and set `GIT_OPTIONAL_LOCKS=0` for every Git child process.
+This blocks the executable diff and text-conversion paths covered by Git's command interface and
+avoids optional index refresh writes. It is not a general process sandbox: Git itself and repository
+metadata are still read from the host, so scans should use a trusted Git executable and repository
+configuration.
+
 ## Contract
 
 - `envelope`: project name, resolved base/head, worktree marker and dirty state, and deterministic

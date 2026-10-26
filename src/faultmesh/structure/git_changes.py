@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -37,6 +38,14 @@ class GitAnalysis:
     removed_symbols: list[SymbolNode]
 
 
+def _git_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    environment.pop("GIT_EXTERNAL_DIFF", None)
+    environment.pop("GIT_DIFF_OPTS", None)
+    return environment
+
+
 def _run(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     try:
         completed = subprocess.run(
@@ -45,6 +54,7 @@ def _run(root: Path, *arguments: str, check: bool = True) -> subprocess.Complete
             text=True,
             timeout=30,
             check=False,
+            env=_git_environment(),
         )
     except FileNotFoundError as exc:
         raise StructureGitError("git executable is unavailable") from exc
@@ -61,6 +71,7 @@ def _run_bytes(root: Path, *arguments: str) -> bytes:
             capture_output=True,
             timeout=30,
             check=False,
+            env=_git_environment(),
         )
     except FileNotFoundError as exc:
         raise StructureGitError("git executable is unavailable") from exc
@@ -145,6 +156,8 @@ def _name_status(
         "--find-renames=50%",
         "--find-copies=50%",
         "--find-copies-harder",
+        "--no-ext-diff",
+        "--no-textconv",
         base,
     ]
     if head is not None:
@@ -207,7 +220,15 @@ def _untracked(root: Path, prefix: str) -> list[str]:
 def _hunks(
     root: Path, base: str, head: str | None, prefix: str
 ) -> tuple[dict[str, list[tuple[int, int]]], dict[str, list[tuple[int, int]]]]:
-    arguments = ["diff", "--unified=0", "--no-color", "--find-renames=50%", base]
+    arguments = [
+        "diff",
+        "--unified=0",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--find-renames=50%",
+        base,
+    ]
     if head is not None:
         arguments.append(head)
     pathspec = f":(glob){prefix}/**/*.py" if prefix else "*.py"

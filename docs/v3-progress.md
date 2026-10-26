@@ -16,3 +16,11 @@ The real hpack gate passed at revision
 461 unresolved references, and a V2 overlay with 7,910 matches and 1,149 explicit unmatched
 records. The FaultMesh `src/` scan found 42 files and 390 symbols. Full acceptance details are in
 [v3-static-structure.md](v3-static-structure.md).
+
+## PR #5 corrective pass
+
+- Safety phase: complete — Git diffs disable external helpers and textconv; child Git processes
+  disable optional locks without changing the caller environment.
+- Binding phase: pending — conservative Python scope and import binding resolution.
+- Path/type phase: pending — byte-safe Git paths and revision entry modes.
+- Ghost phase: pending — coherent removed file/symbol hierarchy and hunk boundaries.
