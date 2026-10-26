@@ -14,7 +14,7 @@ and fixture-only UI PR #3. The separate UI worktree and all files under `ui/` ar
 The real hpack gate passed at revision
 `c2edbee3b5508e0b1689877fe6f173eafb097aef`: 19 files, 171 symbols, 446 static edges,
 461 unresolved references, and a V2 overlay with 7,910 matches and 1,149 explicit unmatched
-records. The FaultMesh `src/` scan found 42 files and 390 symbols. Full acceptance details are in
+records. The current FaultMesh `src/` scan found 42 files and 424 symbols. Full acceptance details are in
 [v3-static-structure.md](v3-static-structure.md).
 
 ## PR #5 corrective pass
@@ -27,3 +27,14 @@ records. The FaultMesh `src/` scan found 42 files and 390 symbols. Full acceptan
   tree modes and skip symlinks/gitlinks.
 - Ghost phase: complete — removed files/symbols retain base-side hierarchy and edges; counts split
   current/ghost nodes and zero-length hunk boundaries do not touch adjacent symbols.
+
+## Conditional import follow-up
+
+- Mutually exclusive `if`/`elif`/`else` and `try`/`except` import targets merge as ambiguous
+  candidates; identical targets deduplicate to one resolved edge.
+- A branch assignment keeps the name unresolved, while an unconditional later import replaces the
+  earlier binding. Star-import handling is unchanged.
+- Ruff and strict mypy passed. The non-container suite reported 102 passed and 3 deselected.
+- Two hpack exports were byte-identical. Hpack counts and its V2 overlay stayed unchanged at 7,910
+  matches, 0 stale matches, and 1,149 explicit unmatched records. The example fixture's graph and
+  counts were unchanged, so its historical-revision JSON was not rewritten.

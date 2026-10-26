@@ -74,8 +74,11 @@ imports and package re-exports. Possible calls resolve only from an import bindi
 enclosing function/module definition, a supported `self`/`cls` method, an actually resolved project
 base class, or an imported module attribute. Function parameters and compile-time locals block
 fallback to outer imports. Class namespaces are not treated as function lexical scopes, and dotted
-imports keep the module chain Python binds. Multiple candidates produce ambiguous edges. V3 has no
-type inference and does not guess through arbitrary values.
+imports keep the module chain Python binds. Imports of the same name in mutually exclusive
+`if`/`elif`/`else` or `try`/`except` branches retain every distinct project target as ambiguous;
+identical targets collapse to one resolved candidate. A branch assignment blocks resolution, while
+a later straight-line import replaces the earlier binding. Star imports remain unresolved. V3 has
+no type inference and does not guess through arbitrary values.
 
 Static edges are possibilities from source text, not proof a call happens at runtime. Absence of an
 edge is not proof of no call. Dynamic Python creates false negatives, especially through `getattr`,
@@ -145,8 +148,8 @@ The real V2 acceptance export joined 7,910 observed test-symbol entries, zero st
 mapped to `symbol:src/hpack/hpack.py:encode_integer`; its disposable injected test file correctly
 remained unmatched in the clean upstream tree.
 
-The FaultMesh `src/` scan produced 42 files, 417 symbols, 167 `contains`, 250 `defines`, 258 resolved
-imports, 205 unresolved imports, 531 resolved possible calls, 1,764 unresolved references, 44
+The FaultMesh `src/` scan produced 42 files, 424 symbols, 174 `contains`, 250 `defines`, 258 resolved
+imports, 205 unresolved imports, 539 resolved possible calls, 1,791 unresolved references, 44
 external modules, 40 skipped entries, and zero parse errors.
 
 Finally, a separate disposable hpack clone received a real edit to `_to_bytes`, a Git rename of
@@ -155,7 +158,9 @@ as modified, renamed at 100% Git similarity, and untracked/added respectively; `
 modified, `added_for_v3` was added, and eight one-hop possible-impact records were emitted.
 
 The PR #5 corrective pass reran Ruff, strict mypy, and the complete non-container suite: Ruff was
-clean, mypy found no issues in 61 files, and pytest reported 96 passed with 3 container tests
+clean, mypy found no issues in 61 files, and pytest reported 102 passed with 3 container tests
 deselected. Dedicated regressions cover disabled external diff/textconv helpers, Python binding
 shadowing and class scopes, exact Git paths and tree modes, coherent removed hierarchies, and
-zero-length hunk boundaries. Two consecutive hpack exports were byte-identical.
+zero-length hunk boundaries. Conditional import regressions cover `try`/`except`,
+`if`/`else`, identical targets, assignment fallbacks, and straight-line rebinding. Two consecutive
+hpack exports were byte-identical.

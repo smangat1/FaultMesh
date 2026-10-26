@@ -392,6 +392,31 @@ def call():
     assert {edge.confidence for edge in edges} == {EdgeConfidence.AMBIGUOUS}
 
 
+def test_elif_import_candidates_merge_without_duplicates(tmp_path: Path) -> None:
+    _write_import_targets(tmp_path)
+    (tmp_path / "consumer.py").write_text(
+        """import sys
+if sys.version_info >= (3, 13):
+    from a import x
+elif sys.version_info >= (3, 11):
+    from b import x
+else:
+    from a import x
+
+def call():
+    return x()
+""",
+        encoding="utf-8",
+    )
+
+    result = build_relationships(tmp_path, build_structure_index(tmp_path))
+    edges = _call_edges(result, "symbol:consumer.py:call")
+
+    assert {edge.target_id for edge in edges} == {"symbol:a.py:x", "symbol:b.py:x"}
+    assert len(edges) == 2
+    assert {edge.confidence for edge in edges} == {EdgeConfidence.AMBIGUOUS}
+
+
 def test_conditional_imports_to_same_target_stay_resolved(tmp_path: Path) -> None:
     _write_import_targets(tmp_path)
     (tmp_path / "consumer.py").write_text(
