@@ -133,6 +133,12 @@ class StructureIndex(StrictModel):
     parse_errors: list[ParseErrorRecord]
 
 
+class RelationshipIndex(StrictModel):
+    edges: list[StaticEdge]
+    unresolved: list[UnresolvedReference]
+    external_modules: list[str]
+
+
 class FileGitStatus(StrictModel):
     path: str
     status: FileChangeKind

@@ -7,6 +7,6 @@ and fixture-only UI PR #3. The separate UI worktree and all files under `ui/` ar
 ## Phase status
 
 - Phase 1: complete — schema 3.0 structure models and non-executing indexer.
-- Phase 2: pending — honest static relationships.
+- Phase 2: complete — honest static relationships with explicit uncertainty.
 - Phase 3: pending — read-only Git changes and symbol status.
 - Phase 4: pending — CLI/export, V2 overlay, real-project acceptance, docs, and PR.
