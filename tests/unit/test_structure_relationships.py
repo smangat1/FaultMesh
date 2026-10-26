@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from faultmesh.structure import build_relationships, build_structure_index
-from faultmesh.structure.models import EdgeConfidence, EdgeKind, RelationshipIndex
+from faultmesh.structure.models import (
+    EdgeConfidence,
+    EdgeKind,
+    RelationshipIndex,
+    StaticEdge,
+)
 
 
 def _resolved_targets(result: RelationshipIndex, source_id: str) -> set[str]:
@@ -15,6 +20,19 @@ def _resolved_targets(result: RelationshipIndex, source_id: str) -> set[str]:
         and edge.confidence == EdgeConfidence.RESOLVED
         and edge.target_id is not None
     }
+
+
+def _call_edges(result: RelationshipIndex, source_id: str) -> list[StaticEdge]:
+    return [
+        edge
+        for edge in result.edges
+        if edge.kind == EdgeKind.POSSIBLE_CALL and edge.source_id == source_id
+    ]
+
+
+def _write_import_targets(root: Path) -> None:
+    (root / "a.py").write_text("def x():\n    return 'a'\n", encoding="utf-8")
+    (root / "b.py").write_text("def x():\n    return 'b'\n", encoding="utf-8")
 
 
 def test_relationships_resolve_project_imports_aliases_and_calls(tmp_path: Path) -> None:
@@ -327,3 +345,116 @@ def outer():
     assert _resolved_targets(result, "symbol:consumer.py:use_global") == expected
     assert _resolved_targets(result, "symbol:consumer.py:outer.inner") == expected
     assert _resolved_targets(result, "symbol:consumer.py:outer.sibling") == expected
+
+
+def test_try_except_import_fallback_is_ambiguous(tmp_path: Path) -> None:
+    _write_import_targets(tmp_path)
+    (tmp_path / "consumer.py").write_text(
+        """try:
+    from a import x
+except ImportError:
+    from b import x
+
+def call():
+    return x()
+""",
+        encoding="utf-8",
+    )
+
+    result = build_relationships(tmp_path, build_structure_index(tmp_path))
+    edges = _call_edges(result, "symbol:consumer.py:call")
+
+    assert {edge.target_id for edge in edges} == {"symbol:a.py:x", "symbol:b.py:x"}
+    assert len(edges) == 2
+    assert {edge.confidence for edge in edges} == {EdgeConfidence.AMBIGUOUS}
+
+
+def test_if_else_import_fallback_is_ambiguous(tmp_path: Path) -> None:
+    _write_import_targets(tmp_path)
+    (tmp_path / "consumer.py").write_text(
+        """import sys
+if sys.version_info >= (3, 11):
+    from a import x
+else:
+    from b import x
+
+def call():
+    return x()
+""",
+        encoding="utf-8",
+    )
+
+    result = build_relationships(tmp_path, build_structure_index(tmp_path))
+    edges = _call_edges(result, "symbol:consumer.py:call")
+
+    assert {edge.target_id for edge in edges} == {"symbol:a.py:x", "symbol:b.py:x"}
+    assert len(edges) == 2
+    assert {edge.confidence for edge in edges} == {EdgeConfidence.AMBIGUOUS}
+
+
+def test_conditional_imports_to_same_target_stay_resolved(tmp_path: Path) -> None:
+    _write_import_targets(tmp_path)
+    (tmp_path / "consumer.py").write_text(
+        """try:
+    from a import x
+except ImportError:
+    from a import x
+
+def call():
+    return x()
+""",
+        encoding="utf-8",
+    )
+
+    result = build_relationships(tmp_path, build_structure_index(tmp_path))
+    edges = _call_edges(result, "symbol:consumer.py:call")
+
+    assert len(edges) == 1
+    assert edges[0].target_id == "symbol:a.py:x"
+    assert edges[0].confidence == EdgeConfidence.RESOLVED
+
+
+def test_conditional_assignment_keeps_imported_name_unresolved(tmp_path: Path) -> None:
+    _write_import_targets(tmp_path)
+    (tmp_path / "consumer.py").write_text(
+        """try:
+    from a import x
+except ImportError:
+    x = None
+
+def call():
+    return x()
+""",
+        encoding="utf-8",
+    )
+
+    result = build_relationships(tmp_path, build_structure_index(tmp_path))
+
+    assert not _call_edges(result, "symbol:consumer.py:call")
+    assert any(
+        item.path == "consumer.py"
+        and item.line == 7
+        and item.text == "x"
+        and item.reason == "local_binding"
+        for item in result.unresolved
+    )
+
+
+def test_straight_line_import_rebinding_uses_the_later_target(tmp_path: Path) -> None:
+    _write_import_targets(tmp_path)
+    (tmp_path / "consumer.py").write_text(
+        """from a import x
+from b import x
+
+def call():
+    return x()
+""",
+        encoding="utf-8",
+    )
+
+    result = build_relationships(tmp_path, build_structure_index(tmp_path))
+    edges = _call_edges(result, "symbol:consumer.py:call")
+
+    assert len(edges) == 1
+    assert edges[0].target_id == "symbol:b.py:x"
+    assert edges[0].confidence == EdgeConfidence.RESOLVED

@@ -230,6 +230,53 @@ class _RelationshipVisitor(ast.NodeVisitor):
         elif binding not in existing:
             existing.append(binding)
 
+    def _replace_bindings(self, name: str, bindings: list[_Binding] | None) -> None:
+        self._binding_scope(name).bindings[name] = bindings
+
+    def _binding_snapshot(self) -> list[dict[str, list[_Binding] | None]]:
+        return [
+            {
+                name: None if bindings is None else list(bindings)
+                for name, bindings in scope.bindings.items()
+            }
+            for scope in self.scopes
+        ]
+
+    def _restore_bindings(
+        self, snapshot: list[dict[str, list[_Binding] | None]]
+    ) -> None:
+        for scope, bindings in zip(self.scopes, snapshot, strict=True):
+            scope.bindings = {
+                name: None if candidates is None else list(candidates)
+                for name, candidates in bindings.items()
+            }
+
+    def _visit_binding_branches(self, branches: list[list[ast.AST]]) -> None:
+        baseline = self._binding_snapshot()
+        outcomes: list[list[dict[str, list[_Binding] | None]]] = []
+        for branch in branches:
+            self._restore_bindings(baseline)
+            for node in branch:
+                self.visit(node)
+            outcomes.append(self._binding_snapshot())
+        merged: list[dict[str, list[_Binding] | None]] = []
+        for position in range(len(self.scopes)):
+            states = [outcome[position] for outcome in outcomes]
+            names = set().union(*(state.keys() for state in states))
+            combined: dict[str, list[_Binding] | None] = {}
+            for name in names:
+                if any(name not in state or state[name] is None for state in states):
+                    combined[name] = None
+                    continue
+                candidates: list[_Binding] = []
+                for state in states:
+                    for binding in state[name] or []:
+                        if binding not in candidates:
+                            candidates.append(binding)
+                combined[name] = candidates
+            merged.append(combined)
+        self._restore_bindings(merged)
+
     def _lookup(self, name: str) -> _Lookup:
         force_module = False
         inside_function = any(scope.kind == "function" for scope in self.scopes)
@@ -267,7 +314,7 @@ class _RelationshipVisitor(ast.NodeVisitor):
         for alias in node.names:
             bound = alias.asname or alias.name.split(".")[0]
             bound_module = alias.name if alias.asname else alias.name.split(".")[0]
-            self._set_binding(bound, _Binding(module=bound_module))
+            self._replace_bindings(bound, [_Binding(module=bound_module)])
             target = self.module_files.get(alias.name)
             if target:
                 self._add_edge(
@@ -324,13 +371,15 @@ class _RelationshipVisitor(ast.NodeVisitor):
                         reason="from_import_symbol",
                         confidence=confidence,
                     )
-                binding_scope = self._binding_scope(bound)
-                binding_scope.bindings[bound] = [
-                    _Binding(module=base, target_id=item.id) for item in candidates
-                ]
+                self._replace_bindings(
+                    bound,
+                    [
+                        _Binding(module=base, target_id=item.id) for item in candidates
+                    ],
+                )
                 continue
             if submodule in self.module_files:
-                self._set_binding(bound, _Binding(module=submodule))
+                self._replace_bindings(bound, [_Binding(module=submodule)])
                 self._add_edge(
                     kind=EdgeKind.IMPORTS,
                     source_id=self._source_id(),
@@ -341,12 +390,12 @@ class _RelationshipVisitor(ast.NodeVisitor):
                 )
                 continue
             if base in self.module_files:
-                self._set_binding(bound, None)
+                self._replace_bindings(bound, None)
                 self._unresolved(node, ast.unparse(node), "missing_project_export")
             else:
                 external = base or alias.name
                 self.external.add(external)
-                self._set_binding(bound, _Binding(module=external))
+                self._replace_bindings(bound, [_Binding(module=external)])
                 self._add_edge(
                     kind=EdgeKind.IMPORTS,
                     source_id=self._source_id(),
@@ -356,6 +405,34 @@ class _RelationshipVisitor(ast.NodeVisitor):
                     confidence=EdgeConfidence.UNRESOLVED,
                     external_module=external,
                 )
+
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        branches: list[list[ast.AST]] = [list(node.body)]
+        branches.append(list(node.orelse) if node.orelse else [])
+        self._visit_binding_branches(branches)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        success: list[ast.AST] = [*node.body, *node.orelse]
+        for handler in node.handlers:
+            if handler.type is not None:
+                self.visit(handler.type)
+        branches: list[list[ast.AST]] = [success]
+        branches.extend(list(handler.body) for handler in node.handlers)
+        self._visit_binding_branches(branches)
+        for statement in node.finalbody:
+            self.visit(statement)
+
+    def visit_TryStar(self, node: ast.TryStar) -> None:
+        success: list[ast.AST] = [*node.body, *node.orelse]
+        for handler in node.handlers:
+            if handler.type is not None:
+                self.visit(handler.type)
+        branches: list[list[ast.AST]] = [success]
+        branches.extend(list(handler.body) for handler in node.handlers)
+        self._visit_binding_branches(branches)
+        for statement in node.finalbody:
+            self.visit(statement)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self._enter_symbol(node.name, "class", node)
