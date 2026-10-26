@@ -22,4 +22,4 @@ jobs:
       - run: python -m pip install -e '.[dev]'
       - run: ruff check .
       - run: mypy
-      - run: pytest --cov=faultmesh --cov-report=term-missing
+      - run: pytest -m "not container" --cov=faultmesh --cov-report=term-missing

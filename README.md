@@ -6,6 +6,9 @@ FaultMesh validates that property, searches for a counterexample with Hypothesis
 failure, persists its evidence in SQLite, and emits an executable regression test plus JSON and
 Markdown incident reports.
 
+V1 also runs an existing pytest suite in a configured, locked-down Docker container and stores an
+honest machine-readable result. This path does not call an AI model.
+
 The model is not the oracle. A finding reaches `VERIFIED` only after a validated property is
 violated by a stable, repeated execution.
 
@@ -32,6 +35,20 @@ shrank the counterexample, and saved-artifact replay matched the failure fingerp
 [docs/milestone-1-validation.md](docs/milestone-1-validation.md) for exact versions, measurements,
 isolation probes, and remaining limitations. Multi-agent roles and flaky-test investigation belong
 to later milestones.
+
+## V1 project runner status
+
+V1 passed its real-project gate on 2026-10-26. FaultMesh ran all 502 tests from a pinned hpack
+revision twice in offline containers, recorded two independent passing runs, preserved the target
+checkout, and correctly reported controlled failure and timeout cases. The runtime used a
+read-only source mount and root filesystem, a non-root user, no network, no effective capabilities,
+`no-new-privileges`, and CPU, memory, PID, and time limits.
+
+The supported boundary is deliberately small: Git checkouts, digest-pinned Python images, simple
+`name==version` test dependencies, and argv-form pytest commands. It does not install the target
+package or run project setup hooks. Per-test coverage, test-to-code evidence, and failed-test replay
+are V2 work and are not implemented. See [docs/v1-project-runner.md](docs/v1-project-runner.md) for
+the config, acceptance record, and limitations.
 
 ## Install and run
 
@@ -61,6 +78,8 @@ Or configure `.faultmesh.toml` (see [docs/configuration.md](docs/configuration.m
 faultmesh reproduce <incident-id> --repository ./repository
 faultmesh report <incident-id> --repository ./repository --format markdown
 faultmesh inspect ./repository
+faultmesh run-tests /path/to/project-run.toml
+faultmesh test-run <run-id> --config /path/to/project-run.toml
 ```
 
 See [docs/architecture.md](docs/architecture.md) for architecture, contracts, risks, the complete

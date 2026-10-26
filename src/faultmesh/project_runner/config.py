@@ -27,8 +27,12 @@ def load_run_config(path: Path) -> ResolvedRunConfig:
     artifact_root = (base / config.artifact_root).resolve()
     if not target_root.is_dir():
         raise ValueError(f"target_root is not a directory: {target_root}")
-    if target_root == artifact_root or target_root in artifact_root.parents:
-        raise ValueError("artifact_root must not be inside target_root")
+    if (
+        target_root == artifact_root
+        or target_root in artifact_root.parents
+        or artifact_root in target_root.parents
+    ):
+        raise ValueError("artifact_root and target_root must be separate paths")
     workdir = (target_root / config.test.working_directory).resolve()
     if not workdir.is_dir() or not workdir.is_relative_to(target_root):
         raise ValueError("working_directory must resolve inside target_root")

@@ -17,6 +17,10 @@ docker_image = "faultmesh-sandbox:0.1.0"
 artifact_directory = ".faultmesh"
 ```
 
+The evidence database schema is now explicitly versioned. A legacy unversioned database is rejected
+without being modified. To keep old artifacts, point `artifact_directory` at a fresh directory such
+as `.faultmesh-v2`; FaultMesh does not silently migrate or reset old history.
+
 Build the sandbox image once with
 `docker build --network=default -f Dockerfile.sandbox -t faultmesh-sandbox:0.1.0 .`. The heuristic
 backend exists for deterministic tests and limited docstring-derived checks. It does
@@ -28,4 +32,42 @@ single-shot completion binary. Recent `llama-cli` releases provide an interactiv
 are not interchangeable with a batch subprocess adapter. Override `llama_cli` for older llama.cpp
 distributions that use a different executable name. FaultMesh also passes `--single-turn` so a
 chat-templated model cannot leave the batch subprocess waiting for another interactive turn.
+
+## V1 project test runs
+
+The project runner uses a separate TOML file and a separate run store. Paths are relative to that
+file. A minimal config is:
+
+```toml
+[project_run]
+schema_version = "1.0"
+target_root = "hpack"
+revision = "c2edbee3b5508e0b1689877fe6f173eafb097aef"
+artifact_root = "faultmesh-runs"
+
+[project_run.environment]
+base_image = "python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377"
+dependency_pins = [
+  "pytest==9.0.3",
+  "hypothesis==6.152.1",
+  "pytest-json-report==1.5.0",
+]
+
+[project_run.test]
+argv = ["python", "-m", "pytest", "-q", "tests"]
+working_directory = "."
+pythonpath = ["src"]
+
+[project_run.limits]
+timeout_seconds = 300
+memory = "512m"
+cpus = 1.0
+pids = 128
+max_output_bytes = 1000000
+```
+
+`artifact_root` must be separate from `target_root`. FaultMesh owns the pytest JSON report options,
+rejects shell commands and escaping paths, and requires a full lowercase commit SHA, a registry
+digest on the base image, and exact dependency pins. See
+[v1-project-runner.md](v1-project-runner.md) for the complete supported boundary.
 

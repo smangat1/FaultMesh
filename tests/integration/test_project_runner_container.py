@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -15,15 +18,25 @@ BASE_IMAGE = (
 )
 
 
+@pytest.fixture
+def docker_shared_tmp_path() -> Iterator[Path]:
+    # Colima shares /Users, but not macOS's /private pytest temp folder.
+    parent = Path.home() if sys.platform == "darwin" else None
+    with tempfile.TemporaryDirectory(prefix="faultmesh-container-", dir=parent) as path:
+        yield Path(path)
+
+
 @pytest.mark.container
 @pytest.mark.skipif(
     os.environ.get("FAULTMESH_RUN_CONTAINER_TESTS") != "1",
     reason="set FAULTMESH_RUN_CONTAINER_TESTS=1 for the real Docker regression",
 )
-def test_real_container_runs_pytest_without_changing_target(tmp_path: Path) -> None:
+def test_real_container_runs_pytest_without_changing_target(
+    docker_shared_tmp_path: Path,
+) -> None:
     if shutil.which("docker") is None:
         pytest.fail("Docker CLI is required when container tests are enabled")
-    target = tmp_path / "target"
+    target = docker_shared_tmp_path / "target"
     target.mkdir()
     (target / "test_sample.py").write_text(
         "def test_sample() -> None:\n    assert 2 + 2 == 4\n", encoding="utf-8"
@@ -58,7 +71,7 @@ def test_real_container_runs_pytest_without_changing_target(tmp_path: Path) -> N
         text=True,
         check=True,
     ).stdout
-    config = tmp_path / "run.toml"
+    config = docker_shared_tmp_path / "run.toml"
     config.write_text(
         f"""[project_run]
 schema_version = "1.0"

@@ -149,6 +149,25 @@ class TimeoutDocker(FakeDocker):
         )
 
 
+class CancelledDocker(FakeDocker):
+    def run(
+        self,
+        resolved: object,
+        run_id: str,
+        image_id: str,
+        run_dir: Path,
+    ) -> ContainerExecution:
+        del resolved, run_id, image_id, run_dir
+        return ContainerExecution(
+            exit_code=None,
+            termination=RunTermination.CANCELLED,
+            stdout="partial",
+            stderr="",
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+
+
 class MissingReportDocker(FakeDocker):
     def run(
         self,
@@ -210,6 +229,13 @@ def test_config_resolves_separate_target_and_output(tmp_path: Path) -> None:
     assert resolved.artifact_root == tmp_path / "artifacts"
 
 
+def test_config_rejects_output_symlink_that_contains_target(tmp_path: Path) -> None:
+    path = _config(tmp_path)
+    (tmp_path / "artifacts").symlink_to(tmp_path)
+    with pytest.raises(ValueError, match="must be separate"):
+        load_run_config(path)
+
+
 def test_docker_command_has_runtime_isolation_and_no_host_fallback(tmp_path: Path) -> None:
     resolved = load_run_config(_config(tmp_path))
     run_dir = tmp_path / "artifacts" / "runs" / "run-test"
@@ -259,6 +285,21 @@ def test_report_parser_validates_counts_and_process_status(tmp_path: Path) -> No
     with pytest.raises(ProjectRunnerError, match="does not match"):
         parse_pytest_report(report, 0)
 
+    report.write_text(
+        json.dumps({"exitcode": 2, "summary": {"errors": 1, "total": 1}}),
+        encoding="utf-8",
+    )
+    summary, outcome = parse_pytest_report(report, 2)
+    assert outcome == RunOutcome.COLLECTION_ERROR
+    assert summary.collected == 1 and summary.errors == 1
+
+    report.write_text(
+        json.dumps({"exitcode": 5, "summary": {"total": 0}}), encoding="utf-8"
+    )
+    summary, outcome = parse_pytest_report(report, 5)
+    assert outcome == RunOutcome.NO_TESTS
+    assert summary.collected == 0
+
 
 def test_successful_runs_are_independent_and_persisted(tmp_path: Path) -> None:
     config = _config(tmp_path)
@@ -279,6 +320,7 @@ def test_successful_runs_are_independent_and_persisted(tmp_path: Path) -> None:
     [
         (BrokenDocker(), RunOutcome.INFRASTRUCTURE_ERROR, RunTermination.INFRASTRUCTURE),
         (TimeoutDocker(), RunOutcome.TIMEOUT, RunTermination.TIMEOUT),
+        (CancelledDocker(), RunOutcome.CANCELLED, RunTermination.CANCELLED),
         (MissingReportDocker(), RunOutcome.MALFORMED_REPORT, RunTermination.EXITED),
     ],
 )
