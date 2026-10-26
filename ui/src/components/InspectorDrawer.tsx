@@ -27,7 +27,12 @@ import {
   ArrowRightLeft,
 } from 'lucide-react';
 import type { AgentPhase, PhaseEvidenceItem } from '../agent/agentSimulation';
-import { AGENT_EXPLANATION, AGENT_ACTIVE_FILES } from '../agent/agentSimulation';
+import {
+  AGENT_EXPLANATION,
+  AGENT_ACTIVE_FILES,
+  AGENT_ORIGINAL_SNIPPET,
+  AGENT_PATCHED_SNIPPET,
+} from '../agent/agentSimulation';
 
 export interface InspectorDrawerProps {
   selectedNodeId: string | null;
@@ -97,14 +102,14 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   const selectedTest = tests.find((t) => t.id === selectedTestId) || null;
   const currentFile = files.find((f) => f.file === selectedFile) || null;
 
-  // Sync active code tab when node changes
+  // Sync active code tab when node changes or candidate patch is active
   useEffect(() => {
-    if (selectedNode?.gitDiff) {
+    if (selectedNode?.gitDiff || (isAgentActive && agentPhase === 'patching') || agentPatchedDiff) {
       setActiveCodeTab('diff');
     } else {
       setActiveCodeTab('source');
     }
-  }, [selectedNode?.id, selectedNode?.gitDiff]);
+  }, [selectedNode?.id, selectedNode?.gitDiff, isAgentActive, agentPhase, agentPatchedDiff]);
 
   // If nothing is selected, do not render drawer
   if (!selectedNode && !selectedTest && !currentFile) {
@@ -608,7 +613,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
               {activeCodeTab === 'diff' && (agentPatchedDiff || selectedNode.gitDiff) ? (
                 <div style={{ position: 'relative' }}>
-                  {isAgentActive && agentPhase === 'patching' && (
+                  {isAgentActive && (agentPhase === 'patching' || agentPhase === 'verifying' || agentPhase === 'resolved') && (
                     <div
                       style={{
                         position: 'absolute',
@@ -623,17 +628,44 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                         padding: '1px 6px',
                         borderRadius: '3px',
                         animation: 'livePatchFlash 1.5s infinite',
+                        letterSpacing: '0.03em',
                       }}
                     >
-                      LIVE AGENT PATCH
+                      DEMONSTRATED CANDIDATE CHANGE
                     </div>
                   )}
-                  <DiffViewer diff={agentPatchedDiff || selectedNode.gitDiff || ''} />
+                  <DiffViewer
+                    diff={agentPatchedDiff || selectedNode.gitDiff || ''}
+                    originalSource={
+                      selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                        ? AGENT_ORIGINAL_SNIPPET
+                        : undefined
+                    }
+                    candidateSource={
+                      selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                        ? AGENT_PATCHED_SNIPPET
+                        : undefined
+                    }
+                    lineStart={selectedNode.lineStart}
+                    isCandidatePatch={isAgentActive && agentPhase === 'patching'}
+                  />
                 </div>
               ) : selectedNode.sourceSnippet || agentPatchedSnippet ? (
                 <DiffViewer
                   source={agentPatchedSnippet || selectedNode.sourceSnippet}
                   lineStart={selectedNode.lineStart}
+                  originalSource={
+                    selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                      ? AGENT_ORIGINAL_SNIPPET
+                      : undefined
+                  }
+                  candidateSource={
+                    selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                      ? AGENT_PATCHED_SNIPPET
+                      : undefined
+                  }
+                  diff={agentPatchedDiff || selectedNode.gitDiff || undefined}
+                  isCandidatePatch={isAgentActive && agentPhase === 'patching'}
                 />
               ) : (
                 <div style={{ padding: '12px', fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>

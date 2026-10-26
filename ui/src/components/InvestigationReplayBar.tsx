@@ -62,12 +62,9 @@ export const InvestigationReplayBar: React.FC<InvestigationReplayBarProps> = ({
   isCameraTrackingPaused,
   onResumeTracking,
   onClose,
-  isInspectorOpen = false,
+  isInspectorOpen: _isInspectorOpen = false,
 }) => {
   const activeColor = PHASE_COLORS[currentPhase] || '#38bdf8';
-  const isNarrow = typeof window !== 'undefined' && window.innerWidth < 1200;
-  const drawerWidth = isNarrow ? 330 : 400;
-  const centerShift = isInspectorOpen ? Math.round(drawerWidth / 2) : 0;
 
   // Percentage progress along timeline track (0% to 100%)
   const progressPercent = totalSteps > 1 ? (currentStepIndex / (totalSteps - 1)) * 100 : 0;
@@ -77,7 +74,7 @@ export const InvestigationReplayBar: React.FC<InvestigationReplayBarProps> = ({
       style={{
         position: 'absolute',
         bottom: '12px',
-        left: isInspectorOpen ? `calc(50% - ${centerShift}px)` : '50%',
+        left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 50,
         display: 'flex',

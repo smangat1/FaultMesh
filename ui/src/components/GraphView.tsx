@@ -790,8 +790,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 100,
             },
           },
-          // --- Autonomous Agent Live Animation Classes: Focused Highlighting & Greying Out ---
-          // Grey out all unimpacted nodes in agent mode: clean Obsidian dark, no borders, no labels
+          // --- Autonomous Agent Investigation Classes: Refined Obsidian Aesthetics ---
+          // Decisively grey out all unimpacted nodes in agent mode: clean Obsidian dark, no borders, no labels
           {
             selector: 'node.agent-unimpacted',
             style: {
@@ -802,7 +802,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 1,
             },
           },
-          // Grey out all unimpacted edges in agent mode
+          // Decisively grey out all unimpacted edges in agent mode
           {
             selector: 'edge.agent-unimpacted',
             style: {
@@ -814,39 +814,44 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 1,
             },
           },
-          // Impacted nodes: high contrast, fully visible
+          // Impacted nodes: stable size (8.5px), high contrast, restrained colors
           {
             selector: 'node.agent-impacted',
             style: {
+              width: 8.5,
+              height: 8.5,
               opacity: 1.0,
+              'transition-property': 'background-color, border-color, border-width',
+              'transition-duration': 0.35,
+              'transition-timing-function': 'ease-in-out',
               'z-index': 100,
             },
           },
-          // Impacted failing test node
+          // Failing test node (Red) - starting failure role
           {
             selector: 'node.agent-impacted[id = "tests/test_auth.py::test_login_expired_token"]',
             style: {
               'background-color': '#ef4444',
-              'border-width': 1.5,
+              'border-width': 1.2,
               'border-color': '#fca5a5',
-              width: 9,
-              height: 9,
+              width: 8.5,
+              height: 8.5,
               label: 'data(shortLabel)',
               color: '#fca5a5',
               'font-weight': 600,
-              'font-size': '10px',
+              'font-size': '9.5px',
               'z-index': 120,
             },
           },
-          // Impacted service intermediary node (call coordinator)
+          // Intermediate call coordinator node (Cyan) - service examination role
           {
             selector: 'node.agent-impacted[id = "auth/service.py::login_with_token"]',
             style: {
-              'background-color': '#38bdf8',
+              'background-color': '#0284c7',
               'border-width': 1.2,
-              'border-color': '#7dd3fc',
-              width: 8,
-              height: 8,
+              'border-color': '#38bdf8',
+              width: 8.0,
+              height: 8.0,
               label: 'data(shortLabel)',
               color: '#7dd3fc',
               'font-weight': 500,
@@ -854,19 +859,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 110,
             },
           },
-          // Impacted token validator node (defect candidate & patch site)
+          // Candidate defect / patch site node (Amber) - proposed modification role
           {
             selector: 'node.agent-impacted[id = "auth/tokens.py::validate_token"]',
             style: {
-              'background-color': '#f59e0b',
-              'border-width': 1.5,
-              'border-color': '#fde68a',
-              width: 9,
-              height: 9,
+              'background-color': '#d97706',
+              'border-width': 1.2,
+              'border-color': '#f59e0b',
+              width: 8.5,
+              height: 8.5,
               label: 'data(shortLabel)',
               color: '#fde68a',
               'font-weight': 600,
-              'font-size': '10px',
+              'font-size': '9.5px',
               'z-index': 120,
             },
           },
@@ -874,7 +879,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           {
             selector: 'node[?isFileCluster].agent-impacted',
             style: {
-              opacity: 0.9,
+              opacity: 0.85,
               'border-color': '#64748b',
               'border-width': 1,
               label: 'data(label)',
@@ -882,82 +887,45 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 80,
             },
           },
-          // Resolved state: turns nodes emerald
+          // Single Brief Color Flash Classes (rapid brightening on arrival, then settles)
           {
-            selector: 'node.agent-resolved-state',
+            selector: 'node.node-flash-red',
             style: {
-              'background-color': '#10b981',
-              'border-color': '#6ee7b7',
-              color: '#a7f3d0',
-              'z-index': 130,
-            },
-          },
-          // Currently impacted active node with smooth canvas style transition
-          {
-            selector: 'node.agent-currently-impacted',
-            style: {
-              'transition-property': 'width, height, border-width, border-color, background-color, border-opacity',
-              'transition-duration': 0.35,
-              'transition-timing-function': 'ease-in-out',
-              'border-width': 2,
+              'background-color': '#f87171',
               'border-color': '#ffffff',
-              'border-opacity': 1.0,
-              'z-index': 1000,
-            },
-          },
-          // Peak state of the flash pulse: enlarged luminous core with crisp bright white rim
-          {
-            selector: 'node.agent-currently-impacted.agent-flash-peak',
-            style: {
-              width: 15,
-              height: 15,
-              'border-width': 3.5,
-              'border-color': '#ffffff',
-              'border-opacity': 1.0,
-              'z-index': 1000,
-            },
-          },
-          // Phase-specific flash color accents
-          {
-            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-diagnosing',
-            style: {
-              'background-color': '#ff4d4d',
-              'border-color': '#ffffff',
+              'border-width': 1.8,
             },
           },
           {
-            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-tracing',
+            selector: 'node.node-flash-cyan',
             style: {
               'background-color': '#38bdf8',
               'border-color': '#ffffff',
+              'border-width': 1.8,
             },
           },
           {
-            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-inspecting',
+            selector: 'node.node-flash-amber',
             style: {
               'background-color': '#fbbf24',
               'border-color': '#ffffff',
+              'border-width': 1.8,
             },
           },
           {
-            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-patching',
-            style: {
-              'background-color': '#fde047',
-              'border-color': '#ffffff',
-            },
-          },
-          {
-            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-verifying',
+            selector: 'node.node-flash-purple',
             style: {
               'background-color': '#c084fc',
               'border-color': '#ffffff',
+              'border-width': 1.8,
             },
           },
           {
-            selector: 'node.agent-currently-impacted.agent-flash-peak.flash-resolved',
+            selector: 'node.node-flash-green',
             style: {
               'background-color': '#34d399',
               'border-color': '#ffffff',
+              'border-width': 1.8,
             },
           },
           // Containment strands for impacted files
@@ -969,40 +937,53 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 10,
             },
           },
-          // Agent active trail edges: brightened progressively along the recorded evidence trail
+          // Traveling edge illumination (wave of color traveling toward next node)
           {
-            selector: 'edge.agent-trail-active',
+            selector: 'edge.edge-illuminating',
             style: {
               'line-color': '#38bdf8',
               'target-arrow-color': '#38bdf8',
               'target-arrow-shape': 'triangle',
-              'arrow-scale': 0.8,
-              width: 2.0,
+              'arrow-scale': 0.85,
+              width: 2.4,
               opacity: 1.0,
-              'z-index': 90,
+              'z-index': 95,
             },
           },
           {
-            selector: 'edge.agent-trail-amber',
+            selector: 'edge.edge-illuminating-amber',
             style: {
               'line-color': '#f59e0b',
               'target-arrow-color': '#f59e0b',
               'target-arrow-shape': 'triangle',
-              'arrow-scale': 0.8,
-              width: 2.0,
+              'arrow-scale': 0.85,
+              width: 2.4,
               opacity: 1.0,
+              'z-index': 95,
+            },
+          },
+          // Traversed historical connection strands (accumulating trail)
+          {
+            selector: 'edge.edge-traversed-cyan',
+            style: {
+              'line-color': '#0284c7',
+              'target-arrow-color': '#0284c7',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.75,
+              width: 1.8,
+              opacity: 0.85,
               'z-index': 90,
             },
           },
           {
-            selector: 'edge.agent-trail-emerald',
+            selector: 'edge.edge-traversed-amber',
             style: {
-              'line-color': '#10b981',
-              'target-arrow-color': '#10b981',
+              'line-color': '#d97706',
+              'target-arrow-color': '#d97706',
               'target-arrow-shape': 'triangle',
-              'arrow-scale': 0.8,
-              width: 2.0,
-              opacity: 1.0,
+              'arrow-scale': 0.75,
+              width: 1.8,
+              opacity: 0.85,
               'z-index': 90,
             },
           },
@@ -1418,43 +1399,48 @@ export const GraphView: React.FC<GraphViewProps> = ({
           }
         });
       }
-      // 4. Autonomous Agent Live Highlighting: Decisive Greying Out & Impact Spotlight
+      // 4. Autonomous Agent Investigation: Accumulating Trail, Role Highlighting & Impact Overview
       cy.nodes()
         .removeClass('agent-impacted')
-        .removeClass('agent-unimpacted')
-        .removeClass('agent-resolved-state');
+        .removeClass('agent-unimpacted');
       cy.edges()
         .removeClass('agent-impacted')
         .removeClass('agent-unimpacted')
-        .removeClass('agent-trail-active')
-        .removeClass('agent-trail-amber')
-        .removeClass('agent-trail-emerald');
+        .removeClass('edge-illuminating')
+        .removeClass('edge-illuminating-amber')
+        .removeClass('edge-traversed-cyan')
+        .removeClass('edge-traversed-amber');
 
       if (isAgentMode) {
-        const impactedNodeIds = new Set<string>([
-          'tests/test_auth.py::test_login_expired_token',
-          'auth/service.py::login_with_token',
-          'auth/tokens.py::validate_token',
-          'file:tests/test_auth.py',
-          'file:auth/service.py',
-          'file:auth/tokens.py',
-        ]);
-        if (agentActiveNodeId) {
-          impactedNodeIds.add(agentActiveNodeId);
+        // Accumulating trail nodes based on current step index (true time-travel replay)
+        const visitedNodeIds = new Set<string>();
+        visitedNodeIds.add('tests/test_auth.py::test_login_expired_token');
+        visitedNodeIds.add('file:tests/test_auth.py');
+
+        if (agentStepIndex >= 1) {
+          visitedNodeIds.add('auth/service.py::login_with_token');
+          visitedNodeIds.add('file:auth/service.py');
+        }
+        if (agentStepIndex >= 2) {
+          visitedNodeIds.add('auth/tokens.py::validate_token');
+          visitedNodeIds.add('file:auth/tokens.py');
         }
 
-        const impactedEdgeIds = new Set<string>([
-          'e_test_fail_to_login',
-          'e_login_to_validate',
-          'containment:file:tests/test_auth.py->tests/test_auth.py::test_login_expired_token',
-          'containment:file:auth/service.py->auth/service.py::login_with_token',
-          'containment:file:auth/tokens.py->auth/tokens.py::validate_token',
-          ...(agentActiveEdgeIds || []),
-        ]);
+        // Accumulating trail edges based on current step index
+        const visitedEdgeIds = new Set<string>();
+        visitedEdgeIds.add('containment:file:tests/test_auth.py->tests/test_auth.py::test_login_expired_token');
+        if (agentStepIndex >= 1) {
+          visitedEdgeIds.add('e_test_fail_to_login');
+          visitedEdgeIds.add('containment:file:auth/service.py->auth/service.py::login_with_token');
+        }
+        if (agentStepIndex >= 2) {
+          visitedEdgeIds.add('e_login_to_validate');
+          visitedEdgeIds.add('containment:file:auth/tokens.py->auth/tokens.py::validate_token');
+        }
 
-        // Decisively grey out all non-impacted nodes; prominently spotlight impacted nodes
+        // Decisively grey out all non-visited nodes; spotlight visited/impacted nodes
         cy.nodes().forEach((n) => {
-          if (impactedNodeIds.has(n.id())) {
+          if (visitedNodeIds.has(n.id())) {
             n.addClass('agent-impacted');
             n.removeClass('agent-unimpacted');
             n.addClass('show-label');
@@ -1465,44 +1451,23 @@ export const GraphView: React.FC<GraphViewProps> = ({
           }
         });
 
-        // Decisively grey out all non-impacted edges; spotlight impacted edges
+        // Decisively grey out all non-visited edges; style traversed edges with accumulating trail
         cy.edges().forEach((e) => {
-          if (impactedEdgeIds.has(e.id())) {
+          if (visitedEdgeIds.has(e.id())) {
             e.addClass('agent-impacted');
             e.removeClass('agent-unimpacted');
+            if (e.id() === 'e_test_fail_to_login') {
+              e.addClass('edge-traversed-cyan');
+            } else if (e.id() === 'e_login_to_validate') {
+              e.addClass('edge-traversed-amber');
+            }
           } else {
             e.addClass('agent-unimpacted');
             e.removeClass('agent-impacted');
+            e.removeClass('edge-traversed-cyan');
+            e.removeClass('edge-traversed-amber');
           }
         });
-
-        // Highlight active trail edges progressively along recorded trace
-        if (agentActiveEdgeIds && agentActiveEdgeIds.length > 0) {
-          agentActiveEdgeIds.forEach((eid) => {
-            const edge = cy.getElementById(eid);
-            if (edge.length > 0) {
-              if (agentPhase === 'resolved') {
-                edge.addClass('agent-trail-emerald');
-              } else if (agentPhase === 'inspecting' || agentPhase === 'patching') {
-                edge.addClass('agent-trail-amber');
-              } else {
-                edge.addClass('agent-trail-active');
-              }
-            }
-          });
-        }
-
-        // If in resolved phase, turn defect site and passing test to emerald
-        if (agentPhase === 'resolved') {
-          const patchTarget = cy.getElementById('auth/tokens.py::validate_token');
-          if (patchTarget.length > 0) {
-            patchTarget.addClass('agent-resolved-state');
-          }
-          const testTarget = cy.getElementById('tests/test_auth.py::test_login_expired_token');
-          if (testTarget.length > 0) {
-            testTarget.addClass('agent-resolved-state');
-          }
-        }
       }
     });
   }, [
@@ -1516,6 +1481,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     agentActiveNodeId,
     agentPhase,
     agentActiveEdgeIds,
+    agentStepIndex,
   ]);
 
   // Reset camera tracking pause when agent active mode restarts or changes
@@ -1525,7 +1491,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
   }, [isAgentMode]);
 
-  // Smooth Camera Gliding for Agent Active Node with Visible Area Offset
+  // Smooth Camera Gliding with Perfect Geometric Center & Zoom Out on Resolution
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !isAgentMode || !agentActiveNodeId || isCameraTrackingPaused) return;
@@ -1542,13 +1508,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const modelPos = targetNode.position();
     const targetZoom = agentZoomTarget || 1.15;
 
-    // Viewport visible width adjustment: if inspector drawer is open, subtract its width so active node is centered in available canvas
+    // Viewport visible dimensions: containerW is already the visible canvas between sidebar and drawer
     const containerW = containerRef.current?.clientWidth || 800;
     const containerH = containerRef.current?.clientHeight || 600;
-    const drawerWidth = typeof window !== 'undefined' && window.innerWidth < 1200 ? 330 : 400;
-    const rightInset = isInspectorOpen ? drawerWidth : 0;
-    const visibleCenterX = (containerW - rightInset) / 2;
-    const bottomInset = isAgentMode ? 65 : 0;
+    const visibleCenterX = containerW / 2;
+    const bottomInset = isAgentMode ? 55 : 0;
     const visibleCenterY = (containerH - bottomInset) / 2;
 
     const targetPanX = visibleCenterX - modelPos.x * targetZoom;
@@ -1588,7 +1552,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, [isAgentMode, isCameraTrackingPaused]);
 
-  // Smooth Native Canvas Flashing Pulse on Currently Impacted Node
+  // Single Brief Color Flash on Arrival & Traveling Edge Wave
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !isAgentMode || !agentActiveNodeId) return;
@@ -1602,32 +1566,69 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
     if (!targetNode || targetNode.length === 0) return;
 
-    const phaseClass = `flash-${agentPhase || 'tracing'}`;
-    targetNode.addClass('agent-currently-impacted').addClass(phaseClass);
+    // Determine flash color based on current action phase:
+    // Red: failing test identified (diagnosing)
+    // Cyan: examining relationship/function (tracing)
+    // Amber: suspicious modification or candidate patch inspected (inspecting, patching)
+    // Purple: verification trial executed (verifying)
+    // Green: successful recorded verification outcome (resolved)
+    let flashColorClass = 'node-flash-cyan';
+    if (agentPhase === 'diagnosing') flashColorClass = 'node-flash-red';
+    else if (agentPhase === 'inspecting' || agentPhase === 'patching') flashColorClass = 'node-flash-amber';
+    else if (agentPhase === 'verifying') flashColorClass = 'node-flash-purple';
+    else if (agentPhase === 'resolved') flashColorClass = 'node-flash-green';
 
-    let isPeak = false;
-    const interval = setInterval(() => {
-      isPeak = !isPeak;
-      if (isPeak) {
-        targetNode.addClass('agent-flash-peak');
-      } else {
-        targetNode.removeClass('agent-flash-peak');
+    // Active traveling edge for this transition
+    const travelingEdgeId =
+      agentStepIndex === 1
+        ? 'e_test_fail_to_login'
+        : agentStepIndex === 2
+        ? 'e_login_to_validate'
+        : null;
+
+    let travelingEdge: cytoscape.EdgeCollection | null = null;
+    if (travelingEdgeId) {
+      const edge = cy.getElementById(travelingEdgeId);
+      if (edge.length > 0) {
+        travelingEdge = edge;
+        const edgeColorClass = agentStepIndex === 2 ? 'edge-illuminating-amber' : 'edge-illuminating';
+        edge.addClass(edgeColorClass);
       }
-    }, 400);
+    }
+
+    // Trigger single color flash on destination arrival
+    const flashDelay = travelingEdge ? 300 : 50;
+    const flashTimer = setTimeout(() => {
+      targetNode.addClass(flashColorClass);
+
+      // Settle edge into traversed history
+      if (travelingEdge) {
+        const edgeColorClass = agentStepIndex === 2 ? 'edge-illuminating-amber' : 'edge-illuminating';
+        const traversedClass = agentStepIndex === 2 ? 'edge-traversed-amber' : 'edge-traversed-cyan';
+        travelingEdge.removeClass(edgeColorClass).addClass(traversedClass);
+      }
+
+      // Settle node fill into softer persistent color after brief hold (350ms)
+      const settleTimer = setTimeout(() => {
+        targetNode.removeClass(flashColorClass);
+      }, 350);
+
+      return () => clearTimeout(settleTimer);
+    }, flashDelay);
 
     return () => {
-      clearInterval(interval);
+      clearTimeout(flashTimer);
       targetNode
-        .removeClass('agent-currently-impacted')
-        .removeClass('agent-flash-peak')
-        .removeClass('flash-diagnosing')
-        .removeClass('flash-tracing')
-        .removeClass('flash-inspecting')
-        .removeClass('flash-patching')
-        .removeClass('flash-verifying')
-        .removeClass('flash-resolved');
+        .removeClass('node-flash-red')
+        .removeClass('node-flash-cyan')
+        .removeClass('node-flash-amber')
+        .removeClass('node-flash-purple')
+        .removeClass('node-flash-green');
+      if (travelingEdge) {
+        travelingEdge.removeClass('edge-illuminating').removeClass('edge-illuminating-amber');
+      }
     };
-  }, [isAgentMode, agentActiveNodeId, agentPhase, graphData.nodes]);
+  }, [isAgentMode, agentActiveNodeId, agentPhase, agentStepIndex, graphData.nodes]);
 
   // ResizeObserver to handle container size changes cleanly
   useEffect(() => {
@@ -2217,6 +2218,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             isExpanded={isExplanationExpanded}
             onToggleExpand={toggleExplanationExpand}
             isInspectorOpen={isInspectorOpen}
+            onSelectNode={(nodeId) => onSelectNode?.(nodeId)}
           />
         )}
 

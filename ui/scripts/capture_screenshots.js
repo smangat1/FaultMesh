@@ -216,6 +216,25 @@ async function main() {
     await new Promise((r) => setTimeout(r, 700));
     await captureState(page, `08_agent_phase3_patching_${res.name}.png`, res.width, res.height);
 
+    // Switch to Split diff Before & After view
+    await page.evaluate(() => {
+      const splitBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.includes('Split')
+      );
+      if (splitBtn) splitBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    await captureState(page, `08_agent_phase3_split_diff_${res.name}.png`, res.width, res.height);
+
+    // Switch back to Unified diff
+    await page.evaluate(() => {
+      const unifiedBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.includes('Unified')
+      );
+      if (unifiedBtn) unifiedBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 300));
+
     // Phase 4: Verifying (Pytest trial replay)
     await page.evaluate(() => {
       const step4Btn = document.querySelector('button[aria-label^="Step 5:"]');
@@ -231,6 +250,21 @@ async function main() {
     });
     await new Promise((r) => setTimeout(r, 700));
     await captureState(page, `08_agent_phase5_resolved_${res.name}.png`, res.width, res.height);
+
+    // Expand "Why this step?" popup to reveal the 6-point Final Investigation Summary & Evidence card
+    await page.evaluate(() => {
+      const whyBtn = document.querySelector('button[aria-label="Why this step?"]');
+      if (whyBtn) whyBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    await captureState(page, `08_agent_phase5_expanded_summary_${res.name}.png`, res.width, res.height);
+
+    // Collapse back
+    await page.evaluate(() => {
+      const collapseBtn = document.querySelector('button[aria-label="Collapse step explanation"]');
+      if (collapseBtn) collapseBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 300));
 
     // Also update 08_agent_live_simulation overview
     await captureState(page, `08_agent_live_simulation_${res.name}.png`, res.width, res.height);

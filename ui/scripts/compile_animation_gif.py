@@ -10,18 +10,22 @@ PHASE_FILES = [
     '08_agent_phase2_inspecting_1440x920.png',
     '08_agent_phase2_expanded_explanation_1440x920.png',
     '08_agent_phase3_patching_1440x920.png',
+    '08_agent_phase3_split_diff_1440x920.png',
     '08_agent_phase4_verifying_1440x920.png',
     '08_agent_phase5_resolved_1440x920.png',
+    '08_agent_phase5_expanded_summary_1440x920.png',
 ]
 
 DURATIONS_MS = [
-    2400, # Phase 0: Diagnosing
-    2500, # Phase 1: Tracing
-    2800, # Phase 2: Inspecting (collapsed)
-    3400, # Phase 2: Inspecting (expanded explanation popup)
-    3400, # Phase 3: Patching
-    2800, # Phase 4: Verifying
-    4000, # Phase 5: Resolved
+    2200, # Phase 0: Diagnosing (failure detected, red node spotlight)
+    2400, # Phase 1: Tracing (traveling edge, cyan service node)
+    2500, # Phase 2: Inspecting (amber patch candidate site)
+    3000, # Phase 2: Inspecting (expanded explanation popup)
+    2800, # Phase 3: Patching (unified candidate diff & amber highlight)
+    3000, # Phase 3: Patching (split Before & After comparison)
+    2500, # Phase 4: Verifying (purple trial execution)
+    3200, # Phase 5: Resolved (smooth zoom out & clean impact overview)
+    3800, # Phase 5: Resolved (6-point final investigation summary card)
 ]
 
 def main():

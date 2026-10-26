@@ -249,4 +249,74 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
     expect(container.querySelector('.agent-aura-ring')).toBeNull();
     expect(container.querySelector('.agent-floating-target-tag')).toBeNull();
   });
+
+  it('demonstrates candidate change with split/unified diff comparison and clear candidate labeling', async () => {
+    render(<App initialScreen="workspace" />);
+
+    // Toggle agent mode
+    const toolbarBtn = await screen.findByRole('button', { name: /agent auto-repair/i });
+    fireEvent.click(toolbarBtn);
+
+    // Jump to Step 4: Candidate fix examined
+    const patchStepBtn = screen.getByRole('button', { name: /Step 4: Candidate fix examined/i });
+    fireEvent.click(patchStepBtn);
+
+    // Verify badge labels candidate change clearly rather than claiming live file edits
+    await waitFor(() => {
+      expect(screen.getByText(/DEMONSTRATED CANDIDATE CHANGE/i)).toBeDefined();
+    });
+
+    // Check for Split Before & After comparison toggle
+    const splitBtn = screen.getByRole('button', { name: /split/i });
+    expect(splitBtn).toBeDefined();
+    fireEvent.click(splitBtn);
+
+    // Verify split headings rendered
+    await waitFor(() => {
+      expect(screen.getByText(/ORIGINAL \(HEAD~1\)/i)).toBeDefined();
+      expect(screen.getByText(/CANDIDATE PROPOSED REMEDIATION/i)).toBeDefined();
+    });
+
+    // Switch back to Unified diff
+    const unifiedBtn = screen.getByTitle(/Switch to unified patch diff/i);
+    fireEvent.click(unifiedBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/DEMONSTRATED CANDIDATE CHANGE/i)).toBeDefined();
+    });
+  });
+
+  it('renders interactive final investigation summary card and impact overview at Step 6', async () => {
+    render(<App initialScreen="workspace" />);
+
+    // Toggle agent mode
+    const toolbarBtn = await screen.findByRole('button', { name: /agent auto-repair/i });
+    fireEvent.click(toolbarBtn);
+
+    // Jump directly to Step 6: Investigation concluded
+    const step6Btn = screen.getByRole('button', { name: /Step 6: Investigation concluded/i });
+    fireEvent.click(step6Btn);
+
+    // Expand "Why this step?"
+    const whyBtn = screen.getByRole('button', { name: /Why this step\?/i });
+    fireEvent.click(whyBtn);
+
+    // Verify 6-point summary card is rendered
+    await waitFor(() => {
+      expect(screen.getByText(/Final Investigation Summary & Evidence/i)).toBeDefined();
+      expect(screen.getByText(/1\. Initial Failure/i)).toBeDefined();
+      expect(screen.getByText(/2\. Examined Call Chain/i)).toBeDefined();
+      expect(screen.getByText(/3\. Proposed Modification/i)).toBeDefined();
+      expect(screen.getByText(/4\. Candidate Change/i)).toBeDefined();
+      expect(screen.getByText(/5\. Verification Evidence/i)).toBeDefined();
+      expect(screen.getByText(/6\. Isolated Scope/i)).toBeDefined();
+    });
+
+    // Verify clickable node selection from summary card
+    const failureNodeBtn = screen.getByTitle(/Click to inspect initial failure node/i);
+    fireEvent.click(failureNodeBtn);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/test_login_expired_token/i).length).toBeGreaterThan(0);
+    });
+  });
 });
