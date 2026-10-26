@@ -56,6 +56,66 @@ describe('FixtureAdapter', () => {
     expect(evidence).not.toBeNull();
     expect(evidence?.coveredNodes.length).toBeGreaterThan(0);
     expect(evidence?.observationNote).toContain('Observed, not proven cause');
+    expect(evidence?.callTracingAvailable).toBe(true);
+  });
+
+  it('requires explicit per-test edge provenance and never guesses traces from coverage', async () => {
+    const evidence = await adapter.getTestEvidence(
+      'run-auth-regression',
+      'tests/test_auth.py::test_login_expired_token'
+    );
+    expect(evidence).not.toBeNull();
+
+    // Every executed edge must have explicit attribution for this test
+    for (const edge of evidence!.executedEdges) {
+      expect(edge.testIds).toContain('tests/test_auth.py::test_login_expired_token');
+      expect(edge.category).toBe('runtime_observed');
+    }
+
+    // Static edges must never be included in executedEdges
+    const staticEdges = evidence!.executedEdges.filter(
+      (e) => e.category === 'static_call' || e.category === 'static_import'
+    );
+    expect(staticEdges).toHaveLength(0);
+
+    // Other tests' edges must not leak into this test
+    const sessionEdge = evidence!.executedEdges.find(
+      (e) => e.id === 'e_test_sess_create'
+    );
+    expect(sessionEdge).toBeUndefined();
+  });
+
+  it('verifies fixture count consistency and snippet alignment', async () => {
+    const run = await adapter.getRun('run-auth-regression');
+    const graph = await adapter.getGraph('run-auth-regression');
+    const tests = await adapter.getTests('run-auth-regression');
+    expect(run).not.toBeNull();
+
+    // Total nodes in graph must match stats
+    expect(graph.nodes.length).toBe(run!.stats.totalNodes);
+    expect(run!.stats.totalNodes).toBe(15);
+    expect(run!.stats.modifiedNodes).toBe(1);
+    expect(run!.stats.addedNodes).toBe(4);
+    expect(run!.stats.totalChangedNodes).toBe(5);
+
+    // parse_public_key must be in failing test's exercisedNodeIds
+    const failingTest = tests.find(
+      (t) => t.id === 'tests/test_auth.py::test_login_expired_token'
+    );
+    expect(failingTest?.exercisedNodeIds).toContain(
+      'auth/crypto.py::parse_public_key'
+    );
+
+    // Snippet line numbers: line 52 must be InvalidClaimError to align with traceback
+    const validateToken = graph.nodes.find(
+      (n) => n.id === 'auth/tokens.py::validate_token'
+    );
+    expect(validateToken).toBeDefined();
+    expect(validateToken?.lineStart).toBe(43);
+    const snippetLines = validateToken!.sourceSnippet.split('\n');
+    // Line 52 is line offset 52 - 43 = 9
+    expect(snippetLines[9]).toContain('raise InvalidClaimError');
+    expect(failingTest?.traceback).toContain('tokens.py", line 52');
   });
 
   it('retrieves source code and git diff for a modified node', async () => {

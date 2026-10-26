@@ -73,26 +73,38 @@ export class FixtureAdapter implements FaultMeshAdapter {
     const coveredNodes = graph.nodes.filter((node) =>
       test.exercisedNodeIds.includes(node.id)
     );
+
+    // Require explicit per-test edge provenance for observed calls.
+    // A test covering node A and node B does NOT imply a call A -> B.
+    // Edge must be explicitly attributed via testIds.
     const executedEdges = graph.edges.filter(
       (edge) =>
         edge.category === 'runtime_observed' &&
-        (edge.testIds?.includes(testId) ||
-          (test.exercisedNodeIds.includes(edge.source) &&
-            test.exercisedNodeIds.includes(edge.target)))
+        Boolean(edge.testIds && edge.testIds.includes(testId))
     );
+
+    const callTracingAvailable = executedEdges.length > 0;
 
     const modifiedCovered = coveredNodes.filter(
       (n) => n.changeStatus === 'modified' || n.changeStatus === 'added'
     );
 
-    const observationNote =
-      modifiedCovered.length > 0
-        ? `Observed, not proven cause: ${modifiedCovered
-            .map((n) => `${n.name} (${n.changeStatus})`)
-            .join(', ')} was executed during ${
-            test.name
-          }. Execution correlation does not prove causation.`
-        : `Observed execution path: ${coveredNodes.length} nodes traversed during ${test.name}.`;
+    let observationNote: string;
+    if (callTracingAvailable) {
+      observationNote =
+        modifiedCovered.length > 0
+          ? `Observed, not proven cause: ${modifiedCovered
+              .map((n) => `${n.name} (${n.changeStatus})`)
+              .join(', ')} was executed during ${
+              test.name
+            }. Observed execution correlation does not establish defect cause.`
+          : `Observed execution path: ${coveredNodes.length} code nodes traversed during ${test.name}.`;
+    } else {
+      observationNote =
+        coveredNodes.length > 0
+          ? `Coverage association: ${coveredNodes.length} code nodes recorded as covered by ${test.name}. Call tracing is unavailable for this test.`
+          : `No coverage recorded for ${test.name}.`;
+    }
 
     return this.simulateLatency({
       test: { ...test },
@@ -100,6 +112,7 @@ export class FixtureAdapter implements FaultMeshAdapter {
       executedEdges,
       unresolvedReferences: test.unresolvedReferences || [],
       observationNote,
+      callTracingAvailable,
     });
   }
 

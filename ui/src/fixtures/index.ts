@@ -23,8 +23,11 @@ export const FIXTURE_RUNS: RunSummary[] = [
       failed: 1,
       errored: 1,
       skipped: 1,
-      totalNodes: 12,
-      modifiedNodes: 2,
+      totalNodes: 15,
+      codeNodes: 10,
+      modifiedNodes: 1,
+      addedNodes: 4,
+      totalChangedNodes: 5,
       coveragePct: 78.4,
     },
     limitations: [
@@ -35,7 +38,7 @@ export const FIXTURE_RUNS: RunSummary[] = [
     ],
     notes: [
       'Fixture represents a real regression scenario in a token validation refactor.',
-      'Rerun stability: 3 consecutive reruns produced the identical failure fingerprint (100% reproducible).',
+      'Replay comparison: same failure recurred in 3 of 3 recorded trials (FP-AUTH-TOK-52).',
     ],
   },
   {
@@ -126,6 +129,7 @@ AssertionError: assert False is True`,
           timestamp: '2026-10-26T10:14:02.100Z',
           failureFingerprint: 'FP-AUTH-TOK-52',
           sameFailureRecurred: true,
+          comparisonResult: 'identical_failure',
           message: 'Same failure fingerprint matched: InvalidClaimError at tokens.py:52',
         },
         {
@@ -135,6 +139,7 @@ AssertionError: assert False is True`,
           timestamp: '2026-10-26T10:14:02.180Z',
           failureFingerprint: 'FP-AUTH-TOK-52',
           sameFailureRecurred: true,
+          comparisonResult: 'identical_failure',
           message: 'Same failure fingerprint matched: InvalidClaimError at tokens.py:52',
         },
         {
@@ -144,6 +149,7 @@ AssertionError: assert False is True`,
           timestamp: '2026-10-26T10:14:02.260Z',
           failureFingerprint: 'FP-AUTH-TOK-52',
           sameFailureRecurred: true,
+          comparisonResult: 'identical_failure',
           message: 'Same failure fingerprint matched: InvalidClaimError at tokens.py:52',
         },
       ],
@@ -153,6 +159,7 @@ AssertionError: assert False is True`,
         'auth/tokens.py::validate_token',
         'auth/tokens.py::decode_jwt_header',
         'auth/crypto.py::verify_signature',
+        'auth/crypto.py::parse_public_key',
       ],
       unresolvedReferences: ['auth.tokens.audit_logger'],
     },
@@ -169,6 +176,7 @@ AssertionError: assert False is True`,
         'auth/tokens.py::validate_token',
         'auth/tokens.py::decode_jwt_header',
         'auth/crypto.py::verify_signature',
+        'auth/crypto.py::parse_public_key',
       ],
     },
     {
@@ -334,35 +342,34 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
         name: 'validate_token',
         kind: 'function',
         parentModule: 'auth/tokens.py',
-        lineStart: 35,
-        lineEnd: 62,
+        lineStart: 43,
+        lineEnd: 59,
         changeStatus: 'modified',
         sourceSnippet: `def validate_token(token: str, leeway: int = 0) -> dict:
     """Validate token signature, expiration, and registered claims."""
     header = decode_jwt_header(token)
     claims = verify_signature(token, header["alg"])
     current_time = int(time.time())
-    
+
     # MODIFIED: strict claim type check refactoring
     exp_val = claims.get("exp")
     if not isinstance(exp_val, (int, float)):
         raise InvalidClaimError(f"'exp' claim is not numeric: {exp_val}")
-        
+
     if exp_val < (current_time - leeway):
         raise TokenExpiredError(f"Signature expired at {exp_val}")
-        
+
     if "audit_logger" in globals():
         audit_logger.record(claims["sub"])
     return claims`,
         gitDiff: `--- a/auth/tokens.py
 +++ b/auth/tokens.py
-@@ -40,11 +40,14 @@ def validate_token(token: str, leeway: int = 0) -> dict:
-     header = decode_jwt_header(token)
+@@ -47,11 +47,14 @@ def validate_token(token: str, leeway: int = 0) -> dict:
      claims = verify_signature(token, header["alg"])
      current_time = int(time.time())
 -    if claims.get("exp", 0) < (current_time - leeway):
 -        raise TokenExpiredError("Token expired")
-+    
++
 +    # MODIFIED: strict claim type check refactoring
 +    exp_val = claims.get("exp")
 +    if not isinstance(exp_val, (int, float)):
@@ -528,7 +535,7 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
         source: 'auth/service.py::login_with_token',
         target: 'auth/tokens.py::validate_token',
         category: 'runtime_observed',
-        provenance: 'pytest-trace: service.py:64 -> tokens.py:35',
+        provenance: 'pytest-trace: service.py:64 -> tokens.py:43',
         observedCount: 2,
         testIds: [
           'tests/test_auth.py::test_login_expired_token',
@@ -540,7 +547,7 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
         source: 'auth/tokens.py::validate_token',
         target: 'auth/tokens.py::decode_jwt_header',
         category: 'runtime_observed',
-        provenance: 'pytest-trace: tokens.py:44 -> tokens.py:18',
+        provenance: 'pytest-trace: tokens.py:45 -> tokens.py:18',
         observedCount: 2,
         testIds: [
           'tests/test_auth.py::test_login_expired_token',
@@ -552,7 +559,7 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
         source: 'auth/tokens.py::validate_token',
         target: 'auth/crypto.py::verify_signature',
         category: 'runtime_observed',
-        provenance: 'pytest-trace: tokens.py:49 -> crypto.py:40',
+        provenance: 'pytest-trace: tokens.py:46 -> crypto.py:40',
         observedCount: 2,
         testIds: [
           'tests/test_auth.py::test_login_expired_token',
@@ -626,8 +633,8 @@ export const FIXTURE_GRAPH: Record<string, GraphData> = {
     unresolvedReferences: [
       {
         symbol: 'audit_logger',
-        referencedFrom: 'auth/tokens.py:59',
-        line: 59,
+        referencedFrom: 'auth/tokens.py:58',
+        line: 58,
         reason: "Reference 'audit_logger' accessed in globals() but not statically declared in AST module scope.",
       },
       {

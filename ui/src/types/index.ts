@@ -16,6 +16,12 @@ export type NodeKind = 'module' | 'function' | 'class' | 'method';
 
 export type EdgeCategory = 'runtime_observed' | 'static_call' | 'static_import';
 
+export type ReplayComparisonResult =
+  | 'identical_failure'
+  | 'different_failure'
+  | 'passed_on_replay'
+  | 'inconclusive';
+
 export interface RerunRecord {
   rerunIndex: number;
   status: TestStatus;
@@ -23,6 +29,7 @@ export interface RerunRecord {
   timestamp: string;
   failureFingerprint?: string;
   sameFailureRecurred?: boolean;
+  comparisonResult?: ReplayComparisonResult;
   message?: string;
 }
 
@@ -104,7 +111,10 @@ export interface RunSummary {
     errored: number;
     skipped: number;
     totalNodes: number;
+    codeNodes?: number;
     modifiedNodes: number;
+    addedNodes?: number;
+    totalChangedNodes?: number;
     coveragePct?: number;
   };
   limitations: string[];
@@ -117,6 +127,7 @@ export interface TestEvidence {
   executedEdges: GraphEdge[];
   unresolvedReferences: string[];
   observationNote: string;
+  callTracingAvailable: boolean;
 }
 
 export interface SourceViewData {
