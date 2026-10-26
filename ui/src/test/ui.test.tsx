@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import React from 'react';
 import { RunsScreen } from '../components/RunsScreen';
 import { TestList } from '../components/TestList';
 import { FIXTURE_RUNS, FIXTURE_TESTS, FIXTURE_GRAPH } from '../fixtures';

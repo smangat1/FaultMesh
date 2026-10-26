@@ -423,6 +423,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, [elements, theme]);
 
+  // Resize Cytoscape canvas when drawer toggles
+  useEffect(() => {
+    if (cyRef.current) {
+      setTimeout(() => {
+        cyRef.current?.resize();
+      }, 50);
+    }
+  }, [selectedNode]);
+
   // Handle Test Highlighting Effect
   useEffect(() => {
     const cy = cyRef.current;
@@ -476,6 +485,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     if (!cy || !query.trim()) return;
 
     const matched = cy.nodes().filter((n) => {
+      if (n.data('isGroup')) return false;
       const label = n.data('label') || '';
       const id = n.id();
       return (
@@ -534,6 +544,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           height: '100%',
           position: 'relative',
           backgroundColor: 'var(--bg-primary)',
+          minWidth: 0,
         }}
       >
         {/* Controls Toolbar */}
@@ -594,7 +605,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   padding: '3px 8px',
                   fontSize: '11px',
                   fontFamily: 'var(--font-mono)',
-                  maxWidth: '220px',
+                  maxWidth: '200px',
                 }}
                 aria-label="Highlight Test Trace"
               >
@@ -614,6 +625,48 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   <X size={12} />
                 </button>
               )}
+            </div>
+
+            {/* Inspect Symbol Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Inspect Symbol:
+              </span>
+              <select
+                value={selectedNodeId || ''}
+                onChange={(e) => {
+                  const id = e.target.value || null;
+                  setSelectedNodeId(id);
+                  if (id && cyRef.current) {
+                    const targetEle = cyRef.current.getElementById(id);
+                    if (targetEle) {
+                      cyRef.current.animate({
+                        center: { eles: targetEle },
+                        zoom: 1.1,
+                        duration: 300,
+                      });
+                    }
+                  }
+                }}
+                style={{
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                  maxWidth: '180px',
+                }}
+                aria-label="Inspect Symbol"
+              >
+                <option value="">(Click node or select)</option>
+                {graphData.nodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} ({n.changeStatus})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

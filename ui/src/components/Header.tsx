@@ -39,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="fixture-banner" role="banner" aria-label="Fixture Notice">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertTriangle size={14} />
-            <span>Sample data (fixture): {activeRun.fixtureLabel}</span>
+            <span>{activeRun.fixtureLabel}</span>
           </div>
           <span className="badge">Read-only offline preview</span>
         </div>

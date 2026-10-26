@@ -8,11 +8,13 @@ import { TestList } from './components/TestList';
 import { GraphView } from './components/GraphView';
 import './styles/theme.css';
 
+const DEFAULT_ADAPTER = new FixtureAdapter(0);
+
 interface AppProps {
   adapter?: FaultMeshAdapter;
 }
 
-export const App: React.FC<AppProps> = ({ adapter = new FixtureAdapter(10) }) => {
+export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER }) => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [activeTab, setActiveTab] = useState<'runs' | 'tests' | 'graph'>('runs');
   const [runs, setRuns] = useState<RunSummary[]>([]);

@@ -359,6 +359,7 @@ export const TestDetailsPane: React.FC<TestDetailsPaneProps> = ({
                     }}
                   >
                     <div
+                      data-testid={`exercised-node-${node.name}`}
                       onClick={() => setExpandedNodeId(isExpanded ? null : node.id)}
                       style={{
                         padding: '8px 12px',
