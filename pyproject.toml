@@ -33,6 +33,9 @@ packages = ["src/faultmesh"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
+markers = [
+  "container: requires an available Docker daemon and may build an image",
+]
 
 [tool.ruff]
 target-version = "py311"

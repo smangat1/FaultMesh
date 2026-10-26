@@ -30,3 +30,24 @@ Failures to initialize inference, validate configuration, or initialize the requ
 an exception. No finding is returned as verified unless its `Incident.verification_status` is
 `VERIFIED` and its associated experiment reports a stable explicit violation.
 
+## V1 project runner
+
+```python
+from pathlib import Path
+
+from faultmesh.project_runner import RunStore, run_project_tests
+from faultmesh.project_runner.config import load_run_config
+
+config_path = Path("/path/to/project-run.toml")
+run = run_project_tests(config_path)
+
+resolved = load_run_config(config_path)
+with RunStore(resolved.artifact_root / "runs.sqlite3") as store:
+    same_run = store.get(run.id)
+```
+
+`run_project_tests` never falls back to host execution. `ProjectTestRun.outcome` distinguishes test
+failure, collection error, no tests, timeout, cancellation, malformed report, and infrastructure
+error. `summary` values stay `None` when pytest did not report them. Artifact references are relative
+to the configured artifact root.
+

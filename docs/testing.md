@@ -16,6 +16,16 @@ The expected result is a clean Ruff run, a clean strict mypy run, and all tests 
 automated tests exercise the explicitly unsafe local runner against the bundled trusted fixture;
 they are not substitutes for the separate real-model and Docker checks below.
 
+The V1 project-runner Docker regression is marked and excluded from ordinary CI. With an available
+Docker daemon, run it explicitly:
+
+```console
+FAULTMESH_RUN_CONTAINER_TESTS=1 .venv/bin/pytest -q tests/integration/test_project_runner_container.py
+```
+
+This tiny regression is not the V1 acceptance gate. The third-party hpack recipe and retained run
+record are documented in [v1-project-runner.md](v1-project-runner.md).
+
 ## Build and check the Docker sandbox
 
 Start the small VM and build the current source into the sandbox image:

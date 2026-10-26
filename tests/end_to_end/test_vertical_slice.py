@@ -14,7 +14,7 @@ EXAMPLE = Path(__file__).parents[2] / "examples" / "buggy_python_project"
 
 def test_complete_vertical_slice_discovers_reports_replays_and_regresses(tmp_path: Path) -> None:
     repository = tmp_path / "project"
-    shutil.copytree(EXAMPLE, repository)
+    shutil.copytree(EXAMPLE, repository, ignore=shutil.ignore_patterns(".faultmesh"))
     summary = analyze_repository(
         repository,
         AnalysisOptions(model="heuristic", allow_local_execution=True),
