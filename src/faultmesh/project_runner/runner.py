@@ -12,19 +12,37 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 from uuid import uuid4
 
 from faultmesh.project_runner.config import ResolvedRunConfig, load_run_config
+from faultmesh.project_runner.evidence import bound_text, failure_fingerprint
 from faultmesh.project_runner.models import (
+    CollectionObservedFile,
     ContainerEnvironment,
     EnvironmentIdentity,
+    ObservationStatus,
     ProjectTestRun,
     PytestSummary,
+    ReplayProvenance,
     RunArtifacts,
     RunOutcome,
     RunTermination,
+    SourceSnapshot,
     TargetIdentity,
+    TestCaseRecord,
+    TestObservation,
+    TestOutcome,
+    TestPhase,
+    TestPhaseResult,
+)
+from faultmesh.project_runner.observation import (
+    COVERAGE_PIN,
+    INSTRUMENTATION_VERSION,
+    ObservationError,
+    apply_observations,
+    build_source_snapshot,
+    read_json_artifact,
 )
 from faultmesh.project_runner.store import RunStore
 
@@ -159,6 +177,9 @@ class DockerClient:
         run_id: str,
         image_id: str,
         run_dir: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
     ) -> list[str]:
         config = resolved.config
         workdir = "/workspace"
@@ -194,7 +215,24 @@ class DockerClient:
         ]
         if config.test.pythonpath:
             pythonpath = ":".join(f"/workspace/{item}" for item in config.test.pythonpath)
+            if observe:
+                pythonpath = f"/faultmesh-harness:{pythonpath}"
             command.extend(["--env", f"PYTHONPATH={pythonpath}"])
+        elif observe:
+            command.extend(["--env", "PYTHONPATH=/faultmesh-harness"])
+        if observe:
+            harness = Path(__file__).with_name("harness")
+            command.extend(
+                [
+                    "--env",
+                    "FAULTMESH_OBSERVE_OUT=/output/observation.json",
+                    "--mount",
+                    f"type=bind,src={harness},dst=/faultmesh-harness,readonly",
+                ]
+            )
+        test_argv = list(argv or config.test.argv)
+        if observe:
+            test_argv.extend(["-p", "faultmesh_observer"])
         command.extend(
             [
             "--volume",
@@ -204,7 +242,7 @@ class DockerClient:
             "--workdir",
             workdir,
             image_id,
-            *config.test.argv,
+            *test_argv,
             "--json-report",
             "--json-report-file=/output/pytest-report.json",
             ]
@@ -217,8 +255,13 @@ class DockerClient:
         run_id: str,
         image_id: str,
         run_dir: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
     ) -> ContainerExecution:
-        command = self.run_command(resolved, run_id, image_id, run_dir)
+        command = self.run_command(
+            resolved, run_id, image_id, run_dir, observe=observe, argv=argv
+        )
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert process.stdout is not None
         assert process.stderr is not None
@@ -329,11 +372,7 @@ def _target_identity(resolved: ResolvedRunConfig) -> TargetIdentity:
     )
 
 
-def parse_pytest_report(path: Path, exit_code: int) -> tuple[PytestSummary, RunOutcome]:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ProjectRunnerError(f"pytest report is missing or malformed: {exc}") from exc
+def parse_pytest_report_data(raw: object, exit_code: int) -> tuple[PytestSummary, RunOutcome]:
     if not isinstance(raw, dict) or not isinstance(raw.get("summary"), dict):
         raise ProjectRunnerError("pytest report does not contain a summary object")
     report_exit = raw.get("exitcode")
@@ -369,16 +408,177 @@ def parse_pytest_report(path: Path, exit_code: int) -> tuple[PytestSummary, RunO
     return summary, RunOutcome.INFRASTRUCTURE_ERROR
 
 
+def parse_pytest_report(path: Path, exit_code: int) -> tuple[PytestSummary, RunOutcome]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ProjectRunnerError(f"pytest report is missing or malformed: {exc}") from exc
+    return parse_pytest_report_data(raw, exit_code)
+
+
+def _failure_value(phase: dict[str, Any]) -> str | None:
+    value = phase.get("longrepr")
+    if isinstance(value, str):
+        return value
+    if value is not None:
+        return json.dumps(value, sort_keys=True)
+    crash = phase.get("crash")
+    if crash is not None:
+        return json.dumps(crash, sort_keys=True)
+    return None
+
+
+def _phase_outcome(phase: TestPhase, raw: dict[str, Any]) -> TestOutcome:
+    outcome = raw.get("outcome")
+    was_xfail = bool(raw.get("wasxfail"))
+    if was_xfail and outcome == "skipped":
+        return TestOutcome.XFAILED
+    if was_xfail and outcome == "passed":
+        return TestOutcome.XPASSED
+    if outcome == "passed":
+        return TestOutcome.PASSED
+    if outcome == "skipped":
+        return TestOutcome.SKIPPED
+    if outcome == "failed":
+        return TestOutcome.FAILED if phase == TestPhase.CALL else TestOutcome.ERROR
+    return TestOutcome.UNKNOWN
+
+
+def parse_test_cases(raw: object, run_id: str, failure_limit: int) -> list[TestCaseRecord]:
+    if not isinstance(raw, dict) or not isinstance(raw.get("tests"), list):
+        raise ProjectRunnerError("pytest report does not contain a tests list")
+    records: list[TestCaseRecord] = []
+    seen: set[str] = set()
+    for item in raw["tests"]:
+        if not isinstance(item, dict):
+            raise ProjectRunnerError("pytest report contains a non-object test record")
+        node_id = item.get("nodeid")
+        if not isinstance(node_id, str) or not node_id or len(node_id) > 4096:
+            raise ProjectRunnerError("pytest report contains an invalid test node ID")
+        if node_id in seen:
+            raise ProjectRunnerError(f"pytest report repeats test node ID: {node_id}")
+        seen.add(node_id)
+        phases: list[TestPhaseResult] = []
+        failure_text: str | None = None
+        failed_phase: TestPhase | None = None
+        failure_was_truncated = False
+        for phase_name in TestPhase:
+            phase_raw = item.get(phase_name.value)
+            if phase_raw is None:
+                continue
+            if not isinstance(phase_raw, dict):
+                raise ProjectRunnerError(f"invalid {phase_name.value} phase for {node_id}")
+            phase_outcome = _phase_outcome(phase_name, phase_raw)
+            duration = phase_raw.get("duration", 0.0)
+            if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration < 0:
+                raise ProjectRunnerError(f"invalid {phase_name.value} duration for {node_id}")
+            raw_failure = _failure_value(phase_raw)
+            bounded_failure, truncated = bound_text(raw_failure, failure_limit)
+            phases.append(
+                TestPhaseResult(
+                    phase=phase_name,
+                    outcome=phase_outcome,
+                    duration_ms=float(duration) * 1000,
+                    failure_text=bounded_failure,
+                    failure_truncated=truncated,
+                )
+            )
+            if phase_outcome in {TestOutcome.FAILED, TestOutcome.ERROR} and failure_text is None:
+                failure_text = bounded_failure or f"{phase_outcome.value} without failure text"
+                failed_phase = phase_name
+                failure_was_truncated = truncated
+        outcomes = {phase.outcome for phase in phases}
+        if TestOutcome.ERROR in outcomes:
+            outcome = TestOutcome.ERROR
+        elif TestOutcome.FAILED in outcomes:
+            outcome = TestOutcome.FAILED
+        elif TestOutcome.XPASSED in outcomes:
+            outcome = TestOutcome.XPASSED
+        elif TestOutcome.XFAILED in outcomes:
+            outcome = TestOutcome.XFAILED
+        elif TestOutcome.SKIPPED in outcomes:
+            outcome = TestOutcome.SKIPPED
+        elif outcomes and outcomes <= {TestOutcome.PASSED}:
+            outcome = TestOutcome.PASSED
+        else:
+            outcome = TestOutcome.UNKNOWN
+        fingerprint = (
+            failure_fingerprint(node_id, failed_phase, failure_text)
+            if failed_phase is not None and failure_text is not None
+            else None
+        )
+        records.append(
+            TestCaseRecord(
+                run_id=run_id,
+                node_id=node_id,
+                outcome=outcome,
+                phases=phases,
+                duration_ms=sum(phase.duration_ms for phase in phases),
+                failure_text=failure_text,
+                failure_truncated=failure_was_truncated,
+                failure_fingerprint=fingerprint,
+            )
+        )
+    return records
+
+
+def _effective_environment(
+    environment: ContainerEnvironment, observe: bool
+) -> ContainerEnvironment:
+    if not observe:
+        return environment
+    coverage_pins = [
+        pin for pin in environment.dependency_pins if pin.lower().startswith("coverage==")
+    ]
+    if coverage_pins and coverage_pins != [COVERAGE_PIN]:
+        raise ProjectRunnerError(f"observation requires {COVERAGE_PIN}")
+    pins = list(environment.dependency_pins)
+    if COVERAGE_PIN not in pins:
+        pins.append(COVERAGE_PIN)
+    return environment.model_copy(update={"dependency_pins": pins})
+
+
+def _validate_observed_command(argv: list[str]) -> None:
+    unsupported = {"-n", "--numprocesses", "--dist", "--forked"}
+    for index, value in enumerate(argv):
+        if value in unsupported or any(value.startswith(f"{item}=") for item in unsupported):
+            raise ProjectRunnerError(f"observation does not support pytest option: {value}")
+        if value.startswith("--cov") or value in {"-p", "--trace"}:
+            raise ProjectRunnerError(f"observation owns or does not support pytest option: {value}")
+        if value == "-n" and index + 1 < len(argv):
+            raise ProjectRunnerError("observation does not support xdist")
+
+
 class ProjectTestRunner:
     def __init__(self, docker: DockerClient | None = None) -> None:
         self.docker = docker or DockerClient()
 
-    def run(self, config_path: Path) -> ProjectTestRun:
+    def run(
+        self,
+        config_path: Path,
+        *,
+        observe: bool = False,
+        argv: list[str] | None = None,
+        replay: ReplayProvenance | None = None,
+    ) -> ProjectTestRun:
         resolved = load_run_config(config_path)
+        selected_argv = list(argv or resolved.config.test.argv)
+        if observe:
+            if resolved.config.schema_version != "2.0":
+                raise ProjectRunnerError(
+                    "--observe requires config schema_version 2.0 and a fresh V2 artifact_root"
+                )
+            _validate_observed_command(selected_argv)
+        environment = _effective_environment(resolved.config.environment, observe)
         before = _target_identity(resolved)
         run_id = f"run-{uuid4().hex[:12]}"
         run_dir = resolved.artifact_root / "runs" / run_id
-        run_dir.mkdir(parents=True, exist_ok=False)
+        store = RunStore(resolved.artifact_root / "runs.sqlite3")
+        try:
+            run_dir.mkdir(parents=True, exist_ok=False)
+        except Exception:
+            store.close()
+            raise
         started = datetime.now(UTC)
         monotonic_start = time.monotonic()
         stdout = ""
@@ -392,17 +592,40 @@ class ProjectTestRunner:
         error: str | None = None
         image_id: str | None = None
         docker_version: str | None = None
+        installed_packages: list[str] | None = None
+        test_cases: list[TestCaseRecord] = []
+        observation_status = (
+            ObservationStatus.INCOMPLETE if observe else ObservationStatus.NOT_REQUESTED
+        )
+        collection_observation: list[CollectionObservedFile] = []
+        source_snapshot: SourceSnapshot | None = None
         dockerfile = run_dir / "Dockerfile"
         dockerfile.write_text(
-            self.docker.dockerfile(resolved.config.environment), encoding="utf-8"
+            self.docker.dockerfile(environment), encoding="utf-8"
         )
         (run_dir / "config.json").write_text(
             resolved.config.model_dump_json(indent=2), encoding="utf-8"
         )
         try:
+            if observe:
+                source_snapshot = build_source_snapshot(
+                    resolved.target_root,
+                    revision=before.revision,
+                    content_sha256=before.content_sha256,
+                )
+                (run_dir / "source-snapshot.json").write_text(
+                    source_snapshot.model_dump_json(indent=2), encoding="utf-8"
+                )
             docker_version = self.docker.preflight()
-            image_id = self.docker.prepare_image(resolved.config.environment, run_dir)
-            execution = self.docker.run(resolved, run_id, image_id, run_dir)
+            image_id = self.docker.prepare_image(environment, run_dir)
+            execution = self.docker.run(
+                resolved,
+                run_id,
+                image_id,
+                run_dir,
+                observe=observe,
+                argv=selected_argv,
+            )
             exit_code = execution.exit_code
             termination = execution.termination
             stdout = execution.stdout
@@ -420,26 +643,82 @@ class ProjectTestRunner:
                 error = "container exited without a process status"
             else:
                 try:
-                    summary, outcome = parse_pytest_report(
-                        run_dir / "pytest-report.json", exit_code
+                    raw_report = read_json_artifact(
+                        run_dir / "pytest-report.json",
+                        run_dir,
+                        resolved.config.limits.max_evidence_bytes,
                     )
-                except ProjectRunnerError as exc:
+                    summary, outcome = parse_pytest_report_data(raw_report, exit_code)
+                    test_cases = parse_test_cases(
+                        raw_report,
+                        run_id,
+                        min(resolved.config.limits.max_evidence_bytes, 100_000),
+                    )
+                except (ObservationError, ProjectRunnerError) as exc:
                     outcome = RunOutcome.MALFORMED_REPORT
                     error = str(exc)
+            if observe and source_snapshot is not None and test_cases:
+                try:
+                    raw_observation = read_json_artifact(
+                        run_dir / "observation.json",
+                        run_dir,
+                        resolved.config.limits.max_evidence_bytes,
+                    )
+                    (
+                        test_cases,
+                        observation_status,
+                        collection_observation,
+                        installed_packages,
+                    ) = apply_observations(
+                        raw_observation, snapshot=source_snapshot, tests=test_cases
+                    )
+                except Exception as exc:
+                    observation_status = ObservationStatus.INSTRUMENTATION_ERROR
+                    message = f"observation failed: {type(exc).__name__}: {exc}"
+                    error = f"{error}; {message}" if error else message
+                    test_cases = [
+                        case.model_copy(
+                            update={
+                                "observation": TestObservation(
+                                    status=ObservationStatus.INSTRUMENTATION_ERROR,
+                                    instrumentation_version=INSTRUMENTATION_VERSION,
+                                    source_revision=before.revision,
+                                    source_content_sha256=before.content_sha256,
+                                    error=message,
+                                )
+                            }
+                        )
+                        for case in test_cases
+                    ]
+            elif observe:
+                observation_status = ObservationStatus.INSTRUMENTATION_ERROR
         except (OSError, subprocess.SubprocessError, ProjectRunnerError) as exc:
             error = str(exc)
         finished = datetime.now(UTC)
-        after = _target_identity(resolved)
-        if after != before:
+        try:
+            after = _target_identity(resolved)
+        except Exception as exc:
             outcome = RunOutcome.INFRASTRUCTURE_ERROR
             termination = RunTermination.INFRASTRUCTURE
-            error = "target checkout changed during the container run"
+            error = f"target checkout unavailable after run: {type(exc).__name__}: {exc}"
+        else:
+            if after != before:
+                outcome = RunOutcome.INFRASTRUCTURE_ERROR
+                termination = RunTermination.INFRASTRUCTURE
+                error = "target checkout changed during the container run"
         stdout_path = run_dir / "stdout.txt"
         stderr_path = run_dir / "stderr.txt"
         stdout_path.write_text(stdout, encoding="utf-8")
         stderr_path.write_text(stderr, encoding="utf-8")
         relative_dir = run_dir.relative_to(resolved.artifact_root)
         report_path = run_dir / "pytest-report.json"
+        observation_path = run_dir / "observation.json"
+        snapshot_path = run_dir / "source-snapshot.json"
+        tests_path = run_dir / "tests.json"
+        tests_path.write_text(
+            json.dumps([case.model_dump(mode="json") for case in test_cases], indent=2),
+            encoding="utf-8",
+        )
         artifacts = RunArtifacts(
             directory=relative_dir.as_posix(),
             run_record=(relative_dir / "run.json").as_posix(),
@@ -452,23 +731,37 @@ class ProjectTestRunner:
                 else None
             ),
             dockerfile=(relative_dir / "Dockerfile").as_posix(),
+            tests=(relative_dir / "tests.json").as_posix(),
+            observation_report=(
+                (relative_dir / "observation.json").as_posix()
+                if observation_path.is_file()
+                else None
+            ),
+            source_snapshot=(
+                (relative_dir / "source-snapshot.json").as_posix()
+                if snapshot_path.is_file()
+                else None
+            ),
+        )
+        command = list(selected_argv)
+        if observe:
+            command.extend(["-p", "faultmesh_observer"])
+        command.extend(
+            ["--json-report", "--json-report-file=/output/pytest-report.json"]
         )
         run = ProjectTestRun(
             id=run_id,
             config_version=resolved.config.schema_version,
             target=before,
-            command=[
-                *resolved.config.test.argv,
-                "--json-report",
-                "--json-report-file=/output/pytest-report.json",
-            ],
+            command=command,
             working_directory=resolved.config.test.working_directory,
             limits=resolved.config.limits,
             environment=EnvironmentIdentity(
                 base_image=resolved.config.environment.base_image,
                 resolved_image_id=image_id,
                 registry_digest=None,
-                dependency_pins=resolved.config.environment.dependency_pins,
+                dependency_pins=environment.dependency_pins,
+                installed_packages=installed_packages,
                 docker_server_version=docker_version,
             ),
             started_at=started,
@@ -482,12 +775,19 @@ class ProjectTestRunner:
             stderr_truncated=stderr_truncated,
             error=error,
             artifacts=artifacts,
+            observation_requested=observe,
+            observation_status=observation_status,
+            test_case_count=len(test_cases),
+            replay=replay,
+            collection_observation=collection_observation,
         )
         (run_dir / "run.json").write_text(run.model_dump_json(indent=2), encoding="utf-8")
-        with RunStore(resolved.artifact_root / "runs.sqlite3") as store:
-            store.add(run)
-        return run
+        try:
+            store.add(run, test_cases)
+            return run
+        finally:
+            store.close()
 
 
-def run_project_tests(config_path: Path | str) -> ProjectTestRun:
-    return ProjectTestRunner().run(Path(config_path))
+def run_project_tests(config_path: Path | str, *, observe: bool = False) -> ProjectTestRun:
+    return ProjectTestRunner().run(Path(config_path), observe=observe)

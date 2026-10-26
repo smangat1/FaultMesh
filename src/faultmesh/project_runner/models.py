@@ -280,6 +280,17 @@ class ObservedSymbol(StrictModel):
         return _safe_relative(value, "symbol path")
 
 
+class CollectionObservedFile(StrictModel):
+    path: str
+    content_sha256: str
+    lines: list[Annotated[int, Field(ge=1)]]
+
+    @field_validator("path")
+    @classmethod
+    def relative_path(cls, value: str) -> str:
+        return _safe_relative(value, "collection path")
+
+
 class TestObservation(StrictModel):
     status: ObservationStatus
     instrumentation_version: str
@@ -314,6 +325,11 @@ class SourceSymbolSnapshot(StrictModel):
     end_line: Annotated[int, Field(ge=1)]
     executable_lines: list[Annotated[int, Field(ge=1)]]
 
+    @field_validator("path")
+    @classmethod
+    def relative_path(cls, value: str) -> str:
+        return _safe_relative(value, "snapshot symbol path")
+
 
 class SourceFileSnapshot(StrictModel):
     path: str
@@ -321,6 +337,11 @@ class SourceFileSnapshot(StrictModel):
     line_count: Annotated[int, Field(ge=0)]
     parse_error: str | None = None
     symbols: list[SourceSymbolSnapshot] = Field(default_factory=list)
+
+    @field_validator("path")
+    @classmethod
+    def relative_path(cls, value: str) -> str:
+        return _safe_relative(value, "snapshot path")
 
 
 class SourceSnapshot(StrictModel):
@@ -368,6 +389,7 @@ class ProjectTestRun(StrictModel):
     observation_status: ObservationStatus = ObservationStatus.NOT_REQUESTED
     test_case_count: int = Field(default=0, ge=0)
     replay: ReplayProvenance | None = None
+    collection_observation: list[CollectionObservedFile] = Field(default_factory=list)
 
 
 class RunEvidenceExport(StrictModel):

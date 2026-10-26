@@ -7,7 +7,7 @@ V2 started from fresh `origin/main` at
 ## Phase status
 
 - Phase 1: complete — versioned per-test evidence contracts and append-only persistence.
-- Phase 2: pending — real container observation and source mapping.
+- Phase 2: complete — real container observation and source mapping.
 - Phase 3: pending — read/export and exact failed-test replay.
 - Phase 4: pending — real-project acceptance, documentation, and PR.
 

@@ -136,10 +136,13 @@ def run_tests(
     config: Annotated[
         Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
     ],
+    observe: Annotated[
+        bool, typer.Option("--observe", help="Record per-test executed source evidence.")
+    ] = False,
 ) -> None:
     """Run an existing pytest suite in its configured Docker environment."""
     try:
-        result = run_project_tests(config)
+        result = run_project_tests(config, observe=observe)
     except Exception as exc:
         typer.secho(f"FaultMesh test run failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc

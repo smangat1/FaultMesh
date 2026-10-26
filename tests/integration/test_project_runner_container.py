@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from faultmesh.project_runner import RunOutcome, run_project_tests
+from faultmesh.project_runner import ObservationStatus, RunOutcome, RunStore, run_project_tests
+from faultmesh.project_runner.config import load_run_config
 
 BASE_IMAGE = (
     "python:3.11-slim@sha256:"
@@ -31,8 +32,10 @@ def docker_shared_tmp_path() -> Iterator[Path]:
     os.environ.get("FAULTMESH_RUN_CONTAINER_TESTS") != "1",
     reason="set FAULTMESH_RUN_CONTAINER_TESTS=1 for the real Docker regression",
 )
+@pytest.mark.parametrize("observe", [False, True])
 def test_real_container_runs_pytest_without_changing_target(
     docker_shared_tmp_path: Path,
+    observe: bool,
 ) -> None:
     if shutil.which("docker") is None:
         pytest.fail("Docker CLI is required when container tests are enabled")
@@ -74,7 +77,7 @@ def test_real_container_runs_pytest_without_changing_target(
     config = docker_shared_tmp_path / "run.toml"
     config.write_text(
         f"""[project_run]
-schema_version = "1.0"
+schema_version = "2.0"
 target_root = "target"
 revision = "{revision}"
 artifact_root = "artifacts"
@@ -97,10 +100,18 @@ max_output_bytes = 65536
         encoding="utf-8",
     )
 
-    run = run_project_tests(config)
+    run = run_project_tests(config, observe=observe)
 
     assert run.outcome == RunOutcome.PASSED
     assert run.summary is not None and run.summary.collected == 1
+    expected_status = ObservationStatus.COMPLETE if observe else ObservationStatus.NOT_REQUESTED
+    assert run.observation_status == expected_status, run.model_dump_json(indent=2)
+    if observe:
+        resolved = load_run_config(config)
+        with RunStore(resolved.artifact_root / "runs.sqlite3") as store:
+            test = store.get_test(run.id, "test_sample.py::test_sample")
+        assert test.observation is not None
+        assert any(symbol.qualified_name == "test_sample" for symbol in test.observation.symbols)
     after = subprocess.run(
         ["git", "-C", str(target), "status", "--porcelain=v1"],
         capture_output=True,
