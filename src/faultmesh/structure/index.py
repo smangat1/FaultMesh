@@ -172,6 +172,11 @@ def _walk_python_files(root: Path) -> tuple[list[Path], list[SkipRecord]]:
                         path=relative, reason="ignored_directory", count=max(1, count)
                     )
                 )
+            elif (path / ".git").is_file():
+                count = sum(1 for item in path.rglob("*") if item.is_file())
+                skips.append(
+                    SkipRecord(path=relative, reason="git_submodule", count=max(1, count))
+                )
             elif path.is_symlink():
                 skips.append(SkipRecord(path=relative, reason="symlink_directory", count=1))
             else:

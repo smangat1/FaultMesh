@@ -77,3 +77,16 @@ def test_index_skips_ignored_and_symlink_paths(tmp_path: Path) -> None:
         (".venv", "ignored_directory"),
         ("escape.py", "symlink_file"),
     }
+
+
+def test_index_skips_nested_git_worktree_as_submodule(tmp_path: Path) -> None:
+    nested = tmp_path / "vendor"
+    nested.mkdir()
+    (nested / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    (nested / "foreign.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    result = build_structure_index(tmp_path)
+
+    assert result.files == []
+    assert result.skips[0].path == "vendor"
+    assert result.skips[0].reason == "git_submodule"
