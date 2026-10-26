@@ -30,6 +30,7 @@ from faultmesh.project_runner.models import (
 )
 from faultmesh.project_runner.replay import export_run, replay_argv, replay_failed_test
 from faultmesh.project_runner.runner import (
+    DockerClient,
     ProjectRunnerError,
     _compare_replay,
     _content_hash,
@@ -172,6 +173,16 @@ def test_replay_comparison_is_fingerprint_and_evidence_aware(
     assert compared.comparison == expected
 
 
+def test_replay_comparison_marks_missing_test() -> None:
+    compared = _compare_replay(
+        _provenance(),
+        [],
+        ObservationStatus.COMPLETE,
+        ["coverage==7.10.7", "pytest==9.0.3"],
+    )
+    assert compared.comparison == ReplayComparison.MISSING_OR_DESELECTED
+
+
 def _config(tmp_path: Path, revision: str) -> Path:
     path = tmp_path / "run.toml"
     path.write_text(
@@ -237,3 +248,54 @@ def test_read_works_without_checkout_and_replay_refuses_changed_source(tmp_path:
     exported = export_run(config, run.id)
     assert exported.run.id == run.id
     assert exported.tests == [case]
+
+
+def test_replay_refuses_changed_environment(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "value.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(target)], check=True)
+    subprocess.run(["git", "-C", str(target), "add", "value.py"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(target),
+            "-c",
+            "user.name=FaultMesh Test",
+            "-c",
+            "user.email=faultmesh@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ],
+        check=True,
+    )
+    revision = subprocess.run(
+        ["git", "-C", str(target), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    config = _config(tmp_path, revision)
+    run = _run(_content_hash(target))
+    run.target.revision = revision
+    case = _case(CaseOutcome.FAILED)
+    with RunStore(tmp_path / "artifacts" / "runs.sqlite3") as store:
+        store.add(run, [case])
+
+    changed = config.read_text().replace("pytest==9.0.3", "pytest==9.0.2")
+    config.write_text(changed, encoding="utf-8")
+    with pytest.raises(ProjectRunnerError, match="dependency inputs differ"):
+        replay_failed_test(config, run.id, case.node_id)
+
+
+def test_missing_recorded_image_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del args, kwargs
+        return subprocess.CompletedProcess([], 1, "", "not found")
+
+    monkeypatch.setattr(subprocess, "run", missing)
+    with pytest.raises(ProjectRunnerError, match="immutable container image is unavailable"):
+        DockerClient().require_image(f"sha256:{'c' * 64}")

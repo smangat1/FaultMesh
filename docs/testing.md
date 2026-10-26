@@ -16,7 +16,7 @@ The expected result is a clean Ruff run, a clean strict mypy run, and all tests 
 automated tests exercise the explicitly unsafe local runner against the bundled trusted fixture;
 they are not substitutes for the separate real-model and Docker checks below.
 
-The V1 project-runner Docker regression is marked and excluded from ordinary CI. With an available
+The project-runner Docker regressions are marked and excluded from ordinary CI. With an available
 Docker daemon, run it explicitly:
 
 ```console
@@ -25,6 +25,31 @@ FAULTMESH_RUN_CONTAINER_TESTS=1 .venv/bin/pytest -q tests/integration/test_proje
 
 This tiny regression is not the V1 acceptance gate. The third-party hpack recipe and retained run
 record are documented in [v1-project-runner.md](v1-project-runner.md).
+
+## V2 per-test evidence and replay
+
+Run the non-container suite separately from the explicit Docker tests:
+
+```console
+.venv/bin/pytest -q -m 'not container'
+FAULTMESH_RUN_CONTAINER_TESTS=1 .venv/bin/pytest -q tests/integration/test_project_runner_container.py
+```
+
+For a schema 2.0 project-run config, the read/observe/replay workflow is:
+
+```console
+.venv/bin/faultmesh run-tests --observe /path/to/project-run.toml
+.venv/bin/faultmesh test-cases <run-id> --config /path/to/project-run.toml
+.venv/bin/faultmesh test-evidence <run-id> '<exact-node-id>' --config /path/to/project-run.toml
+.venv/bin/faultmesh replay-test <run-id> '<exact-failed-node-id>' --config /path/to/project-run.toml
+.venv/bin/faultmesh export-run <run-id> --config /path/to/project-run.toml
+```
+
+The hpack acceptance was run in real offline Docker containers, not mocks or host execution. The
+recorded results, injected test, and exact environment are in
+[v2-test-evidence.md](v2-test-evidence.md). The compact fixtures under `docs/fixtures` are review
+samples; raw run directories, SQLite databases, caches, and third-party checkouts are intentionally
+not committed.
 
 ## Build and check the Docker sandbox
 
