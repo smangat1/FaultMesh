@@ -8,7 +8,6 @@ import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
-import { AgentDock } from './components/AgentDock';
 import { AGENT_SIMULATION_STEPS, type AgentLogEntry } from './agent/agentSimulation';
 import './styles/theme.css';
 
@@ -53,8 +52,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   const [isAgentActive, setIsAgentActive] = useState<boolean>(false);
   const [agentStepIndex, setAgentStepIndex] = useState<number>(0);
   const [isAgentPlaying, setIsAgentPlaying] = useState<boolean>(false);
-  const [agentSpeed, setAgentSpeed] = useState<number>(1);
-  const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
+  const [agentSpeed] = useState<number>(1);
+  const [, setAgentLogs] = useState<AgentLogEntry[]>([]);
   const agentTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Request cancellation token / sequence counter to guard against async race conditions
@@ -262,7 +261,20 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
         ...prev,
         nodes: prev.nodes.map((n) =>
           n.id === 'auth/tokens.py::validate_token'
-            ? { ...n, sourceSnippet: step.patchedSnippet!, gitDiff: step.patchedDiff! }
+            ? { ...n, sourceSnippet: step.patchedSnippet!, gitDiff: step.patchedDiff!, changeStatus: 'modified' }
+            : n
+        ),
+      }));
+    }
+
+    // When the agent reaches 'resolved', switch to 'changes' mode so the modified changes are prominently highlighted!
+    if (step.phase === 'resolved') {
+      setViewMode('changes');
+      setGraphData((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((n) =>
+          n.id === 'auth/tokens.py::validate_token' || n.id === 'auth/tokens.py'
+            ? { ...n, changeStatus: 'modified' }
             : n
         ),
       }));
@@ -504,29 +516,6 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   agentPatchedSnippet={currentAgentStep?.patchedSnippet}
                   agentPatchedDiff={currentAgentStep?.patchedDiff}
                 />
-
-                {/* 4. Autonomous Agent Floating Dock */}
-                {isAgentActive && currentAgentStep && (
-                  <AgentDock
-                    currentStep={currentAgentStep}
-                    totalSteps={AGENT_SIMULATION_STEPS.length}
-                    isPlaying={isAgentPlaying}
-                    speed={agentSpeed}
-                    onTogglePlay={() => setIsAgentPlaying(!isAgentPlaying)}
-                    onStepForward={() => {
-                      if (agentStepIndex < AGENT_SIMULATION_STEPS.length - 1) {
-                        applyAgentStep(agentStepIndex + 1);
-                      }
-                    }}
-                    onReset={() => {
-                      applyAgentStep(0);
-                      setIsAgentPlaying(true);
-                    }}
-                    onSetSpeed={setAgentSpeed}
-                    onClose={stopAgentSimulation}
-                    logs={agentLogs}
-                  />
-                )}
               </div>
             )}
           </main>

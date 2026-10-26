@@ -23,8 +23,11 @@ import {
   Clock,
   Bot,
   Sparkles,
+  FileCode,
+  ArrowRightLeft,
 } from 'lucide-react';
 import type { AgentPhase } from '../agent/agentSimulation';
+import { AGENT_EXPLANATION, AGENT_ACTIVE_FILES } from '../agent/agentSimulation';
 
 export interface InspectorDrawerProps {
   selectedNodeId: string | null;
@@ -296,7 +299,126 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
               </p>
             </div>
 
-            {/* 3. Source Viewer & Diff */}
+            {/* 3. Active Remediation Files & Real Engineering Explanation */}
+            {((isAgentActive) || selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'tests/test_auth.py::test_login_expired_token' || selectedNode.id === 'auth/service.py::login_with_token') && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Active Files in Remediation Tab Switcher */}
+                <div
+                  style={{
+                    backgroundColor: '#111722',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#38bdf8' }}>
+                      <ArrowRightLeft size={12} />
+                      <span>Active Files in Remediation (Swap View)</span>
+                    </div>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      3 files linked
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '2px' }}>
+                    {AGENT_ACTIVE_FILES.map((af) => {
+                      const isCurrent = selectedNode.id === af.id;
+                      return (
+                        <button
+                          key={af.id}
+                          onClick={() => onSelectNode(af.id)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '11px',
+                            fontFamily: 'var(--font-mono)',
+                            backgroundColor: isCurrent ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                            color: isCurrent ? '#38bdf8' : 'var(--text-secondary)',
+                            border: isCurrent ? '1px solid rgba(56, 189, 248, 0.45)' : '1px solid rgba(255, 255, 255, 0.08)',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={`Inspect ${af.file} (${af.role})`}
+                        >
+                          <FileCode size={11} style={{ color: isCurrent ? '#38bdf8' : 'var(--text-muted)' }} />
+                          <span>{af.file}</span>
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              padding: '0 4px',
+                              borderRadius: '2px',
+                              backgroundColor:
+                                af.status === 'defect_site'
+                                  ? 'rgba(245, 158, 11, 0.2)'
+                                  : af.status === 'regression_test'
+                                  ? 'rgba(239, 68, 68, 0.2)'
+                                  : 'rgba(100, 116, 139, 0.2)',
+                              color:
+                                af.status === 'defect_site'
+                                  ? '#f59e0b'
+                                  : af.status === 'regression_test'
+                                  ? '#f87171'
+                                  : '#94a3b8',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {af.status === 'defect_site' ? 'PATCH' : af.status === 'regression_test' ? 'TEST' : 'CALLER'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Deep Real Engineering Explanation Card */}
+                <div
+                  style={{
+                    backgroundColor: '#121720',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Bot size={13} style={{ color: '#38bdf8' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Remediation Explanation & Analysis
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', lineHeight: 1.5 }}>
+                    <div>
+                      <span style={{ color: '#f87171', fontWeight: 600 }}>Defect Isolation: </span>
+                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.defectSummary}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#f59e0b', fontWeight: 600 }}>Root Cause: </span>
+                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.rootCause}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#38bdf8', fontWeight: 600 }}>Fix Applied: </span>
+                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.remediation}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#34d399', fontWeight: 600 }}>Verification: </span>
+                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.verification}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 4. Source Viewer & Diff */}
             <div>
               {/* Active Agent Live Mutation Notice */}
               {isAgentActive && selectedNode.id === 'auth/tokens.py::validate_token' && (

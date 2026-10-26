@@ -146,35 +146,25 @@ async function main() {
     await new Promise((r) => setTimeout(r, 500));
     await captureState(page, `07_large_sample_default_zoom_${res.name}.png`, res.width, res.height);
 
-    // Scenario 8: Agent Live Auto-Repair Simulation — Autonomous live code patching, radar beacon, and thought stream
+    // Scenario 8: Agent Live Auto-Repair Simulation — Interactive beacon, multi-file code swapper, and real explanation
     await page.evaluate(() => {
       const agentBtn = Array.from(document.querySelectorAll('button')).find(
         (b) => b.textContent && b.textContent.includes('Agent Auto-Repair')
       );
       if (agentBtn) agentBtn.click();
     });
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 600));
 
-    // Pause playback so we can position precisely at patch phase
+    // Click the interactive robot target tag on the node to open the inspector with active files & real explanation
     await page.evaluate(() => {
-      const pauseBtn = document.querySelector('button[aria-label="Pause"]');
-      if (pauseBtn) pauseBtn.click();
-    });
-    await new Promise((r) => setTimeout(r, 200));
-
-    // Step forward 3 times to reach Step 4 (Live Patching of validate_token)
-    for (let s = 0; s < 3; s++) {
-      await page.evaluate(() => {
-        const stepBtn = document.querySelector('button[aria-label="Step Forward"]');
-        if (stepBtn) stepBtn.click();
-      });
-      await new Promise((r) => setTimeout(r, 250));
-    }
-
-    // Open thought streamer drawer
-    await page.evaluate(() => {
-      const thoughtBtn = document.querySelector('button[aria-label="Toggle Agent Thought Stream"]');
-      if (thoughtBtn) thoughtBtn.click();
+      const robotTag = document.querySelector('.agent-floating-target-tag');
+      if (robotTag) {
+        robotTag.click();
+      } else {
+        // Fallback: select validate_token in search to inspect
+        const searchInput = document.querySelector('input[placeholder*="Find symbol"]');
+        if (searchInput) searchInput.dispatchEvent(new Event('focus'));
+      }
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `08_agent_live_simulation_${res.name}.png`, res.width, res.height);

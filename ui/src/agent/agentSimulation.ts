@@ -38,6 +38,24 @@ export interface AgentSimulationStep {
   };
 }
 
+export interface ActiveFileMutation {
+  id: string;
+  file: string;
+  name: string;
+  role: string;
+  status: 'defect_site' | 'regression_test' | 'caller';
+  snippet: string;
+  diff?: string;
+  lineRange: string;
+}
+
+export interface AgentExplanation {
+  defectSummary: string;
+  rootCause: string;
+  remediation: string;
+  verification: string;
+}
+
 export const AGENT_ORIGINAL_SNIPPET = `def validate_token(token: str, leeway: int = 0) -> dict:
     """Validate token signature, expiration, and registered claims."""
     header = decode_jwt_header(token)
@@ -108,6 +126,60 @@ export const AGENT_PATCHED_DIFF = `--- a/auth/tokens.py
 +    if exp_num < (current_time - leeway):
          raise TokenExpiredError("Token expired")
      return claims`;
+
+export const AGENT_EXPLANATION: AgentExplanation = {
+  defectSummary:
+    'Regression test test_login_expired_token failed with an unexpected InvalidClaimError instead of TokenExpiredError. Traceback analysis shows token payloads containing stringified numeric timestamps (e.g. exp = "1718000000") were rejected prematurely during type validation on line 49 of tokens.py.',
+  rootCause:
+    'Commit feat/jwt-sessions refactored token claims with a strict type check: if not isinstance(exp_val, (int, float)): raise InvalidClaimError(...). However, web and mobile client JSON parsers frequently serialize timestamps as string literals. Because the strict isinstance rejected string timestamps, expired tokens never reached the expiration comparison on line 52.',
+  remediation:
+    'Replaced the rigid isinstance type assertion with non-breaking numeric coercion: try: exp_num = float(exp_val) except (ValueError, TypeError): raise InvalidClaimError(...). Valid numeric strings and numbers are coerced cleanly for the expiration check, while genuinely invalid non-numeric claims continue to raise InvalidClaimError.',
+  verification:
+    'Re-executed pytest tests/test_auth.py::test_login_expired_token. Pytest passed in 34ms, successfully raising TokenExpiredError. All 6 tests across auth-service are now green with zero side-effects on calling services.',
+};
+
+export const AGENT_ACTIVE_FILES: ActiveFileMutation[] = [
+  {
+    id: 'auth/tokens.py::validate_token',
+    file: 'auth/tokens.py',
+    name: 'validate_token',
+    role: 'Defect Site & Live Patch',
+    status: 'defect_site',
+    lineRange: '43-59',
+    diff: AGENT_PATCHED_DIFF,
+    snippet: AGENT_PATCHED_SNIPPET,
+  },
+  {
+    id: 'tests/test_auth.py::test_login_expired_token',
+    file: 'tests/test_auth.py',
+    name: 'test_login_expired_token',
+    role: 'Failing Regression Test',
+    status: 'regression_test',
+    lineRange: '38-50',
+    snippet: `def test_login_expired_token():
+    """Verify expired JWT token triggers TokenExpiredError."""
+    # Token created with expired exp as numeric string: {"exp": "1718000000"}
+    expired_token = create_test_token(exp_offset=-3600)
+
+    # Expected TokenExpiredError, but raised InvalidClaimError prior to patch
+    with pytest.raises(TokenExpiredError):
+        login_with_token(expired_token)`,
+  },
+  {
+    id: 'auth/service.py::login_with_token',
+    file: 'auth/service.py',
+    name: 'login_with_token',
+    role: 'Calling Coordinator Contract',
+    status: 'caller',
+    lineRange: '30-45',
+    snippet: `def login_with_token(token: str) -> Session:
+    """Authenticate user session using provided bearer token."""
+    # Delegates token validation to tokens.validate_token
+    claims = validate_token(token, leeway=0)
+    user_id = claims.get("sub")
+    return create_session(user_id=user_id)`,
+  },
+];
 
 export const AGENT_SIMULATION_STEPS: AgentSimulationStep[] = [
   {

@@ -1330,14 +1330,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
           padding: '6px 14px',
           backgroundColor: '#11141a',
           borderBottom: '1px solid var(--border-default)',
-          gap: '12px',
+          gap: '10px',
           flexWrap: 'nowrap',
           zIndex: 10,
           minHeight: '38px',
+          overflowX: 'auto',
+          overflowY: 'hidden',
         }}
       >
-        {/* Left: Clear Layer Controls + Unfold Toggle + Active Test Scope */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, overflow: 'hidden' }}>
+        {/* Left: Core Navigation & Action Controls (Always flexShrink: 0 so buttons NEVER get cut off) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
           {/* Layer Selector: Structure vs Changes */}
           <div
             style={{
@@ -1362,6 +1364,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 border: 'none',
                 borderRadius: 'var(--radius-sm)',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
               role="radio"
               aria-label="Structure"
@@ -1382,6 +1385,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 border: 'none',
                 borderRadius: 'var(--radius-sm)',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
               role="radio"
               aria-label="Changes"
@@ -1418,6 +1422,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 border: 'none',
                 borderRight: '1px solid var(--border-default)',
                 color: collapsedFiles.size > 0 ? '#38bdf8' : 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
               }}
               title="Unfold all files to reveal smaller function and class nodes"
               aria-label="Unfold All Files"
@@ -1441,6 +1446,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   collapsedFiles.size === fileClusters.length
                     ? 'var(--text-primary)'
                     : 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
               }}
               title="Fold all files into overview dots"
               aria-label="Fold All Files"
@@ -1476,10 +1482,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
               <span>{isAgentMode ? 'Agent Active' : 'Agent Auto-Repair'}</span>
             </button>
           )}
+        </div>
 
-          {/* Active Test Scope or Overview Scope */}
+        {/* Center: Active Scope / Context (minWidth: 0, flexShrink: 1, truncates with ellipsis) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexShrink: 1, overflow: 'hidden' }}>
           {activeTest ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
               <span
                 style={{
                   fontSize: '11px',
@@ -1493,10 +1501,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     activeTest.status === 'fail'
                       ? '1px solid rgba(239, 68, 68, 0.3)'
                       : '1px solid rgba(16, 185, 129, 0.3)',
-                  padding: '2px 8px',
+                  padding: '2px 6px',
                   borderRadius: 'var(--radius-sm)',
                   whiteSpace: 'nowrap',
-                  maxWidth: '280px',
+                  maxWidth: '220px',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   display: 'inline-block',
@@ -1508,7 +1516,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               <button
                 onClick={() => onSelectTest?.(null)}
                 className="btn-ghost btn-sm"
-                style={{ fontSize: '10px', padding: '1px 5px', color: 'var(--text-muted)' }}
+                style={{ fontSize: '10px', padding: '1px 5px', color: 'var(--text-muted)', flexShrink: 0 }}
                 title="Clear test tracing and return to whole project overview"
               >
                 ✕ Clear
@@ -1517,9 +1525,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
           ) : (
             <span
               style={{
-                fontSize: '12px',
+                fontSize: '11px',
                 fontWeight: 600,
-                color: 'var(--text-primary)',
+                color: 'var(--text-secondary)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -1531,7 +1539,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
           <span
             style={{
-              fontSize: '11px',
+              fontSize: '10px',
               color: 'var(--text-muted)',
               fontFamily: 'var(--font-mono)',
               whiteSpace: 'nowrap',
@@ -1544,8 +1552,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           {activeTest && !activeTest.callTracingAvailable && (
             <span
               style={{
-                fontSize: '10px',
-                padding: '1px 6px',
+                fontSize: '9px',
+                padding: '1px 5px',
                 borderRadius: 'var(--radius-sm)',
                 backgroundColor: 'rgba(210, 153, 34, 0.15)',
                 color: '#d29922',
@@ -1801,7 +1809,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 : ''
             }`}
           />
-          <div className="agent-floating-target-tag">
+          <div
+            className="agent-floating-target-tag"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (agentActiveNodeId && onSelectNode) onSelectNode(agentActiveNodeId);
+            }}
+            style={{
+              pointerEvents: 'auto',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+            title="Click to view live code mutation, active files, and agent engineering explanation"
+          >
             <Bot
               size={11}
               style={{
@@ -1814,6 +1834,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               }}
             />
             <span>{agentPhaseLabel || 'Agent Focus'}</span>
+            <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '2px' }}>• Inspect</span>
           </div>
         </div>
       )}

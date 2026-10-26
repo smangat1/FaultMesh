@@ -48,7 +48,7 @@ describe('Regression: App Run Discovery, Selection & Error Handling', () => {
     render(<App adapter={mockAdapter} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/payments-microservice/i)).toBeDefined();
+      expect(screen.getAllByText(/payments-microservice/i).length).toBeGreaterThan(0);
     });
     expect(screen.queryByText('run-auth-regression')).toBeNull();
   });
@@ -130,11 +130,11 @@ describe('Regression: App Run Discovery, Selection & Error Handling', () => {
     render(<App adapter={mockAdapter} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Project-A/i)).toBeDefined();
+      expect(screen.getAllByText(/Project-A/i).length).toBeGreaterThan(0);
     });
 
-    const selector = screen.getByLabelText(/Select Recorded Run/i);
-    fireEvent.change(selector, { target: { value: 'run-B' } });
+    const projectBBtn = screen.getByRole('radio', { name: /Project-B/i });
+    fireEvent.click(projectBBtn);
 
     await waitFor(() => {
       expect(screen.getAllByText('test_case_b').length).toBeGreaterThan(0);

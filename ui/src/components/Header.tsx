@@ -128,21 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Sample Data / Fixture Badge */}
           {activeRun?.isFixture && (
             <span
-              style={{
-                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                color: 'var(--change-modified)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
-                padding: '2px 6px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '10px',
-                fontWeight: 600,
-                letterSpacing: '0.03em',
-                fontFamily: 'var(--font-mono)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                flexShrink: 0,
-              }}
+              className="badge-status sample"
               title={activeRun.fixtureLabel || 'Read-only fixture data: synthetic sample artifacts'}
             >
               <AlertTriangle size={10} />
@@ -161,17 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
                   HARNESS FAILED
                 </span>
               ) : activeRun.status === 'empty' ? (
-                <span
-                  style={{
-                    backgroundColor: 'var(--bg-raised)',
-                    border: '1px solid var(--border-default)',
-                    color: 'var(--text-secondary)',
-                    padding: '2px 6px',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
+                <span className="badge-status empty">
                   EMPTY SCAN
                 </span>
               ) : totalProblemTests > 0 ? (
