@@ -146,7 +146,7 @@ mapped to `symbol:src/hpack/hpack.py:encode_integer`; its disposable injected te
 remained unmatched in the clean upstream tree.
 
 The FaultMesh `src/` scan produced 42 files, 417 symbols, 167 `contains`, 250 `defines`, 258 resolved
-imports, 205 unresolved imports, 530 resolved possible calls, 1,764 unresolved references, 44
+imports, 205 unresolved imports, 531 resolved possible calls, 1,764 unresolved references, 44
 external modules, 40 skipped entries, and zero parse errors.
 
 Finally, a separate disposable hpack clone received a real edit to `_to_bytes`, a Git rename of
