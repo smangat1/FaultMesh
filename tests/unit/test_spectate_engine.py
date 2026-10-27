@@ -95,6 +95,7 @@ def test_quiet_window_coalesces_partial_write_to_final_content(tmp_path: Path) -
     assert len(changes) == 1
     assert changes[0]["parse_ok"] is True
     assert event_records(records, "source")[-1]["text"] == "value = 2\n"
+    assert len(event_records(records, "relationship_update")) == 2
 
 
 def test_atomic_save_rename_delete_and_recreate_are_observed(tmp_path: Path) -> None:

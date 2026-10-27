@@ -20,6 +20,7 @@ const EVENTS = new Set([
   'source',
   'diff',
   'structure_update',
+  'relationship_update',
   'evidence_stale',
   'watch_error',
   'root_missing',
@@ -39,7 +40,7 @@ function requireKeys(record, keys) {
 function validateSpectateRecord(record) {
   if (!isPlainObject(record)) throw new Error('spectate line must be a JSON object');
   requireKeys(record, ['schema_version', 'session_id', 'sequence', 'emitted_at', 'event']);
-  if (record.schema_version !== 'spectate-1.0') throw new Error('unsupported spectate schema');
+  if (record.schema_version !== 'spectate-1.1') throw new Error('unsupported spectate schema');
   if (typeof record.session_id !== 'string' || record.session_id.length < 1 || record.session_id.length > 128) {
     throw new Error('invalid spectate session id');
   }
@@ -76,6 +77,14 @@ function validateSpectateRecord(record) {
       'kept_last_good_symbols',
       'parse_ok',
     ],
+    relationship_update: [
+      'edges',
+      'unresolved',
+      'external_modules',
+      'stale_paths',
+      'complete',
+      'partial_reasons',
+    ],
     evidence_stale: ['path', 'evidence_content_sha256', 'new_content_sha256', 'rule'],
     watch_error: ['reason', 'operation', 'recoverable', 'skipped_count'],
     root_missing: ['reason'],
@@ -89,6 +98,7 @@ function validateSpectateRecord(record) {
     source: [],
     diff: ['skipped_reason'],
     structure_update: ['parse_error'],
+    relationship_update: [],
     evidence_stale: [],
     watch_error: ['path'],
     root_missing: [],
@@ -128,6 +138,18 @@ function validateSpectateRecord(record) {
   if (record.event === 'diff') {
     if (record.base !== 'previous stable snapshot' || !Array.isArray(record.hunks)) {
       throw new Error('invalid diff payload');
+    }
+  }
+  if (record.event === 'relationship_update') {
+    if (
+      !Array.isArray(record.edges)
+      || !Array.isArray(record.unresolved)
+      || !Array.isArray(record.external_modules)
+      || !Array.isArray(record.stale_paths)
+      || !Array.isArray(record.partial_reasons)
+      || typeof record.complete !== 'boolean'
+    ) {
+      throw new Error('invalid relationship payload');
     }
   }
   return record;
@@ -234,7 +256,7 @@ function attachSpectateBridge({
   function syntheticSessionEnd(reason) {
     if (!parser || parser.sessionId === null || parser.lastEvent === 'session_ended') return;
     sendRecord({
-      schema_version: 'spectate-1.0',
+      schema_version: 'spectate-1.1',
       session_id: parser.sessionId,
       sequence: parser.lastSequence + 1,
       emitted_at: new Date().toISOString(),

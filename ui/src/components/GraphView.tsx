@@ -13,6 +13,7 @@ interface GraphViewProps {
   graphData: GraphData;
   tests: TestItem[];
   datasetKey?: string;
+  highlightedNodeIds?: string[];
   selectedTestId: string | null;
   onSelectTest?: (testId: string | null) => void;
   selectedNodeId?: string | null;
@@ -151,6 +152,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   graphData,
   tests,
   datasetKey,
+  highlightedNodeIds = [],
   selectedTestId,
   onSelectTest,
   selectedNodeId,
@@ -271,7 +273,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const nodes: cytoscape.NodeDefinition[] = [];
     const edges: cytoscape.EdgeDefinition[] = [];
 
-    if (graphData.nodes.length === 0) {
+    if (graphData.nodes.length === 0 && fileClusters.length === 0) {
       return { nodes, edges };
     }
 
@@ -341,6 +343,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           description: fc.description || '',
           lineCount: fc.lineCount,
           isGhost: fc.isGhost,
+          structureStale: fc.structureStale,
         },
         position: pos,
       });
@@ -379,6 +382,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           stepNumber,
           rawName: n.name,
           isGhost: n.isGhost,
+          structureStale: n.structureStale,
           signature: n.signature,
           docstringFirstLine: n.docstringFirstLine,
           contentHash: n.contentHash,
@@ -647,6 +651,25 @@ export const GraphView: React.FC<GraphViewProps> = ({
               width: 6.5,
               height: 6.5,
               'z-index': 25,
+            },
+          },
+          {
+            selector: 'node[?structureStale]',
+            style: {
+              'border-width': 2,
+              'border-color': '#f97316',
+              'border-style': 'dashed',
+            },
+          },
+          {
+            selector: 'node.live-changed',
+            style: {
+              'background-color': '#fbbf24',
+              'border-width': 3,
+              'border-color': '#fef3c7',
+              width: 10,
+              height: 10,
+              'z-index': 80,
             },
           },
           // Failing Test Node: Solid crimson circle
@@ -1366,6 +1389,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const cy = cyRef.current;
     const currentPan = cy.pan();
     const currentZoom = cy.zoom();
+    const datasetChanged = datasetKey !== undefined && datasetKey !== prevDatasetKeyRef.current;
 
     const allElements = [...elements.nodes, ...elements.edges];
     const newIds = new Set(allElements.map((el) => el.data.id));
@@ -1386,7 +1410,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         const existing = cy.getElementById(id);
         if (existing.length > 0) {
           existing.data(el.data);
-          if (el.position) {
+          if (el.position && datasetChanged) {
             existing.position(el.position);
           }
         } else {
@@ -1401,7 +1425,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     // Retain exact camera viewport on same-dataset mutations (collapse/expand, mode toggling),
     // but fit the full graph with padding on dataset/run identity change.
-    if (datasetKey !== undefined && datasetKey !== prevDatasetKeyRef.current) {
+    if (datasetChanged) {
       prevDatasetKeyRef.current = datasetKey;
       cy.fit(cy.elements(), 50);
     } else {
@@ -1427,7 +1451,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
     cy.batch(() => {
       // 1. Clear previous selection & connection focus classes
       cy.nodes().removeClass('selected-node').removeClass('persistent-neighbor').removeClass('active-test-node');
+      cy.nodes().removeClass('live-changed');
       cy.edges().removeClass('persistent-connected-edge');
+
+      highlightedNodeIds.forEach((identity) => {
+        cy.getElementById(identity).addClass('live-changed').addClass('show-label');
+      });
 
       // 2. Persistent Connection Highlight on Node/File Selection
       if (selectedNodeId) {
@@ -1661,6 +1690,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     agentPhase,
     agentActiveEdgeIds,
     agentStepIndex,
+    highlightedNodeIds,
   ]);
 
   // Reset camera tracking pause when agent active mode restarts or changes

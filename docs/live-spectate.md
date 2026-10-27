@@ -24,7 +24,7 @@ are identical before and after the read and again after a short stability interv
 version becomes the in-memory stable baseline. Diffs are therefore against the **previous stable
 snapshot**, never against Git.
 
-## `spectate-1.0` records
+## `spectate-1.1` records
 
 Every stdout line is one JSON object with `schema_version`, `session_id`, an increasing `sequence`,
 UTC `emitted_at`, and an `event` discriminator. Event-specific models live in
@@ -38,6 +38,7 @@ UTC `emitted_at`, and an `event` discriminator. Event-specific models live in
 | `source` | Exact UTF-8 source for the stable version, or an explicit bounded skip reason. |
 | `diff` | Unified hunks with old/new coordinates against the previous stable version. |
 | `structure_update` | One-file file/symbol data and added/modified/removed node deltas. |
+| `relationship_update` | V3-shaped static edges, unresolved references, external modules, and stale/partial facts for the settled snapshot. |
 | `evidence_stale` | Loaded V2 evidence whose containing-file hash no longer matches. |
 | `watch_error` | Explicit read, parse, permission, or configured-bound outcome. |
 | `root_missing` | The selected root disappeared, moved, unmounted, or became inaccessible. |
@@ -45,14 +46,18 @@ UTC `emitted_at`, and an `event` discriminator. Event-specific models live in
 
 Records contain observable facts only. They do not attribute an editor or person, explain intent,
 run tests, claim that a change works, or turn static `possible_call` edges into observed edges.
+The initial relationship update follows `initial_snapshot`; later updates follow the complete batch
+of file, source, diff, and structure facts for each settled group of changes.
 
 ## Default bounds and exclusions
 
 Defaults are 2,000 watched files, 512 KiB per file, 2,000 diff lines, 200 emitted records per
 second, 20,000 characters per source line, 1 MiB per stdout line, 250 ms quiet debounce, and 100 ms
 polling. Bound outcomes are labeled with `watch_error`, or with `complete=false`, `truncated=true`,
-and a reason on the source/diff record. Multiple writes inside one quiet window coalesce into the
-final stable version.
+and a reason on the source/diff record. Relationship updates set `complete=false` and list
+`partial_reasons` when file limits, read bounds, or stale/invalid parses make the relationship view
+partial. Multiple writes inside one quiet window coalesce into the final stable version, and the
+relationship index is rebuilt only after that settled batch.
 
 The walker reuses `IGNORED_PARTS`, never follows file or directory symlinks, accepts Python files
 only, resolves every candidate beneath the chosen root, and ignores nested Git worktrees. It never
@@ -62,14 +67,40 @@ reads or names secret-like candidates matching `.env*`, `*.pem`, `*.key`, `id_rs
 ## Structure and evidence behavior
 
 File IDs remain `file:<project-relative-path>` and symbol IDs come from the existing structure
-indexer. A stable changed file alone is re-indexed. Changed ranges overlap a symbol when
+indexer. A stable changed file alone is re-indexed. The relationship event reuses the V3
+`StaticEdge`, `UnresolvedReference`, and external-module shapes and parses only the watcher's
+already-bounded in-memory bytes; it never imports or executes watched code. Changed ranges overlap
+a symbol when
 `range.start <= symbol.end_line` and `range.end >= symbol.start_line`, the same rule used by V3 Git
 changes. If an edit is temporarily invalid Python, the update records the parse error and retains
-the last good symbols so the map does not collapse. Recovery emits the real symbol delta. Deleted
-nodes are IDs in the delta; no replacement graph or fabricated cross-run edge is emitted.
+the last good symbols and relationships so the map does not collapse. Every such relationship
+event names the path plus its last-good and current SHA-256 values in `stale_paths`; the retained
+structure is never presented as current. Recovery emits the real symbol delta and fresh
+relationships. Deleted nodes are IDs in the delta; static relationships remain AST claims only.
 
 When optional V2 evidence is loaded, its observed-symbol `content_sha256` is compared only with the
 containing file hash. A mismatch emits `evidence_stale`; it does not rerun or reinterpret evidence.
+
+## Live map binding
+
+The renderer reduces `initial_snapshot`, `structure_update`, and `relationship_update` records into
+the same V3 structure shape used by imported data, then delegates graph construction to the existing
+`ImportedAdapter`. There is no parallel fixture contract: starting a watch replaces the sample or
+imported structure with the watched project's file clusters, symbols, unresolved references, and
+static edges. The live session ID is the dataset identity, so a new watched project fits the entire
+map while settled changes update nodes and edges without resetting the current camera or rearranging
+existing positions.
+
+The header labels the dataset as `Live: <folder>` while the watcher is running. Stop, root loss, and
+terminal errors keep the final map only as `Stopped · last known`; they never leave it labeled live.
+Changed V3 IDs are highlighted directly on that map. Parse failures keep last-good nodes and edges,
+mark the affected file and symbols as stale, and pair that structure with the current source fact.
+The source/diff panel uses only ordered engine events. Node source snippets are sliced only when the
+already-received source record hash matches the current containing-file hash.
+
+Live mode does not fabricate test evidence. If explicit V2 evidence was imported before watching,
+the adapter retains it and applies the existing containing-file hash checks; otherwise the live map
+is presented as structure-only with the explicit note that tests were not rerun.
 
 ## Threat model
 
@@ -90,12 +121,51 @@ path and cannot choose a command or arguments.
 - Polling observes stable versions, not every transient byte write. That is deliberate.
 - Rename detection is best-effort from inode and content identity; a delete/create pair can remain
   two facts when identity is ambiguous.
-- The minimal UI hook highlights IDs in its own state. Wiring those IDs into Gemini's evolving map
-  component is deliberately left to the final layout integration.
 - Native dialog and process lifecycle behavior must be checked per desktop platform. There is no
   automatic OS notification or OS-level popup.
 
-## Verified macOS demonstration
+## Verified `spectate-1.1` relationship CLI demonstration
+
+On 2026-10-26 the real CLI watched a disposable two-file project. `consumer.py` imported and called
+`provider.target`; stdin was then closed to stop the session cleanly. The actual relationship record,
+reduced only to the fields relevant to the static cross-file edge, was:
+
+```json
+{"schema_version":"spectate-1.1","sequence":3,"event":"relationship_update","complete":true,"partial_reasons":[],"stale_paths":[],"edges":[{"kind":"possible_call","source_id":"symbol:consumer.py:caller","target_id":"symbol:provider.py:target","callsite_path":"consumer.py","confidence":"resolved","resolution_reason":"import_binding"}]}
+```
+
+The CLI did not import or execute either watched module. Automated engine tests cover relationship
+updates across settled create, modify, delete, and rename operations; syntax error and recovery;
+last-good hash labeling; secret and symlink exclusion; file/read limits; debounce coalescing; and
+contiguous sequence ordering.
+
+## Verified live map binding macOS demonstration
+
+On 2026-10-27 the real Electron app watched a throwaway copy of
+`examples/vscode_playground`, the deterministic cross-file project merged through PR #9. The live
+initial snapshot replaced the sample workspace with six file clusters, 15 symbols, and 43 static
+edges. No tests were run or inferred. The checked rendered pixels show the truthful live label and
+whole-project map in the [initial live map](screenshots/live_map_playground_banner_macos.png).
+
+The repository's `scripts/spectate_demo_editor.py` then ran as a separate process against that copy.
+A stable `TAX_RATE` edit highlighted `file:src/playground/config.py` without refitting the existing
+map and produced the quiet [change banner](screenshots/live_map_playground_edit_macos.png). Opening
+the banner displayed the engine's exact current text and
+[diff against the previous stable snapshot](screenshots/live_map_playground_source_diff_macos.png).
+
+The editor next introduced invalid syntax in `pricing.py`. The rendered
+[parse-error state](screenshots/live_map_playground_parse_error_macos.png) kept the last-good file
+and symbol nodes visibly marked as stale while showing the current invalid source and exact diff.
+The same external editor restored valid syntax, created `discount.py`, and deleted it; the map
+recovered and processed the deletion. Finally, Stop terminated the watcher and retained the final
+map only as [stopped / last known](screenshots/live_map_playground_stopped_macos.png), including the
+truthful deleted-file source state.
+
+These screenshots are real pixels from the macOS desktop run, not mocks. They verify only the
+observed macOS Electron flow; they make no Linux, Windows, native file-event, test-execution, or
+dynamic call-flow claim.
+
+## Legacy `spectate-1.0` macOS demonstration
 
 On 2026-10-26 the real CLI watched a throwaway copy of `examples/buggy_python_project` outside the
 repository while `scripts/spectate_demo_editor.py` ran as a separate process. The editor process did
@@ -147,12 +217,8 @@ To repeat the editor sequence against the deterministic playground copy, use the
 
 To edit by hand instead, open the same printed copy folder in VS Code (not the repository's `examples/vscode_playground`) while the watcher runs on it.
 
-## Hand-off for Gemini
+## UI invariants
 
-Consume the ordered `spectate-1.0` stream and keep the existing map layout positions. Match
-`affected_file_ids`, `affected_symbol_ids`, and `changed_node_ids` directly to V3 IDs. Show source
-and diff as exact facts against the previous stable snapshot; show parse errors while retaining the
-last good symbols; label watching as **Watching (no tests rerun)**; and mark V2 evidence stale only
-from `evidence_stale`. The polished layout must preserve explicit opt-in and Stop controls. It must
-not add model-written explanations, editor attribution, fake test results, observed-edge claims, or
-silent bound failures.
+The integrated layout preserves explicit opt-in and Stop controls, ordered event processing, quiet
+change banners, and stable map positions. It does not add model-written explanations, editor
+attribution, fake test results, observed-edge claims, or silent bound failures.

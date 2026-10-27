@@ -1,97 +1,49 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Eye, FolderOpen, Square, X } from 'lucide-react';
-import type { LineRange, ProjectChoice, SpectateEvent } from '../spectate/types';
+import {
+  EMPTY_LIVE_SPECTATE_STATE,
+  reduceLiveSpectate,
+  type LiveSpectateState,
+} from '../spectate/liveState';
+import type { ProjectChoice, SpectateEvent } from '../spectate/types';
 import '../styles/spectate.css';
 
-interface FileChangeView {
-  path: string;
-  sha256: string | null;
-  ranges: LineRange[];
-  parseError: string | null;
-  affectedNodeIds: string[];
-  updatedAt: string;
-}
-
-interface TextView {
-  path: string;
-  text: string | null;
-  skippedReason: string | null;
-  truncated?: boolean;
+interface SpectateHookProps {
+  onLiveStateChange?: (state: LiveSpectateState) => void;
 }
 
 const shortHash = (value: string | null): string => (value ? value.slice(0, 10) : 'deleted');
 
-export const SpectateHook: React.FC = () => {
+export const SpectateHook: React.FC<SpectateHookProps> = ({ onLiveStateChange }) => {
   const bridge = window.faultmeshSpectate;
+  const [liveState, dispatch] = useReducer(reduceLiveSpectate, EMPTY_LIVE_SPECTATE_STATE);
   const [project, setProject] = useState<ProjectChoice | null>(null);
   const [watching, setWatching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [bannerPath, setBannerPath] = useState<string | null>(null);
-  const [change, setChange] = useState<FileChangeView | null>(null);
-  const [source, setSource] = useState<TextView | null>(null);
-  const [diff, setDiff] = useState<TextView | null>(null);
   const [statusNote, setStatusNote] = useState<string | null>(null);
   const dismissedFiles = useRef(new Set<string>());
-  const currentPath = useRef<string | null>(null);
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    onLiveStateChange?.(liveState);
+  }, [liveState, onLiveStateChange]);
 
   useEffect(() => {
     if (!bridge) return;
     const unsubscribe = bridge.onSpectateEvent((record: SpectateEvent) => {
+      dispatch(record);
       if (record.event === 'session_started') {
         setWatching(true);
         setStatusNote(null);
         return;
       }
       if (record.event === 'file_changed' && record.path) {
-        currentPath.current = record.path;
-        setChange({
-          path: record.path,
-          sha256: record.new_sha256 ?? null,
-          ranges: record.changed_line_ranges ?? [],
-          parseError: record.parse_error ?? null,
-          affectedNodeIds: [
-            ...(record.affected_file_ids ?? []),
-            ...(record.affected_symbol_ids ?? []),
-          ],
-          updatedAt: record.emitted_at,
-        });
-        setSource(null);
-        setDiff(null);
         if (!dismissedFiles.current.has(record.path)) {
           if (bannerTimer.current) clearTimeout(bannerTimer.current);
           bannerTimer.current = setTimeout(() => setBannerPath(record.path ?? null), 120);
         }
-        return;
-      }
-      if (record.event === 'source' && record.path === currentPath.current) {
-        setSource({
-          path: record.path,
-          text: record.text ?? null,
-          skippedReason: record.skipped_reason ?? null,
-        });
-        return;
-      }
-      if (record.event === 'diff' && record.path === currentPath.current) {
-        setDiff({
-          path: record.path,
-          text: record.text ?? null,
-          skippedReason: record.skipped_reason ?? null,
-          truncated: record.truncated,
-        });
-        return;
-      }
-      if (record.event === 'structure_update' && record.path === currentPath.current) {
-        setChange((previous) =>
-          previous
-            ? {
-                ...previous,
-                parseError: record.parse_error ?? null,
-                affectedNodeIds: record.changed_node_ids ?? previous.affectedNodeIds,
-              }
-            : previous,
-        );
         return;
       }
       if (record.event === 'watch_error') {
@@ -138,6 +90,7 @@ export const SpectateHook: React.FC = () => {
       await bridge.stopWatch();
       setWatching(false);
       setBannerPath(null);
+      dispatch({ event: 'local_stop', reason: 'stopped_by_user' });
     } catch (error) {
       setStatusNote(error instanceof Error ? error.message : 'Unable to stop watching.');
     } finally {
@@ -149,6 +102,12 @@ export const SpectateHook: React.FC = () => {
     if (bannerPath) dismissedFiles.current.add(bannerPath);
     setBannerPath(null);
   };
+  const change = liveState.change;
+  const source = liveState.source;
+  const diff = liveState.diff;
+  const currentStructureIsStale = Boolean(
+    change && liveState.stalePaths.some((item) => item.path === change.path),
+  );
 
   return (
     <div className="spectate-hook" data-testid="spectate-hook">
@@ -218,15 +177,18 @@ export const SpectateHook: React.FC = () => {
             </div>
           )}
 
-          {change?.parseError && (
+          {(change?.parseError || currentStructureIsStale) && (
             <div className="spectate-parse-error" role="alert">
-              Parse error: {change.parseError}. Last good map symbols are retained.
+              {change?.parseError && <>Parse error: {change.parseError}. </>}
+              Structure from last good parse (stale); current source is shown below.
             </div>
           )}
 
           <section className="spectate-code-section">
             <h3>Current stable source</h3>
-            <pre>{source?.text ?? (source?.skippedReason
+            <pre>{change?.kind === 'deleted'
+              ? 'File deleted; there is no current source.'
+              : source?.text ?? (source?.skippedReason
               ? `Source skipped: ${source.skippedReason}`
               : 'Waiting for source…')}</pre>
           </section>
@@ -248,7 +210,10 @@ export const SpectateHook: React.FC = () => {
             ) : (
               <p>No existing symbol overlaps this change.</p>
             )}
-            <p className="spectate-gap">IDs are exposed; final map highlight wiring remains a layout integration.</p>
+            <p className="spectate-gap">These IDs are highlighted on the watched project's live map.</p>
+            {liveState.partialReasons.length > 0 && (
+              <p>Relationship view partial: {liveState.partialReasons.join(', ')}.</p>
+            )}
           </section>
         </aside>
       )}

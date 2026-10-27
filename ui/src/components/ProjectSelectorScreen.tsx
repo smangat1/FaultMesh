@@ -364,6 +364,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                   const isSelected = selectedProject === proj;
                   const matchingRun = runs.find((r) => r.project === proj);
                   const isFixture = matchingRun ? Boolean(matchingRun.isFixture) : false;
+                  const isLive = matchingRun ? Boolean(matchingRun.isLive) : false;
                   return (
                     <button
                       key={proj}
@@ -383,7 +384,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                       role="radio"
                       aria-checked={isSelected}
                     >
-                      {proj} {isFixture ? '(Sample Demo)' : '(Imported)'}
+                      {proj} {isFixture ? '(Sample Demo)' : isLive ? '(Live)' : '(Imported)'}
                     </button>
                   );
                 })}
@@ -593,7 +594,11 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                         {r.isFixture && <span className="badge-status sample">SAMPLE DATA</span>}
 
                         {/* Status badge: Identical geometry, font, padding, and border */}
-                        {r.status === 'failed' ? (
+                        {r.isLive ? (
+                          <span className={`badge-status ${r.liveStatus === 'live' ? 'pass' : 'empty'}`}>
+                            {r.liveStatus === 'live' ? 'LIVE' : 'STOPPED · LAST KNOWN'}
+                          </span>
+                        ) : r.status === 'failed' ? (
                           <span className="badge-status error">HARNESS FAILED</span>
                         ) : r.status === 'empty' ? (
                           <span className="badge-status empty">EMPTY SCAN</span>

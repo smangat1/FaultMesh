@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FaultMeshAdapter } from './adapter';
-import { FixtureAdapter, ImportedAdapter } from './adapter';
+import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter } from './adapter';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -9,6 +9,7 @@ import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { ReplayComparisonView } from './components/ReplayComparisonView';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
+import { SpectateHook } from './components/SpectateHook';
 import {
   AGENT_SIMULATION_STEPS,
   AGENT_ORIGINAL_SNIPPET,
@@ -22,7 +23,7 @@ import {
   type V2RunEvidenceExport,
 } from './import';
 import { AlertTriangle } from 'lucide-react';
-import { SpectateHook } from './components/SpectateHook';
+import type { LiveSpectateState } from './spectate/liveState';
 import './styles/theme.css';
 
 const DEFAULT_ADAPTER = new FixtureAdapter(0);
@@ -47,6 +48,19 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     parseErrors: [],
     files: [],
   });
+  const [liveChangedNodeIds, setLiveChangedNodeIds] = useState<string[]>([]);
+  const liveAdapterRef = useRef<LiveSpectateAdapter | null>(null);
+  const liveRefreshSeq = useRef(0);
+  const activeAdapterRef = useRef<FaultMeshAdapter>(activeAdapter);
+  const activeRunIdRef = useRef<string | null>(activeRunId);
+
+  useEffect(() => {
+    activeAdapterRef.current = activeAdapter;
+  }, [activeAdapter]);
+
+  useEffect(() => {
+    activeRunIdRef.current = activeRunId;
+  }, [activeRunId]);
 
   // Selection states
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
@@ -124,7 +138,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
 
       // Structure mode by default on open: all files collapsed into clean overview constellation, no test preselected
       const allFiles = new Set((loadedGraph.files || []).map((fc) => fc.file));
-      setCollapsedFiles(allFiles);
+      setCollapsedFiles(activeAdapter instanceof LiveSpectateAdapter ? new Set() : allFiles);
 
       setSelectedTestId(null);
       setSelectedNodeId(null);
@@ -247,7 +261,10 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
 
   const handleSelectRun = (runId: string) => {
     setActiveRunId(runId);
-    if (activeAdapter instanceof ImportedAdapter) {
+    if (
+      activeAdapter instanceof ImportedAdapter
+      || activeAdapter instanceof LiveSpectateAdapter
+    ) {
       activeAdapter.setActiveV2Run(runId);
     }
     setPinnedSymbols([]);
@@ -298,7 +315,10 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
       }
 
       if (!v3Doc) {
-        if (activeAdapter instanceof ImportedAdapter) {
+        if (
+          activeAdapter instanceof ImportedAdapter
+          || activeAdapter instanceof LiveSpectateAdapter
+        ) {
           for (const v2 of v2Docs) {
             activeAdapter.addV2Run(v2);
           }
@@ -317,6 +337,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
 
       // Valid V3 document loaded
       const newAdapter = new ImportedAdapter(v3Doc, v2Docs);
+      liveAdapterRef.current = null;
+      setLiveChangedNodeIds([]);
       setActiveAdapter(newAdapter);
 
       // Reset selection and pins to prevent stale state
@@ -339,6 +361,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   };
 
   const handleResetToSampleDemo = useCallback(() => {
+    liveAdapterRef.current = null;
+    setLiveChangedNodeIds([]);
     setActiveAdapter(new FixtureAdapter(0));
     setImportError(null);
     setSelectedTestId(null);
@@ -346,6 +370,63 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setSelectedFile(null);
     setPinnedSymbols([]);
     setIsAgentActive(false);
+  }, []);
+
+  const handleLiveStateChange = useCallback((state: LiveSpectateState) => {
+    if (!state.initialized || !state.sessionId) return;
+
+    let liveAdapter = liveAdapterRef.current;
+    const isNewDataset = liveAdapter?.getSessionId() !== state.sessionId;
+    if (isNewDataset) {
+      const currentAdapter = activeAdapterRef.current;
+      const v2Runs = currentAdapter instanceof ImportedAdapter
+        || currentAdapter instanceof LiveSpectateAdapter
+        ? currentAdapter.getV2Runs()
+        : [];
+      liveAdapter = new LiveSpectateAdapter(state, v2Runs);
+      liveAdapterRef.current = liveAdapter;
+      activeAdapterRef.current = liveAdapter;
+      setActiveAdapter(liveAdapter);
+      setCurrentScreen('workspace');
+      setActiveView('map');
+      setPinnedSymbols([]);
+      setSelectedTestId(null);
+      setSelectedNodeId(null);
+      setSelectedFile(null);
+      setCollapsedFiles(new Set());
+      setIsAgentActive(false);
+    } else if (liveAdapter) {
+      liveAdapter.update(state);
+    }
+    if (!liveAdapter) return;
+    const adapterForRefresh = liveAdapter;
+
+    setLiveChangedNodeIds(state.changedNodeIds);
+    const refreshSeq = ++liveRefreshSeq.current;
+    void (async () => {
+      const loadedRuns = await adapterForRefresh.getRuns();
+      const previousRunId = activeRunIdRef.current;
+      const runId = previousRunId && loadedRuns.some((run) => run.id === previousRunId)
+        ? previousRunId
+        : loadedRuns[0]?.id ?? null;
+      const [loadedTests, loadedGraph] = runId
+        ? await Promise.all([
+            adapterForRefresh.getTests(runId),
+            adapterForRefresh.getGraph(runId),
+          ])
+        : [[], { nodes: [], edges: [], unresolvedReferences: [], parseErrors: [], files: [] }];
+      if (refreshSeq !== liveRefreshSeq.current) return;
+      setRuns(loadedRuns);
+      setActiveRunId(runId);
+      activeRunIdRef.current = runId;
+      setTests(loadedTests);
+      setGraphData(loadedGraph);
+      setRunDataError(null);
+      setIsLoadingRunData(false);
+    })().catch((error: unknown) => {
+      if (refreshSeq !== liveRefreshSeq.current) return;
+      setRunDataError(error instanceof Error ? error.message : 'Failed to build live project map.');
+    });
   }, []);
 
   const handleCloseInspector = () => {
@@ -670,6 +751,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   <GraphView
                     graphData={graphData}
                     tests={tests}
+                    highlightedNodeIds={liveChangedNodeIds}
                     datasetKey={`${activeRun?.id || 'none'}:${activeRun?.contentSha256 || activeRun?.envelopeHeadSha || 'none'}`}
                     selectedTestId={selectedTestId}
                     onSelectTest={handleSelectTest}
@@ -687,9 +769,9 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
                     isRealImport={activeRun?.isRealImport}
-                    isAgentMode={activeRun?.isRealImport ? false : isAgentActive}
+                    isAgentMode={activeRun?.isRealImport || activeRun?.isLive ? false : isAgentActive}
                     onToggleAgentMode={
-                      activeRun?.isRealImport
+                      activeRun?.isRealImport || activeRun?.isLive
                         ? undefined
                         : isAgentActive
                         ? stopAgentSimulation
@@ -747,19 +829,21 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   onPinSymbol={handlePinSymbol}
                   onUnpinSymbol={handleUnpinSymbol}
                   onClose={handleCloseInspector}
-                  isAgentActive={activeRun?.isRealImport ? false : isAgentActive}
+                  isAgentActive={activeRun?.isRealImport || activeRun?.isLive ? false : isAgentActive}
                   agentPhase={currentAgentStep?.phase}
                   agentPhaseEvidence={currentAgentStep?.phaseEvidence}
                   agentPatchedSnippet={currentAgentStep?.patchedSnippet}
                   agentPatchedDiff={currentAgentStep?.patchedDiff}
-                  onReplayInvestigation={activeRun?.isRealImport ? undefined : startAgentSimulation}
+                  onReplayInvestigation={activeRun?.isRealImport || activeRun?.isLive ? undefined : startAgentSimulation}
                 />
               </div>
             )}
           </main>
         </>
       )}
-      {currentScreen === 'workspace' && <SpectateHook />}
+      {currentScreen === 'workspace' && (
+        <SpectateHook onLiveStateChange={handleLiveStateChange} />
+      )}
     </div>
   );
 };

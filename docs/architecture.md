@@ -8,7 +8,7 @@ repositories and generated input are untrusted. Scanning never imports target co
 the only component allowed to import it and normally runs in a locked-down Docker container.
 
 The optional live spectate path is a separate local-only, read-only observer. After explicit desktop
-opt-in it polls Python files, emits bounded `spectate-1.0` facts over a child process's stdout, and
+opt-in it polls Python files, emits bounded `spectate-1.1` facts over a child process's stdout, and
 never executes source or opens a network listener. See `docs/live-spectate.md` for its trust boundary
 and event contract.
 
