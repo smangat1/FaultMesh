@@ -4,7 +4,7 @@ import { SpectateHook } from '../components/SpectateHook';
 import type { SpectateBridge, SpectateEvent } from '../spectate/types';
 
 const base = {
-  schema_version: 'spectate-1.0' as const,
+  schema_version: 'spectate-1.1' as const,
   session_id: 'session-test',
   emitted_at: '2026-10-26T20:00:00Z',
 };

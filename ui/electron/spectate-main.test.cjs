@@ -17,7 +17,7 @@ const {
 
 function sessionStarted(sequence = 1) {
   return {
-    schema_version: 'spectate-1.0',
+    schema_version: 'spectate-1.1',
     session_id: 'session-test',
     sequence,
     emitted_at: '2026-10-26T20:00:00Z',
@@ -32,7 +32,7 @@ function sessionStarted(sequence = 1) {
 
 function sessionEnded(sequence = 2) {
   return {
-    schema_version: 'spectate-1.0',
+    schema_version: 'spectate-1.1',
     session_id: 'session-test',
     sequence,
     emitted_at: '2026-10-26T20:00:01Z',
@@ -84,6 +84,24 @@ test('record validation rejects unknown event names and fields', () => {
     () => validateSpectateRecord({ ...sessionStarted(), renderer_path: '/tmp' }),
     /unknown fields/,
   );
+});
+
+test('record validation accepts bounded relationship updates', () => {
+  const record = validateSpectateRecord({
+    schema_version: 'spectate-1.1',
+    session_id: 'session-test',
+    sequence: 2,
+    emitted_at: '2026-10-26T20:00:01Z',
+    event: 'relationship_update',
+    edges: [],
+    unresolved: [],
+    external_modules: [],
+    stale_paths: [],
+    complete: true,
+    partial_reasons: [],
+  });
+
+  assert.equal(record.event, 'relationship_update');
 });
 
 class FakeIpcMain {

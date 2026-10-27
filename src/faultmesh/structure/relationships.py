@@ -6,6 +6,7 @@ import ast
 import builtins
 import hashlib
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -622,8 +623,9 @@ class _RelationshipVisitor(ast.NodeVisitor):
         return result
 
 
-def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
-    root = root.resolve()
+def _build_relationships(
+    index: StructureIndex, sources: Mapping[str, str]
+) -> RelationshipIndex:
     module_files = {item.module: item.id for item in index.files if item.module}
     all_edges: list[StaticEdge] = []
     unresolved: list[UnresolvedReference] = []
@@ -637,7 +639,7 @@ def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
     for file in index.files:
         if file.parse_error is not None:
             continue
-        tree = ast.parse((root / file.path).read_text(encoding="utf-8"), filename=file.path)
+        tree = ast.parse(sources[file.path], filename=file.path)
         for node in tree.body:
             if not isinstance(node, ast.ImportFrom):
                 continue
@@ -674,7 +676,7 @@ def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
     for file in index.files:
         if file.parse_error is not None:
             continue
-        source = (root / file.path).read_text(encoding="utf-8")
+        source = sources[file.path]
         tree = ast.parse(source, filename=file.path)
         visitor = _RelationshipVisitor(
             path=file.path,
@@ -705,3 +707,25 @@ def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
         ),
         external_modules=sorted(external),
     )
+
+
+def build_relationships_from_sources(
+    index: StructureIndex, sources: Mapping[str, bytes]
+) -> RelationshipIndex:
+    """Build relationships from already-bounded source without importing target code."""
+    decoded = {
+        file.path: sources[file.path].decode("utf-8")
+        for file in index.files
+        if file.parse_error is None
+    }
+    return _build_relationships(index, decoded)
+
+
+def build_relationships(root: Path, index: StructureIndex) -> RelationshipIndex:
+    root = root.resolve()
+    sources = {
+        file.path: (root / file.path).read_text(encoding="utf-8")
+        for file in index.files
+        if file.parse_error is None
+    }
+    return _build_relationships(index, sources)

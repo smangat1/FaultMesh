@@ -24,7 +24,7 @@ are identical before and after the read and again after a short stability interv
 version becomes the in-memory stable baseline. Diffs are therefore against the **previous stable
 snapshot**, never against Git.
 
-## `spectate-1.0` records
+## `spectate-1.1` records
 
 Every stdout line is one JSON object with `schema_version`, `session_id`, an increasing `sequence`,
 UTC `emitted_at`, and an `event` discriminator. Event-specific models live in
@@ -38,6 +38,7 @@ UTC `emitted_at`, and an `event` discriminator. Event-specific models live in
 | `source` | Exact UTF-8 source for the stable version, or an explicit bounded skip reason. |
 | `diff` | Unified hunks with old/new coordinates against the previous stable version. |
 | `structure_update` | One-file file/symbol data and added/modified/removed node deltas. |
+| `relationship_update` | V3-shaped static edges, unresolved references, external modules, and stale/partial facts for the settled snapshot. |
 | `evidence_stale` | Loaded V2 evidence whose containing-file hash no longer matches. |
 | `watch_error` | Explicit read, parse, permission, or configured-bound outcome. |
 | `root_missing` | The selected root disappeared, moved, unmounted, or became inaccessible. |
@@ -45,14 +46,18 @@ UTC `emitted_at`, and an `event` discriminator. Event-specific models live in
 
 Records contain observable facts only. They do not attribute an editor or person, explain intent,
 run tests, claim that a change works, or turn static `possible_call` edges into observed edges.
+The initial relationship update follows `initial_snapshot`; later updates follow the complete batch
+of file, source, diff, and structure facts for each settled group of changes.
 
 ## Default bounds and exclusions
 
 Defaults are 2,000 watched files, 512 KiB per file, 2,000 diff lines, 200 emitted records per
 second, 20,000 characters per source line, 1 MiB per stdout line, 250 ms quiet debounce, and 100 ms
 polling. Bound outcomes are labeled with `watch_error`, or with `complete=false`, `truncated=true`,
-and a reason on the source/diff record. Multiple writes inside one quiet window coalesce into the
-final stable version.
+and a reason on the source/diff record. Relationship updates set `complete=false` and list
+`partial_reasons` when file limits, read bounds, or stale/invalid parses make the relationship view
+partial. Multiple writes inside one quiet window coalesce into the final stable version, and the
+relationship index is rebuilt only after that settled batch.
 
 The walker reuses `IGNORED_PARTS`, never follows file or directory symlinks, accepts Python files
 only, resolves every candidate beneath the chosen root, and ignores nested Git worktrees. It never
@@ -62,11 +67,16 @@ reads or names secret-like candidates matching `.env*`, `*.pem`, `*.key`, `id_rs
 ## Structure and evidence behavior
 
 File IDs remain `file:<project-relative-path>` and symbol IDs come from the existing structure
-indexer. A stable changed file alone is re-indexed. Changed ranges overlap a symbol when
+indexer. A stable changed file alone is re-indexed. The relationship event reuses the V3
+`StaticEdge`, `UnresolvedReference`, and external-module shapes and parses only the watcher's
+already-bounded in-memory bytes; it never imports or executes watched code. Changed ranges overlap
+a symbol when
 `range.start <= symbol.end_line` and `range.end >= symbol.start_line`, the same rule used by V3 Git
 changes. If an edit is temporarily invalid Python, the update records the parse error and retains
-the last good symbols so the map does not collapse. Recovery emits the real symbol delta. Deleted
-nodes are IDs in the delta; no replacement graph or fabricated cross-run edge is emitted.
+the last good symbols and relationships so the map does not collapse. Every such relationship
+event names the path plus its last-good and current SHA-256 values in `stale_paths`; the retained
+structure is never presented as current. Recovery emits the real symbol delta and fresh
+relationships. Deleted nodes are IDs in the delta; static relationships remain AST claims only.
 
 When optional V2 evidence is loaded, its observed-symbol `content_sha256` is compared only with the
 containing file hash. A mismatch emits `evidence_stale`; it does not rerun or reinterpret evidence.
@@ -95,7 +105,22 @@ path and cannot choose a command or arguments.
 - Native dialog and process lifecycle behavior must be checked per desktop platform. There is no
   automatic OS notification or OS-level popup.
 
-## Verified macOS demonstration
+## Verified `spectate-1.1` relationship CLI demonstration
+
+On 2026-10-26 the real CLI watched a disposable two-file project. `consumer.py` imported and called
+`provider.target`; stdin was then closed to stop the session cleanly. The actual relationship record,
+reduced only to the fields relevant to the static cross-file edge, was:
+
+```json
+{"schema_version":"spectate-1.1","sequence":3,"event":"relationship_update","complete":true,"partial_reasons":[],"stale_paths":[],"edges":[{"kind":"possible_call","source_id":"symbol:consumer.py:caller","target_id":"symbol:provider.py:target","callsite_path":"consumer.py","confidence":"resolved","resolution_reason":"import_binding"}]}
+```
+
+The CLI did not import or execute either watched module. Automated engine tests cover relationship
+updates across settled create, modify, delete, and rename operations; syntax error and recovery;
+last-good hash labeling; secret and symlink exclusion; file/read limits; debounce coalescing; and
+contiguous sequence ordering.
+
+## Legacy `spectate-1.0` macOS demonstration
 
 On 2026-10-26 the real CLI watched a throwaway copy of `examples/buggy_python_project` outside the
 repository while `scripts/spectate_demo_editor.py` ran as a separate process. The editor process did
@@ -146,7 +171,9 @@ python scripts/spectate_demo_editor.py /absolute/path/to/throwaway-copy
 
 ## Hand-off for Gemini
 
-Consume the ordered `spectate-1.0` stream and keep the existing map layout positions. Match
+Consume the ordered `spectate-1.1` stream and keep the existing map layout positions. Build the
+whole-project static layer from `initial_snapshot`, `structure_update`, and `relationship_update`.
+Match
 `affected_file_ids`, `affected_symbol_ids`, and `changed_node_ids` directly to V3 IDs. Show source
 and diff as exact facts against the previous stable snapshot; show parse errors while retaining the
 last good symbols; label watching as **Watching (no tests rerun)**; and mark V2 evidence stale only

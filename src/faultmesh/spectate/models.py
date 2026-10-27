@@ -6,9 +6,15 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from faultmesh.structure.models import FileNode, SkipRecord, SymbolNode
+from faultmesh.structure.models import (
+    FileNode,
+    SkipRecord,
+    StaticEdge,
+    SymbolNode,
+    UnresolvedReference,
+)
 
-SCHEMA_VERSION = "spectate-1.0"
+SCHEMA_VERSION = "spectate-1.1"
 
 
 class StrictModel(BaseModel):
@@ -61,8 +67,14 @@ class StructurePayload(StrictModel):
     skips: list[SkipRecord]
 
 
+class StaleRelationshipPath(StrictModel):
+    path: str
+    last_good_sha256: str
+    current_sha256: str
+
+
 class BaseRecord(StrictModel):
-    schema_version: Literal["spectate-1.0"] = "spectate-1.0"
+    schema_version: Literal["spectate-1.1"] = "spectate-1.1"
     session_id: str = Field(min_length=1, max_length=128)
     sequence: int = Field(ge=1)
     emitted_at: str
@@ -134,6 +146,16 @@ class StructureUpdate(BaseRecord):
     parse_error: str | None = None
 
 
+class RelationshipUpdate(BaseRecord):
+    event: Literal["relationship_update"]
+    edges: list[StaticEdge]
+    unresolved: list[UnresolvedReference]
+    external_modules: list[str]
+    stale_paths: list[StaleRelationshipPath]
+    complete: bool
+    partial_reasons: list[str]
+
+
 class EvidenceStale(BaseRecord):
     event: Literal["evidence_stale"]
     path: str
@@ -168,6 +190,7 @@ SpectateRecord = Annotated[
     | SourceRecord
     | DiffRecord
     | StructureUpdate
+    | RelationshipUpdate
     | EvidenceStale
     | WatchError
     | RootMissing

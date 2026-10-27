@@ -21,9 +21,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from faultmesh.analysis.project import IGNORED_PARTS
-from faultmesh.spectate.models import EVENT_ADAPTER, IgnoreSummary, Limits
+from faultmesh.spectate.models import EVENT_ADAPTER, SCHEMA_VERSION, IgnoreSummary, Limits
 from faultmesh.structure.index import index_python_bytes
-from faultmesh.structure.models import FileNode, SkipRecord, SymbolNode
+from faultmesh.structure.models import FileNode, SkipRecord, StructureIndex, SymbolNode
+from faultmesh.structure.relationships import build_relationships_from_sources
 
 SECRET_PATTERNS = (".env*", "*.pem", "*.key", "id_rsa*", "credentials*")
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -61,6 +62,8 @@ class FileState:
     file_node: FileNode
     symbols: list[SymbolNode]
     last_good_symbols: list[SymbolNode]
+    last_good_data: bytes | None
+    last_good_sha256: str | None
 
 
 @dataclass(frozen=True)
@@ -200,7 +203,7 @@ def _diff_hunks(
 
 
 class SpectateEngine:
-    """Observe one resolved root and emit ordered `spectate-1.0` facts."""
+    """Observe one resolved root and emit ordered `spectate-1.1` facts."""
 
     def __init__(
         self,
@@ -235,6 +238,7 @@ class SpectateEngine:
         self.states: dict[str, FileState] = {}
         self.pending: dict[str, PendingChange] = {}
         self.blocked: dict[str, StatKey | None] = {}
+        self.blocked_reasons: dict[str, str] = {}
         self.started = False
         self.ended = False
         self._last_omitted_count = 0
@@ -251,7 +255,7 @@ class SpectateEngine:
             while self._event_times and now - self._event_times[0] >= 1.0:
                 self._event_times.popleft()
         candidate: dict[str, object] = {
-            "schema_version": "spectate-1.0",
+            "schema_version": SCHEMA_VERSION,
             "session_id": self.session_id,
             "sequence": self.sequence + 1,
             "emitted_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -432,12 +436,22 @@ class SpectateEngine:
         if file_node.parse_error is None:
             symbols = parsed_symbols
             last_good = parsed_symbols
-        elif previous is not None:
-            symbols = previous.last_good_symbols
+            last_good_data: bytes | None = read.data
+            last_good_sha256: str | None = file_node.content_sha256
+        elif previous is not None and previous.last_good_data is not None:
+            _last_good_file, symbols, _last_good_error = index_python_bytes(
+                relative, previous.last_good_data
+            )
             last_good = previous.last_good_symbols
+            if relative != previous.path:
+                last_good = symbols
+            last_good_data = previous.last_good_data
+            last_good_sha256 = previous.last_good_sha256
         else:
             symbols = []
             last_good = []
+            last_good_data = None
+            last_good_sha256 = None
         return FileState(
             path=relative,
             stat_key=read.key,
@@ -447,6 +461,62 @@ class SpectateEngine:
             file_node=file_node,
             symbols=symbols,
             last_good_symbols=last_good,
+            last_good_data=last_good_data,
+            last_good_sha256=last_good_sha256,
+        )
+
+    def _emit_relationship_update(self) -> None:
+        files: list[FileNode] = []
+        symbols: list[SymbolNode] = []
+        sources: dict[str, bytes] = {}
+        stale_paths: list[dict[str, str]] = []
+        partial_reasons: set[str] = set()
+        if self._last_omitted_count:
+            partial_reasons.add("max_files")
+        partial_reasons.update(
+            f"read_skipped:{reason}" for reason in self.blocked_reasons.values()
+        )
+        for path in sorted(self.states):
+            state = self.states[path]
+            relationship_file = state.file_node
+            relationship_source = state.data
+            if state.file_node.parse_error is not None:
+                if state.last_good_data is None or state.last_good_sha256 is None:
+                    partial_reasons.add("parse_error_without_last_good")
+                else:
+                    relationship_file = state.file_node.model_copy(
+                        update={
+                            "content_sha256": state.last_good_sha256,
+                            "parse_error": None,
+                        }
+                    )
+                    relationship_source = state.last_good_data
+                    stale_paths.append(
+                        {
+                            "path": path,
+                            "last_good_sha256": state.last_good_sha256,
+                            "current_sha256": state.sha256,
+                        }
+                    )
+                    partial_reasons.add("stale_paths")
+            files.append(relationship_file)
+            symbols.extend(state.symbols)
+            sources[path] = relationship_source
+        index = StructureIndex(
+            files=files,
+            symbols=symbols,
+            skips=[],
+            parse_errors=[],
+        )
+        relationships = build_relationships_from_sources(index, sources)
+        self._emit(
+            "relationship_update",
+            edges=relationships.edges,
+            unresolved=relationships.unresolved,
+            external_modules=relationships.external_modules,
+            stale_paths=stale_paths,
+            complete=not partial_reasons,
+            partial_reasons=sorted(partial_reasons),
         )
 
     def start(self) -> None:
@@ -485,6 +555,7 @@ class SpectateEngine:
                 self.states[relative] = self._state_from_read(relative, read)
             except SpectateError as exc:
                 self.blocked[relative] = scan.files[relative]
+                self.blocked_reasons[relative] = str(exc)
                 self._watch_error(str(exc), "initial_read", path=relative, skipped_count=1)
         files = [self.states[path].file_node for path in sorted(self.states)]
         symbols = [
@@ -499,6 +570,7 @@ class SpectateEngine:
             files=[_file_snapshot(self.states[path]) for path in sorted(self.states)],
             structure={"files": files, "symbols": symbols, "skips": scan.skips},
         )
+        self._emit_relationship_update()
 
     def _source_reason(self, state: FileState) -> str | None:
         if state.text is None:
@@ -660,6 +732,10 @@ class SpectateEngine:
                     )
 
     def _process_ready(self, ready: set[str], scan: ScanResult) -> None:
+        changed_any = False
+        blocked_deleted = sorted(
+            path for path in ready if path in self.blocked and path not in scan.files
+        )
         deleted = sorted(path for path in ready if path in self.states and path not in scan.files)
         created = sorted(path for path in ready if path not in self.states and path in scan.files)
         modified = sorted(path for path in ready if path in self.states and path in scan.files)
@@ -673,8 +749,16 @@ class SpectateEngine:
                     self.pending[path] = PendingChange(marker, self.clock())
                     continue
                 self.blocked[path] = marker
+                self.blocked_reasons[path] = str(exc)
                 self.pending.pop(path, None)
                 self._watch_error(str(exc), "stable_read", path=path, skipped_count=1)
+                changed_any = True
+
+        for path in blocked_deleted:
+            self.pending.pop(path, None)
+            self.blocked.pop(path, None)
+            self.blocked_reasons.pop(path, None)
+            changed_any = True
 
         rename_pairs: list[tuple[str, str]] = []
         unmatched_created = set(created_reads).intersection(created)
@@ -704,23 +788,30 @@ class SpectateEngine:
             current = self._state_from_read(new_path, created_reads[new_path], previous)
             self.states[new_path] = current
             self._emit_change("renamed", new_path, previous, current, from_path=old_path)
+            changed_any = True
             self.pending.pop(old_path, None)
             self.pending.pop(new_path, None)
             self.blocked.pop(old_path, None)
             self.blocked.pop(new_path, None)
+            self.blocked_reasons.pop(old_path, None)
+            self.blocked_reasons.pop(new_path, None)
 
         for path in sorted(unmatched_deleted):
             previous = self.states.pop(path)
             self._emit_change("deleted", path, previous, None)
+            changed_any = True
             self.pending.pop(path, None)
             self.blocked.pop(path, None)
+            self.blocked_reasons.pop(path, None)
 
         for path in sorted(unmatched_created):
             current = self._state_from_read(path, created_reads[path])
             self.states[path] = current
             self._emit_change("created", path, None, current)
+            changed_any = True
             self.pending.pop(path, None)
             self.blocked.pop(path, None)
+            self.blocked_reasons.pop(path, None)
 
         for path in modified:
             if path not in created_reads:
@@ -732,8 +823,12 @@ class SpectateEngine:
             else:
                 self.states[path] = current
                 self._emit_change("modified", path, previous, current)
+                changed_any = True
             self.pending.pop(path, None)
             self.blocked.pop(path, None)
+            self.blocked_reasons.pop(path, None)
+        if changed_any:
+            self._emit_relationship_update()
 
     def poll_once(self, now: float | None = None) -> bool:
         if not self.started or self.ended:
@@ -756,11 +851,12 @@ class SpectateEngine:
                 path=issue.path,
                 recoverable=issue.recoverable,
             )
-        if scan.omitted_count and scan.omitted_count != self._last_omitted_count:
+        omitted_count_changed = scan.omitted_count != self._last_omitted_count
+        if scan.omitted_count and omitted_count_changed:
             self._watch_error("max_files", "poll_scan", skipped_count=scan.omitted_count)
         self._last_omitted_count = scan.omitted_count
 
-        all_paths = set(self.states) | set(scan.files)
+        all_paths = set(self.states) | set(scan.files) | set(self.blocked)
         changed: dict[str, StatKey | None] = {}
         for path in all_paths:
             current = scan.files.get(path)
@@ -783,6 +879,8 @@ class SpectateEngine:
         }
         if ready:
             self._process_ready(ready, scan)
+        elif omitted_count_changed:
+            self._emit_relationship_update()
         return True
 
     def stop(self, reason: str = "stopped") -> None:

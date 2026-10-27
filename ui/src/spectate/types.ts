@@ -8,8 +8,36 @@ export interface LineRange {
   end_line: number;
 }
 
+export interface LiveStaticEdge {
+  id: string;
+  layer: 'static';
+  kind: 'imports' | 'possible_call' | 'defines' | 'contains';
+  source_id: string;
+  target_id: string | null;
+  callsite_path: string;
+  callsite_line: number;
+  resolution_reason: string;
+  confidence: 'resolved' | 'ambiguous' | 'unresolved';
+  external_module: string | null;
+  removed: boolean;
+  revision_side: 'head' | 'base';
+}
+
+export interface LiveUnresolvedReference {
+  path: string;
+  line: number;
+  text: string;
+  reason: string;
+}
+
+export interface StaleRelationshipPath {
+  path: string;
+  last_good_sha256: string;
+  current_sha256: string;
+}
+
 export interface SpectateEvent {
-  schema_version: 'spectate-1.0';
+  schema_version: 'spectate-1.1';
   session_id: string;
   sequence: number;
   emitted_at: string;
@@ -20,6 +48,7 @@ export interface SpectateEvent {
     | 'source'
     | 'diff'
     | 'structure_update'
+    | 'relationship_update'
     | 'evidence_stale'
     | 'watch_error'
     | 'root_missing'
@@ -37,6 +66,11 @@ export interface SpectateEvent {
   text?: string | null;
   complete?: boolean;
   skipped_reason?: string | null;
+  edges?: LiveStaticEdge[];
+  unresolved?: LiveUnresolvedReference[];
+  external_modules?: string[];
+  stale_paths?: StaleRelationshipPath[];
+  partial_reasons?: string[];
   truncated?: boolean;
   reason?: string;
 }
