@@ -137,12 +137,15 @@ To run the observer directly:
 faultmesh spectate /absolute/path/to/python-project
 ```
 
-To repeat the editor sequence, run the following in another terminal against the deterministic
-playground (or pass an explicit target path):
+To repeat the editor sequence against the deterministic playground copy, use the prepare-and-run workflow:
 
-```console
-python scripts/spectate_demo_editor.py
-```
+1. **Terminal 1:** Run `python scripts/spectate_demo_editor.py`. It prints a copy folder path and waits for Enter. Leave it waiting and do not press Enter yet.
+2. Watch that printed copy folder, either way:
+   - **Desktop app:** Run `./run-desktop.sh`, choose the printed copy folder, and start watching.
+   - **Command line:** Open a second terminal (Terminal 1 must stay open and waiting) and run `faultmesh spectate <the printed copy path>`.
+3. Go back to Terminal 1 and press Enter. The edits happen on the copy and events appear in the watcher.
+
+To edit by hand instead, open the same printed copy folder in VS Code (not the repository's `examples/vscode_playground`) while the watcher runs on it.
 
 ## Hand-off for Gemini
 

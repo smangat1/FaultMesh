@@ -222,15 +222,16 @@ real-project V3 acceptance are documented in
 
 ## Try it manually
 
-1. Start the live observer on the deterministic playground:
-   ```console
-   faultmesh spectate examples/vscode_playground
-   ```
-2. In a second terminal, prepare and run the scripted editor to simulate code edits against a throwaway copy:
-   ```console
-   python scripts/spectate_demo_editor.py
-   ```
-3. Or open `examples/vscode_playground` in VS Code to make edits by hand and watch FaultMesh update in real time.
+1. **Terminal 1:** Run `python scripts/spectate_demo_editor.py`. It prints a copy folder path and waits for Enter. Leave it waiting and do not press Enter yet.
+2. Watch that printed copy folder, either way:
+   - **Desktop app:** Run `./run-desktop.sh`, choose the printed copy folder, and start watching.
+   - **Command line:** Open a second terminal (Terminal 1 must stay open and waiting) and run `faultmesh spectate <the printed copy path>`.
+3. Go back to Terminal 1 and press Enter. The edits happen on the copy and events appear in the watcher.
+
+To edit by hand instead, open the same printed copy folder in VS Code (not the repository's `examples/vscode_playground`) while the watcher runs on it.
+
+> [!NOTE]
+> Today on `main`, live spectate streams stable fact records (`spectate-1.0`) such as file changes, diffs, and parse-error retention. Live map binding and code/diff view wiring are not completed until PR #8 lands.
 
 ## Safety
 
