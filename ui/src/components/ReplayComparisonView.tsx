@@ -13,6 +13,7 @@ import {
   Shield,
   Layers,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 
 interface ReplayComparisonViewProps {
   activeRun: RunSummary | null;
@@ -238,7 +239,7 @@ export const ReplayComparisonView: React.FC<ReplayComparisonViewProps> = ({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Clock size={12} />
-              <span>Duration: {parentDoc?.run.duration_ms ?? parentSummary?.durationMs ?? 0}ms</span>
+              <span>Duration: {formatDurationMs(parentDoc?.run.duration_ms ?? parentSummary?.durationMs ?? 0)}</span>
             </div>
             <div>
               <span>Tests: {parentDoc?.tests.length ?? parentSummary?.stats.totalTests ?? 'N/A'} total</span>
@@ -299,7 +300,7 @@ export const ReplayComparisonView: React.FC<ReplayComparisonViewProps> = ({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Clock size={12} />
-              <span>Duration: {replayDoc?.run.duration_ms ?? activeRun.durationMs}ms</span>
+              <span>Duration: {formatDurationMs(replayDoc?.run.duration_ms ?? activeRun.durationMs)}</span>
             </div>
             <div>
               <span>Tests: {replayDoc?.tests.length ?? 1} total (focused replay)</span>

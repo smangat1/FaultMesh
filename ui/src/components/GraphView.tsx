@@ -12,6 +12,7 @@ export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 interface GraphViewProps {
   graphData: GraphData;
   tests: TestItem[];
+  datasetKey?: string;
   selectedTestId: string | null;
   onSelectTest?: (testId: string | null) => void;
   selectedNodeId?: string | null;
@@ -148,6 +149,7 @@ export function computeDeterministicPositions(
 export const GraphView: React.FC<GraphViewProps> = ({
   graphData,
   tests,
+  datasetKey,
   selectedTestId,
   onSelectTest,
   selectedNodeId,
@@ -187,6 +189,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const prevDatasetKeyRef = useRef<string | undefined>(datasetKey);
+  const prevSelectedTestIdRef = useRef<string | null>(selectedTestId);
 
   const [currentViewMode, setCurrentViewMode] = useState<GraphViewMode>(propViewMode || 'structure');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1365,9 +1369,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
-    // Retain exact camera viewport
-    cy.viewport({ zoom: currentZoom, pan: currentPan });
-  }, [elements, onSelectNode, onSelectFile, onToggleCollapseFile]);
+    // Retain exact camera viewport on same-dataset mutations (collapse/expand, mode toggling),
+    // but fit the full graph with padding on dataset/run identity change.
+    if (datasetKey !== undefined && datasetKey !== prevDatasetKeyRef.current) {
+      prevDatasetKeyRef.current = datasetKey;
+      cy.fit(cy.elements(), 50);
+    } else {
+      cy.viewport({ zoom: currentZoom, pan: currentPan });
+    }
+  }, [elements, onSelectNode, onSelectFile, onToggleCollapseFile, datasetKey]);
 
   // Clean up Cytoscape on unmount
   useEffect(() => {
@@ -1660,6 +1670,90 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     );
   }, [agentActiveNodeId, isAgentMode, agentZoomTarget, isCameraTrackingPaused, isInspectorOpen, graphData.nodes]);
+
+  // Selection camera: gently center/zoom on failing test node and exercised symbols in context,
+  // keeping rest of project map present (dimmed), not removed.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || isAgentMode) {
+      prevSelectedTestIdRef.current = selectedTestId;
+      return;
+    }
+
+    if (selectedTestId) {
+      const active = tests.find((t) => t.id === selectedTestId);
+      const targetEles = cy.collection();
+      const testNode = cy.getElementById(selectedTestId);
+      if (testNode.length > 0) targetEles.merge(testNode);
+
+      if (active?.exercisedNodeIds) {
+        active.exercisedNodeIds.forEach((id) => {
+          const node = cy.getElementById(id);
+          if (node.length > 0) {
+            targetEles.merge(node);
+          } else {
+            const file = graphData.nodes.find((n) => n.id === id)?.file;
+            if (file) {
+              const fileCluster = cy.getElementById(`file:${file}`);
+              if (fileCluster.length > 0) targetEles.merge(fileCluster);
+            }
+          }
+        });
+      }
+
+      if (targetEles.length > 0) {
+        const bb = targetEles.boundingBox();
+        const containerW = containerRef.current?.clientWidth || 800;
+        const containerH = containerRef.current?.clientHeight || 600;
+        const padding = 120; // generous padding keeps surrounding dimmed project map visible
+        const w = Math.max(bb.w, 80);
+        const h = Math.max(bb.h, 80);
+        const fitZoom = Math.min((containerW - padding * 2) / w, (containerH - padding * 2) / h);
+        const targetZoom = Math.max(0.45, Math.min(1.35, fitZoom));
+
+        const centerX = bb.x1 + bb.w / 2;
+        const centerY = bb.y1 + bb.h / 2;
+        const visibleCenterX = containerW / 2;
+        const visibleCenterY = containerH / 2;
+        const targetPanX = visibleCenterX - centerX * targetZoom;
+        const targetPanY = visibleCenterY - centerY * targetZoom;
+
+        const prefersReducedMotion =
+          typeof window !== 'undefined' &&
+          window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+        cy.stop();
+        cy.animate(
+          {
+            pan: { x: targetPanX, y: targetPanY },
+            zoom: targetZoom,
+          },
+          {
+            duration: prefersReducedMotion ? 0 : 350,
+            easing: 'ease-in-out-cubic',
+          }
+        );
+      }
+    } else if (prevSelectedTestIdRef.current && !selectedTestId) {
+      // Gentle fit when clearing test selection
+      const prefersReducedMotion =
+        typeof window !== 'undefined' &&
+        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+      cy.stop();
+      cy.animate(
+        {
+          fit: { eles: cy.elements(), padding: 50 },
+        },
+        {
+          duration: prefersReducedMotion ? 0 : 300,
+          easing: 'ease-in-out-cubic',
+        }
+      );
+    }
+
+    prevSelectedTestIdRef.current = selectedTestId;
+  }, [selectedTestId, tests, isAgentMode, graphData.nodes]);
 
   // Detect manual user pan/zoom during agent mode to pause camera tracking
   useEffect(() => {

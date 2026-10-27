@@ -97,7 +97,7 @@ export class ImportedAdapter implements FaultMeshAdapter {
         gitRevision: this.v3.envelope.head_sha || 'uncommitted',
         gitBranch: this.v3.envelope.head_is_worktree ? 'worktree' : 'HEAD',
         commitMessage: this.v3.envelope.dirty ? 'Worktree (dirty modifications)' : 'Static structure scan',
-        status: 'completed',
+        status: 'empty',
         startedAt: new Date().toISOString(),
         durationMs: 0,
         isFixture: false,
@@ -156,7 +156,8 @@ export class ImportedAdapter implements FaultMeshAdapter {
         (v2.run.exit_code !== null &&
           v2.run.exit_code !== undefined &&
           v2.run.exit_code !== 0 &&
-          v2.tests.length === 0);
+          v2.tests.length === 0) ||
+        v2.run.termination === 'TIMEOUT';
       const harnessError =
         v2.run.error ||
         (harnessFailed
@@ -175,9 +176,9 @@ export class ImportedAdapter implements FaultMeshAdapter {
           'uncommitted',
         gitBranch: this.v3.envelope.head_is_worktree ? 'worktree' : 'HEAD',
         commitMessage: commitMsg,
-        status: failed > 0 || errored > 0 || harnessFailed ? 'failed' : 'completed',
+        status: harnessFailed ? 'failed' : (v2.tests.length === 0 ? 'empty' : 'completed'),
         startedAt: v2.run.started_at || new Date().toISOString(),
-        durationMs: v2.run.duration_ms || 0,
+        durationMs: v2.run.duration_ms !== undefined ? Number(v2.run.duration_ms.toFixed(1)) : 0,
         isFixture: false,
         fixtureLabel: label,
         isRealImport: true,
@@ -255,7 +256,7 @@ export class ImportedAdapter implements FaultMeshAdapter {
       const phases = (testCase.phases || []).map((p: any) => ({
         phase: p.phase,
         outcome: p.outcome,
-        durationMs: p.duration_ms,
+        durationMs: p.duration_ms !== undefined ? Number(p.duration_ms.toFixed(1)) : 0,
         failureText: p.failure_text,
       }));
 
@@ -264,7 +265,7 @@ export class ImportedAdapter implements FaultMeshAdapter {
         name: testCase.node_id.split('::').slice(1).join('::') || testCase.node_id,
         file: testCase.node_id.split('::')[0] || '',
         status,
-        durationMs: testCase.duration_ms || 0,
+        durationMs: testCase.duration_ms !== undefined ? Number(testCase.duration_ms.toFixed(1)) : 0,
         failureMessage: testCase.failure_text || undefined,
         traceback: testCase.failure_text || undefined,
         failureFingerprint: testCase.failure_fingerprint,

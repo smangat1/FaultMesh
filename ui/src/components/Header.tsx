@@ -9,6 +9,7 @@ import {
   FolderOpen,
   RotateCcw,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 
 interface HeaderProps {
   runs?: RunSummary[];
@@ -165,6 +166,11 @@ export const Header: React.FC<HeaderProps> = ({
                 border: '1px solid rgba(56, 189, 248, 0.25)',
                 padding: '2px 7px',
                 borderRadius: 'var(--radius-sm)',
+                maxWidth: '200px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flexShrink: 1,
               }}
               title={`V3 static structure export: ${activeRun.contentSha256 || activeRun.id}`}
             >
@@ -177,7 +183,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Multiple Runs Switcher */}
           {runs.length > 1 && onSelectRun && activeRun && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
               <select
                 value={activeRun.id}
                 onChange={(e) => onSelectRun(e.target.value)}
@@ -191,6 +197,11 @@ export const Header: React.FC<HeaderProps> = ({
                   padding: '2px 6px',
                   cursor: 'pointer',
                   outline: 'none',
+                  maxWidth: '140px',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  flexShrink: 1,
                 }}
                 aria-label="Switch active test run"
                 title="Switch active test run evidence"
@@ -204,44 +215,54 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Outcome Summary Pill: Never show green COMPLETED when tests failed! */}
-          {activeRun && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              {activeRun.status === 'failed' ? (
-                <span
-                  className="badge-status error"
-                  title="Run harness aborted during collection"
-                >
-                  HARNESS FAILED
-                </span>
-              ) : activeRun.status === 'empty' ? (
-                <span className="badge-status empty">
-                  EMPTY SCAN
-                </span>
-              ) : totalProblemTests > 0 ? (
-                <span
-                  className="badge-status fail"
-                  title={`${failedTestCount} failed, ${errorCount} error`}
-                >
-                  {failedTestCount > 0 ? `${failedTestCount} FAILED` : ''}
-                  {failedTestCount > 0 && errorCount > 0 ? ' · ' : ''}
-                  {errorCount > 0 ? `${errorCount} ERROR` : ''}
-                </span>
-              ) : (
-                <span className="badge-status pass">ALL PASSED</span>
-              )}
+          {/* Outcome Summary Pill: Never show green ALL PASSED when no tests ran or tests failed! */}
+          {activeRun && (() => {
+            const isHarnessFailed =
+              activeRun.harnessStatus === 'COLLECTION_ERROR' ||
+              Boolean(activeRun.harnessError && (activeRun.stats.totalTests === 0 || totalProblemTests === 0)) ||
+              (activeRun.status === 'failed' && (activeRun.stats.totalTests === 0 || totalProblemTests === 0));
 
-              <span
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--text-muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {activeRun.durationMs}ms
-              </span>
-            </div>
-          )}
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                {isHarnessFailed ? (
+                  <span
+                    className="badge-status error"
+                    title={activeRun.errorMessage || "Run harness aborted during collection"}
+                  >
+                    HARNESS FAILED
+                  </span>
+                ) : activeRun.stats.totalTests === 0 ? (
+                  <span
+                    className="badge-status empty"
+                    title={activeRun.isRealImport ? "Static structure export (no test runs imported)" : "No tests discovered in run"}
+                  >
+                    {activeRun.isRealImport ? 'STRUCTURE ONLY' : 'EMPTY SCAN'}
+                  </span>
+                ) : totalProblemTests > 0 ? (
+                  <span
+                    className="badge-status fail"
+                    title={`${failedTestCount} failed, ${errorCount} error`}
+                  >
+                    {failedTestCount > 0 ? `${failedTestCount} FAILED` : ''}
+                    {failedTestCount > 0 && errorCount > 0 ? ' · ' : ''}
+                    {errorCount > 0 ? `${errorCount} ERROR` : ''}
+                  </span>
+                ) : (
+                  <span className="badge-status pass">ALL PASSED</span>
+                )}
+
+                <span
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  {formatDurationMs(activeRun.durationMs)}
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Right: Workspace Views & Open JSON action */}

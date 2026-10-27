@@ -27,6 +27,7 @@ import {
   ArrowRightLeft,
   AlertTriangle,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 import type { AgentPhase, PhaseEvidenceItem } from '../agent/agentSimulation';
 import {
   AGENT_EXPLANATION,
@@ -1079,7 +1080,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                             </span>
                           </div>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                            {t.durationMs}ms
+                            {formatDurationMs(t.durationMs)}
                           </span>
                         </button>
                       );
@@ -1128,7 +1129,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     gap: '4px',
                   }}
                 >
-                  <Clock size={11} /> {selectedTest.durationMs}ms
+                  <Clock size={11} /> {formatDurationMs(selectedTest.durationMs)}
                 </span>
               </div>
 
@@ -1348,7 +1349,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                           {p.outcome.toUpperCase()}
                         </span>
                         <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                          {p.durationMs}ms
+                          {formatDurationMs(p.durationMs)}
                         </span>
                       </div>
                     </div>
@@ -1398,7 +1399,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     >
                       <span>Trial #{r.rerunIndex}: {r.status.toUpperCase()}</span>
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                        {r.failureFingerprint || `${r.durationMs}ms`}
+                        {r.failureFingerprint || formatDurationMs(r.durationMs)}
                       </span>
                     </div>
                   ))}

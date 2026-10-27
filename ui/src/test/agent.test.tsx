@@ -40,12 +40,12 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
     const authRadio = await screen.findByRole('radio', { name: /auth-service/i });
     expect(authRadio).toBeDefined();
 
-    // Check run project button
-    const runBtn = screen.getByRole('button', { name: /run auth-service/i });
-    expect(runBtn).toBeDefined();
+    // Check load recorded sample run button
+    const loadBtn = screen.getByRole('button', { name: /load recorded sample run/i });
+    expect(loadBtn).toBeDefined();
 
-    fireEvent.click(runBtn);
-    expect(screen.getAllByText(/Running pytest/i).length).toBeGreaterThan(0);
+    fireEvent.click(loadBtn);
+    expect(screen.getAllByText(/Loaded recorded sample run/i).length).toBeGreaterThan(0);
   });
 
   it('allows launching agent auto-repair and inspects active remediation files and real explanation', async () => {

@@ -14,6 +14,7 @@ import {
   X,
   AlertTriangle,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 
 export interface SidebarProps {
   tests: TestItem[];
@@ -443,7 +444,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           flexShrink: 0,
                         }}
                       >
-                        {test.durationMs}ms
+                        {formatDurationMs(test.durationMs)}
                       </span>
                     </button>
                   );

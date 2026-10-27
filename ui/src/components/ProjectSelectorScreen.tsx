@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { RunSummary, TestItem } from '../types';
+import { formatDurationMs } from '../utils/format';
 import {
   Compass,
   GitBranch,
@@ -15,7 +16,6 @@ import {
   Bot,
   FolderGit2,
   Play,
-  Loader2,
   Check,
   FolderOpen,
 } from 'lucide-react';
@@ -67,7 +67,14 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
     return activeRun?.project || availableProjects[0] || 'auth-service';
   });
 
-  const [isExecutingRun, setIsExecutingRun] = useState(false);
+  useEffect(() => {
+    if (activeRun?.project && availableProjects.includes(activeRun.project)) {
+      setSelectedProject(activeRun.project);
+    } else if (availableProjects.length > 0 && !availableProjects.includes(selectedProject)) {
+      setSelectedProject(availableProjects[0]);
+    }
+  }, [activeRun?.project, availableProjects, selectedProject]);
+
   const [executionMessage, setExecutionMessage] = useState<string | null>(null);
 
   const handleSelectProject = (project: string) => {
@@ -78,22 +85,17 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
     }
   };
 
-  const handleRunProject = () => {
-    setIsExecutingRun(true);
-    setExecutionMessage(`Running pytest on ${selectedProject}...`);
-    setTimeout(() => {
-      setIsExecutingRun(false);
-      const matchingRun = runs.find((r) => r.project === selectedProject);
-      if (matchingRun) {
-        onSelectRun(matchingRun.id);
-        setExecutionMessage(
-          `✓ Pytest run complete for ${selectedProject} (${matchingRun.stats.totalTests} tests, ${matchingRun.stats.failed} failed)`
-        );
-      } else {
-        setExecutionMessage(`✓ Test scan complete for ${selectedProject}`);
-      }
-      setTimeout(() => setExecutionMessage(null), 4000);
-    }, 600);
+  const handleLoadSampleRun = () => {
+    const matchingRun = runs.find((r) => r.project === selectedProject);
+    if (matchingRun) {
+      onSelectRun(matchingRun.id);
+      setExecutionMessage(
+        `✓ Loaded recorded sample run for ${selectedProject} (${matchingRun.stats.totalTests} tests, ${matchingRun.stats.failed} failed)`
+      );
+    } else {
+      setExecutionMessage(`✓ Loaded recorded sample run for ${selectedProject}`);
+    }
+    setTimeout(() => setExecutionMessage(null), 4000);
   };
 
   return (
@@ -360,7 +362,8 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
               >
                 {availableProjects.map((proj) => {
                   const isSelected = selectedProject === proj;
-                  const isDemo = proj === 'auth-service';
+                  const matchingRun = runs.find((r) => r.project === proj);
+                  const isFixture = matchingRun ? Boolean(matchingRun.isFixture) : false;
                   return (
                     <button
                       key={proj}
@@ -380,7 +383,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                       role="radio"
                       aria-checked={isSelected}
                     >
-                      {proj} {isDemo ? '(Sample Demo)' : '(Imported)'}
+                      {proj} {isFixture ? '(Sample Demo)' : '(Imported)'}
                     </button>
                   );
                 })}
@@ -437,8 +440,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                 </button>
               ) : (
                 <button
-                  onClick={handleRunProject}
-                  disabled={isExecutingRun}
+                  onClick={handleLoadSampleRun}
                   className="btn-primary"
                   style={{
                     display: 'inline-flex',
@@ -451,24 +453,14 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                     borderColor: '#059669',
                     color: '#ffffff',
                     borderRadius: 'var(--radius-sm)',
-                    cursor: isExecutingRun ? 'not-allowed' : 'pointer',
-                    opacity: isExecutingRun ? 0.75 : 1,
+                    cursor: 'pointer',
                     boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
                   }}
-                  title={`Run pytest test suite on ${selectedProject}`}
-                  aria-label={`Run ${selectedProject}`}
+                  title={`Load recorded sample run for ${selectedProject}`}
+                  aria-label={`Load recorded sample run for ${selectedProject}`}
                 >
-                  {isExecutingRun ? (
-                    <>
-                      <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                      <span>Running pytest...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play size={12} fill="currentColor" />
-                      <span>Run {selectedProject}</span>
-                    </>
-                  )}
+                  <Play size={12} fill="currentColor" />
+                  <span>Load Recorded Sample Run</span>
                 </button>
               )}
             </div>
@@ -673,7 +665,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Clock size={11} />
-                        <span>{r.durationMs}ms</span>
+                        <span>{formatDurationMs(r.durationMs)}</span>
                       </div>
                     </div>
                   </div>
@@ -828,7 +820,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                             </span>
                           </div>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)', flexShrink: 0 }}>
-                            {test.durationMs}ms
+                            {formatDurationMs(test.durationMs)}
                           </span>
                         </button>
                       );

@@ -8,6 +8,7 @@ import { GraphView, computeDeterministicPositions } from '../components/GraphVie
 import type { FaultMeshAdapter } from '../adapter';
 import { ImportedAdapter } from '../adapter/importedAdapter';
 import { parseAndValidateV3, parseAndValidateV2 } from '../import';
+import { formatDurationMs } from '../utils/format';
 import type { RunSummary, TestItem, GraphData, CodeNode } from '../types';
 import { FIXTURE_RUNS, FIXTURE_TESTS, FIXTURE_GRAPH } from '../fixtures';
 
@@ -767,5 +768,73 @@ describe('Phase 4 Regression: Empty/Error States, Demo Gating & Verification', (
     await waitFor(() => {
       expect(screen.getByText(/auth-service \(Sample Demo\)/i)).toBeDefined();
     });
+  });
+
+  it('displays "1 FAILED" badge and not "HARNESS FAILED" when imported run executed tests and some failed', async () => {
+    const v2HpackParentJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-parent.json'), 'utf-8');
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const v2Val = parseAndValidateV2(v2HpackParentJson);
+    const adapter = new ImportedAdapter(v3Val.data!, [v2Val.data!]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 FAILED/i)).toBeDefined();
+    });
+    expect(screen.queryByText(/HARNESS FAILED/i)).toBeNull();
+  });
+
+  it('displays "STRUCTURE ONLY" badge and not "ALL PASSED" for structure-only imports', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const adapter = new ImportedAdapter(v3Val.data!);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/STRUCTURE ONLY/i)).toBeDefined();
+    });
+    expect(screen.queryByText(/ALL PASSED/i)).toBeNull();
+  });
+
+  it('derives project selector provenance labels from isFixture and isRealImport accurately', async () => {
+    // Custom runs list where an imported project is called 'auth-service' and fixture is called 'empty-repo'
+    const importedAuthRun: RunSummary = {
+      ...FIXTURE_RUNS[0],
+      id: 'real-imported-auth',
+      project: 'auth-service',
+      isFixture: false,
+      isRealImport: true,
+      fixtureLabel: '',
+    };
+    const fixtureOtherRun: RunSummary = {
+      ...FIXTURE_RUNS[1],
+      id: 'fixture-other',
+      project: 'empty-repo',
+      isFixture: true,
+      isRealImport: false,
+    };
+
+    const mockAdapter: FaultMeshAdapter = {
+      getRuns: vi.fn().mockResolvedValue([importedAuthRun, fixtureOtherRun]),
+      getRun: vi.fn().mockResolvedValue(importedAuthRun),
+      getTests: vi.fn().mockResolvedValue([]),
+      getTest: vi.fn().mockResolvedValue(null),
+      getGraph: vi.fn().mockResolvedValue({ nodes: [], edges: [], unresolvedReferences: [], parseErrors: [] }),
+      getTestEvidence: vi.fn().mockResolvedValue(null),
+      getSource: vi.fn().mockResolvedValue(null),
+    };
+
+    render(<App adapter={mockAdapter} initialScreen="selector" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/auth-service \(Imported\)/i)).toBeDefined();
+      expect(screen.getByText(/empty-repo \(Sample Demo\)/i)).toBeDefined();
+    });
+  });
+
+  it('formats test and run durations consistently with formatDurationMs', () => {
+    expect(formatDurationMs(2.207335)).toBe('2.2ms');
+    expect(formatDurationMs(0)).toBe('0ms');
+    expect(formatDurationMs(420)).toBe('420ms');
+    expect(formatDurationMs(undefined)).toBe('0ms');
+    expect(formatDurationMs(null)).toBe('0ms');
   });
 });
