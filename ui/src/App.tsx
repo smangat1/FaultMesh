@@ -136,7 +136,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
         setIsLoadingRunData(false);
       }
     }
-  }, [adapter]);
+  }, [activeAdapter]);
 
   useEffect(() => {
     if (!activeRunId) {
@@ -337,6 +337,16 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     }
   };
 
+  const handleResetToSampleDemo = useCallback(() => {
+    setActiveAdapter(new FixtureAdapter(0));
+    setImportError(null);
+    setSelectedTestId(null);
+    setSelectedNodeId(null);
+    setSelectedFile(null);
+    setPinnedSymbols([]);
+    setIsAgentActive(false);
+  }, []);
+
   const handleCloseInspector = () => {
     setSelectedNodeId(null);
     setSelectedFile(null);
@@ -529,6 +539,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
           onSelectRun={(runId) => {
             setActiveRunId(runId);
           }}
+          onResetToSample={handleResetToSampleDemo}
           onOpenWorkspace={(testId, startAgent) => {
             if (testId) {
               setSelectedTestId(testId);
@@ -640,6 +651,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   selectedNodeId={selectedNodeId}
                   onSelectNode={handleSelectNode}
                   viewMode={viewMode}
+                  isRealImport={activeRun?.isRealImport}
+                  harnessError={activeRun?.harnessError}
                 />
 
                 {/* 2. Center: Dominant Whole-Project Map */}
@@ -671,6 +684,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     onSelectViewMode={handleSelectViewMode}
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
+                    isRealImport={activeRun?.isRealImport}
                     isAgentMode={activeRun?.isRealImport ? false : isAgentActive}
                     onToggleAgentMode={
                       activeRun?.isRealImport
@@ -731,12 +745,12 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   onPinSymbol={handlePinSymbol}
                   onUnpinSymbol={handleUnpinSymbol}
                   onClose={handleCloseInspector}
-                  isAgentActive={isAgentActive}
+                  isAgentActive={activeRun?.isRealImport ? false : isAgentActive}
                   agentPhase={currentAgentStep?.phase}
                   agentPhaseEvidence={currentAgentStep?.phaseEvidence}
                   agentPatchedSnippet={currentAgentStep?.patchedSnippet}
                   agentPatchedDiff={currentAgentStep?.patchedDiff}
-                  onReplayInvestigation={startAgentSimulation}
+                  onReplayInvestigation={activeRun?.isRealImport ? undefined : startAgentSimulation}
                 />
               </div>
             )}

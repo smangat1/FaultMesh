@@ -31,6 +31,7 @@ interface ProjectSelectorScreenProps {
   error?: string | null;
   onRetry?: () => void;
   onOpenFiles?: (files: FileList | File[]) => void;
+  onResetToSample?: () => void;
 }
 
 export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
@@ -44,6 +45,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
   error = null,
   onRetry,
   onOpenFiles,
+  onResetToSample,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const failedTests = tests.filter((t) => t.status === 'fail');
@@ -382,6 +384,29 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                     </button>
                   );
                 })}
+                {activeRun?.isRealImport && onResetToSample && (
+                  <button
+                    onClick={onResetToSample}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 500,
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-secondary)',
+                      border: '1px dashed rgba(255, 255, 255, 0.15)',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    role="radio"
+                    aria-checked={false}
+                    title="Switch back to interactive sample demo project"
+                    aria-label="Switch to Sample Project Demo"
+                  >
+                    Sample Project (Demo)
+                  </button>
+                )}
               </div>
             </div>
 

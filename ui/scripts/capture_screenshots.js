@@ -268,6 +268,147 @@ async function main() {
 
     // Also update 08_agent_live_simulation overview
     await captureState(page, `08_agent_live_simulation_${res.name}.png`, res.width, res.height);
+
+    // === Real Data Scenarios (V3 Static Structure & V2 Test Evidence) ===
+    console.log(`Capturing Real Data Scenarios for ${res.name}...`);
+
+    // Reset to Selector
+    await page.evaluate(() => {
+      const backBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.includes('Projects')
+      );
+      if (backBtn) backBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Scenario 9: Load real hpack V3 structure + V2 runs
+    const V3_HPACK = path.resolve(__dirname, '../../docs/fixtures/v3-hpack-structure.json');
+    const V2_PARENT = path.resolve(__dirname, '../../docs/fixtures/v2-run-evidence-hpack-parent.json');
+    const V2_REPLAY = path.resolve(__dirname, '../../docs/fixtures/v2-run-evidence-hpack-replay.json');
+
+    const fileInput = await page.$('input[aria-label="Open Real Project JSON file input"]');
+    if (fileInput) {
+      await fileInput.uploadFile(V3_HPACK, V2_PARENT, V2_REPLAY);
+      await new Promise((r) => setTimeout(r, 800));
+    }
+
+    // Fit to view
+    await page.evaluate(() => {
+      const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
+      if (fitBtn) fitBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    // Scenario 9: Real V3 whole-project map
+    await captureState(page, `09_v3_hpack_whole_project_map_${res.name}.png`, res.width, res.height);
+
+    // Scenario 10: Cluster expanded with static and ambiguous edges and git badges
+    await page.evaluate(() => {
+      const expandBtn =
+        document.querySelector('button[aria-label*="Expand hpack/hpack.py"]') ||
+        document.querySelector('button[aria-label*="Expand hpack/table.py"]');
+      if (expandBtn) expandBtn.click();
+      const zoomBtn = document.querySelector('button[aria-label="Zoom in"]');
+      if (zoomBtn) {
+        zoomBtn.click();
+        zoomBtn.click();
+      }
+    });
+    await new Promise((r) => setTimeout(r, 600));
+    await captureState(page, `10_v3_hpack_cluster_expanded_${res.name}.png`, res.width, res.height);
+
+    // Scenario 11: V2 test selected highlighting executed symbols with no call arrows
+    await page.evaluate(() => {
+      const fitBtn = document.querySelector('button[aria-label="Fit to view"]');
+      if (fitBtn) fitBtn.click();
+
+      // Click failing test in sidebar
+      const testBtns = Array.from(
+        document.querySelectorAll('button[aria-label*="test_faultmesh_injected_wrong_integer_encoding"]')
+      );
+      if (testBtns.length > 0) testBtns[0].click();
+    });
+    await new Promise((r) => setTimeout(r, 700));
+    await captureState(page, `11_v2_test_selected_no_call_arrows_${res.name}.png`, res.width, res.height);
+
+    // Scenario 12: Stale overlay notice (test source_revision != V3 head_sha)
+    const STALE_V2_PATH = path.resolve(__dirname, 'temp_v2_stale.json');
+    const v2Data = JSON.parse(fs.readFileSync(V2_PARENT, 'utf-8'));
+    v2Data.source_snapshot = { ...v2Data.source_snapshot, revision: 'deadbeef1234' };
+    if (v2Data.run.target) {
+      v2Data.run.target = { ...v2Data.run.target, revision: 'deadbeef1234' };
+    }
+    v2Data.run.id = 'run-stale-rev';
+    fs.writeFileSync(STALE_V2_PATH, JSON.stringify(v2Data, null, 2));
+
+    const headerFileInput = await page.$('input[aria-label="Open local structure and run JSON exports"]');
+    if (headerFileInput) {
+      await headerFileInput.uploadFile(STALE_V2_PATH);
+      await new Promise((r) => setTimeout(r, 800));
+    }
+
+    // Select the test in the stale run to view the warning banner
+    await page.evaluate(() => {
+      const testBtns = Array.from(
+        document.querySelectorAll('button[aria-label*="test_faultmesh_injected_wrong_integer_encoding"]')
+      );
+      if (testBtns.length > 0) testBtns[0].click();
+    });
+    await new Promise((r) => setTimeout(r, 600));
+    await captureState(page, `12_v2_stale_overlay_notice_${res.name}.png`, res.width, res.height);
+
+    // Clean up temp file
+    if (fs.existsSync(STALE_V2_PATH)) {
+      fs.unlinkSync(STALE_V2_PATH);
+    }
+
+    // Scenario 13: Import error with previous data kept
+    const MALFORMED_PATH = path.resolve(__dirname, 'temp_malformed.json');
+    fs.writeFileSync(MALFORMED_PATH, '{ "invalid_json": true,');
+
+    const headerFileInputError = await page.$('input[aria-label="Open local structure and run JSON exports"]');
+    if (headerFileInputError) {
+      await headerFileInputError.uploadFile(MALFORMED_PATH);
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    await captureState(page, `13_import_error_previous_data_kept_${res.name}.png`, res.width, res.height);
+
+    if (fs.existsSync(MALFORMED_PATH)) {
+      fs.unlinkSync(MALFORMED_PATH);
+    }
+
+    // Dismiss error banner
+    await page.evaluate(() => {
+      const dismissBtn = document.querySelector('button[aria-label="Dismiss error"]');
+      if (dismissBtn) dismissBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 300));
+
+    // Scenario 14: Demo mode still labeled sample
+    // Click Projects button to return to selector
+    await page.evaluate(() => {
+      const backBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.includes('Projects')
+      );
+      if (backBtn) backBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Switch to Sample Project Demo
+    await page.evaluate(() => {
+      const sampleBtn = document.querySelector('button[aria-label="Switch to Sample Project Demo"]');
+      if (sampleBtn) sampleBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 400));
+
+    // Open sample project workspace
+    await page.evaluate(() => {
+      const openBtn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent && b.textContent.includes('Open Project Map')
+      );
+      if (openBtn) openBtn.click();
+    });
+    await new Promise((r) => setTimeout(r, 600));
+    await captureState(page, `14_demo_mode_labeled_sample_${res.name}.png`, res.width, res.height);
   }
 
   await browser.close();

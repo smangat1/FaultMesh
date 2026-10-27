@@ -49,6 +49,7 @@ interface GraphViewProps {
   currentAgentStep?: AgentSimulationStep | null;
   isExplanationExpanded?: boolean;
   onToggleExplanationExpand?: () => void;
+  isRealImport?: boolean;
 }
 
 interface HoverTagInfo {
@@ -182,6 +183,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   currentAgentStep,
   isExplanationExpanded: propExplanationExpanded,
   onToggleExplanationExpand,
+  isRealImport = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
@@ -1839,11 +1841,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
           backgroundColor: '#101114',
         }}
       >
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-          No Project Map Available
-        </div>
-        <div style={{ fontSize: '12px', maxWidth: '420px', lineHeight: '1.5' }}>
-          No graph nodes or source files are recorded for this run.
+        <div
+          style={{
+            padding: '16px 24px',
+            backgroundColor: '#111722',
+            border: '1px solid #1e293b',
+            borderRadius: '6px',
+            color: '#94a3b8',
+            fontSize: '13px',
+            textAlign: 'center',
+            maxWidth: '440px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+          }}
+        >
+          {isRealImport
+            ? 'Structure file contains no symbols. The project may be empty or filtered out.'
+            : 'No graph nodes or source files are recorded for this run.'}
         </div>
       </div>
     );
@@ -1996,31 +2009,54 @@ export const GraphView: React.FC<GraphViewProps> = ({
             </button>
           </div>
 
-          {/* Autonomous Agent Simulation Toggle */}
-          {onToggleAgentMode && (
-            <button
-              onClick={onToggleAgentMode}
-              className={isAgentMode ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+          {/* Autonomous Agent Simulation Toggle or Gated Notice */}
+          {isRealImport ? (
+            <span
               style={{
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: '1px dashed #334155',
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '4px',
-                fontSize: '11px',
-                fontWeight: 600,
-                padding: '2px 8px',
-                cursor: 'pointer',
-                backgroundColor: isAgentMode ? 'rgba(56, 189, 248, 0.2)' : undefined,
-                color: isAgentMode ? '#38bdf8' : undefined,
-                border: isAgentMode ? '1px solid rgba(56, 189, 248, 0.4)' : undefined,
-                flexShrink: 0,
+                cursor: 'not-allowed',
                 whiteSpace: 'nowrap',
               }}
-              title="Simulate autonomous agent actively repairing code defects"
-              aria-label="Agent Auto-Repair"
+              title="Autonomous agent repair is a sample demo feature and is not available on real imports"
+              aria-label="Agent Auto-Repair disabled on real imports"
             >
-              <Bot size={12} style={{ color: isAgentMode ? '#38bdf8' : 'var(--text-secondary)' }} />
-              <span>{isAgentMode ? 'Agent Active' : 'Agent Auto-Repair'}</span>
-            </button>
+              <Bot size={12} style={{ color: 'var(--text-muted)' }} />
+              <span>Agent Auto-Repair (Sample demo feature - not available on real imports)</span>
+            </span>
+          ) : (
+            onToggleAgentMode && (
+              <button
+                onClick={onToggleAgentMode}
+                className={isAgentMode ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  cursor: 'pointer',
+                  backgroundColor: isAgentMode ? 'rgba(56, 189, 248, 0.2)' : undefined,
+                  color: isAgentMode ? '#38bdf8' : undefined,
+                  border: isAgentMode ? '1px solid rgba(56, 189, 248, 0.4)' : undefined,
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}
+                title="Simulate autonomous agent actively repairing code defects"
+                aria-label="Agent Auto-Repair"
+              >
+                <Bot size={12} style={{ color: isAgentMode ? '#38bdf8' : 'var(--text-secondary)' }} />
+                <span>{isAgentMode ? 'Agent Active' : 'Agent Auto-Repair'}</span>
+              </button>
+            )
           )}
         </div>
 

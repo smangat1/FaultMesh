@@ -665,3 +665,107 @@ describe('Phase 2 Regression: Real V3 Import, Strict Separation & Responsive Lay
     });
   });
 });
+
+describe('Phase 4 Regression: Empty/Error States, Demo Gating & Verification', () => {
+  const FIXTURES_DIR = path.resolve(__dirname, '../../../docs/fixtures');
+  const v3HpackJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v3-hpack-structure.json'), 'utf-8');
+
+  it('renders honest empty test state when real import has zero test runs', async () => {
+    const val = parseAndValidateV3(v3HpackJson);
+    const adapter = new ImportedAdapter(val.data!);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/No test runs imported - drop a V2 run JSON to view dynamic coverage and failures/i)
+      ).toBeDefined();
+    });
+
+    // Graph remains interactive and whole project map is visible
+    expect(screen.getByText(/Whole Project Map/i)).toBeDefined();
+  });
+
+  it('renders quiet centered notice when imported V3 structure contains zero symbols', async () => {
+    const emptyV3 = {
+      ...JSON.parse(v3HpackJson),
+      files: [],
+      symbols: [],
+      edges: [],
+    };
+    const adapter = new ImportedAdapter(emptyV3 as any);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/hpack-repo/i).length).toBeGreaterThan(0);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Structure file contains no symbols. The project may be empty or filtered out./i)
+      ).toBeDefined();
+    });
+  });
+
+  it('renders honest harness collection failure state when V2 run has collection error', async () => {
+    const v3Res = parseAndValidateV3(v3HpackJson);
+    const brokenV2: any = {
+      schema_version: '2.0',
+      run: {
+        id: 'run-collection-fail',
+        config_version: '2.0',
+        outcome: 'COLLECTION_ERROR',
+        exit_code: 2,
+        started_at: '2026-10-26T12:00:00Z',
+        finished_at: '2026-10-26T12:00:01Z',
+        duration_ms: 1000,
+        error: "ModuleNotFoundError: No module named 'nonexistent_lib' during collection in test_foo.py",
+        artifacts: { directory: '/tmp', run_record: 'r.json', config: 'c.json' },
+      },
+      tests: [],
+    };
+
+    const adapter = new ImportedAdapter(v3Res.data!, [brokenV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Test harness failed during collection/i)).toBeDefined();
+      expect(
+        screen.getByText(/ModuleNotFoundError: No module named 'nonexistent_lib'/i)
+      ).toBeDefined();
+    });
+  });
+
+  it('gates agent dock, thought stream, and simulation on real imports with disabled notice', async () => {
+    const val = parseAndValidateV3(v3HpackJson);
+    const adapter = new ImportedAdapter(val.data!);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Agent Auto-Repair \(Sample demo feature - not available on real imports\)/i)
+      ).toBeDefined();
+    });
+
+    // Replay bar, play/pause controls, and explanation card are strictly not in the DOM
+    expect(screen.queryByLabelText(/play investigation/i)).toBeNull();
+    expect(screen.queryByText(/Why this step\?/i)).toBeNull();
+  });
+
+  it('maintains sample demo accessibility via project selector screen and restores demo mode', async () => {
+    const val = parseAndValidateV3(v3HpackJson);
+    const adapter = new ImportedAdapter(val.data!);
+    render(<App adapter={adapter} initialScreen="selector" />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/hpack-repo/i).length).toBeGreaterThan(0);
+      expect(screen.getByLabelText(/Switch to Sample Project Demo/i)).toBeDefined();
+    });
+
+    // Click to switch back to Sample Demo
+    fireEvent.click(screen.getByLabelText(/Switch to Sample Project Demo/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/auth-service \(Sample Demo\)/i)).toBeDefined();
+    });
+  });
+});

@@ -151,6 +151,20 @@ export class ImportedAdapter implements FaultMeshAdapter {
         ? `Replay comparison (${v2.run.replay?.comparison || 'SAME_FAILURE'})`
         : (this.v3.envelope.dirty ? 'Worktree (dirty modifications)' : 'Recorded test evidence');
 
+      const harnessFailed =
+        v2.run.outcome === 'COLLECTION_ERROR' ||
+        (v2.run.exit_code !== null &&
+          v2.run.exit_code !== undefined &&
+          v2.run.exit_code !== 0 &&
+          v2.tests.length === 0);
+      const harnessError =
+        v2.run.error ||
+        (harnessFailed
+          ? v2.run.termination === 'TIMEOUT'
+            ? 'Test execution timed out.'
+            : `Harness collection error (exit code ${v2.run.exit_code ?? 1})`
+          : undefined);
+
       summaries.push({
         id: v2.run.id,
         project: this.v3.envelope.project_name,
@@ -161,13 +175,17 @@ export class ImportedAdapter implements FaultMeshAdapter {
           'uncommitted',
         gitBranch: this.v3.envelope.head_is_worktree ? 'worktree' : 'HEAD',
         commitMessage: commitMsg,
-        status: failed > 0 || errored > 0 ? 'failed' : 'completed',
+        status: failed > 0 || errored > 0 || harnessFailed ? 'failed' : 'completed',
         startedAt: v2.run.started_at || new Date().toISOString(),
         durationMs: v2.run.duration_ms || 0,
         isFixture: false,
         fixtureLabel: label,
         isRealImport: true,
         replayProvenance: v2.run.replay || undefined,
+        harnessStatus: v2.run.outcome,
+        exitCode: v2.run.exit_code,
+        harnessError,
+        errorMessage: harnessError || undefined,
         envelopeHeadSha: this.v3.envelope.head_sha,
         envelopeBaseSha: this.v3.envelope.base_sha,
         isWorktree: this.v3.envelope.head_is_worktree,

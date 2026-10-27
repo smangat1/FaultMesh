@@ -193,6 +193,9 @@ export interface RunSummary {
   externalModuleCount?: number;
   v2RunCount?: number;
   replayProvenance?: V2ReplayProvenance;
+  harnessStatus?: string;
+  exitCode?: number | null;
+  harnessError?: string | null;
 }
 
 export interface TestEvidence {
