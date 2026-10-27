@@ -139,6 +139,32 @@ updates across settled create, modify, delete, and rename operations; syntax err
 last-good hash labeling; secret and symlink exclusion; file/read limits; debounce coalescing; and
 contiguous sequence ordering.
 
+## Verified live map binding macOS demonstration
+
+On 2026-10-27 the real Electron app watched a throwaway copy of
+`examples/vscode_playground`, the deterministic cross-file project merged through PR #9. The live
+initial snapshot replaced the sample workspace with six file clusters, 15 symbols, and 43 static
+edges. No tests were run or inferred. The checked rendered pixels show the truthful live label and
+whole-project map in the [initial live map](screenshots/live_map_playground_banner_macos.png).
+
+The repository's `scripts/spectate_demo_editor.py` then ran as a separate process against that copy.
+A stable `TAX_RATE` edit highlighted `file:src/playground/config.py` without refitting the existing
+map and produced the quiet [change banner](screenshots/live_map_playground_edit_macos.png). Opening
+the banner displayed the engine's exact current text and
+[diff against the previous stable snapshot](screenshots/live_map_playground_source_diff_macos.png).
+
+The editor next introduced invalid syntax in `pricing.py`. The rendered
+[parse-error state](screenshots/live_map_playground_parse_error_macos.png) kept the last-good file
+and symbol nodes visibly marked as stale while showing the current invalid source and exact diff.
+The same external editor restored valid syntax, created `discount.py`, and deleted it; the map
+recovered and processed the deletion. Finally, Stop terminated the watcher and retained the final
+map only as [stopped / last known](screenshots/live_map_playground_stopped_macos.png), including the
+truthful deleted-file source state.
+
+These screenshots are real pixels from the macOS desktop run, not mocks. They verify only the
+observed macOS Electron flow; they make no Linux, Windows, native file-event, test-execution, or
+dynamic call-flow claim.
+
 ## Legacy `spectate-1.0` macOS demonstration
 
 On 2026-10-26 the real CLI watched a throwaway copy of `examples/buggy_python_project` outside the
