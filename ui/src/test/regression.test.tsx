@@ -52,7 +52,7 @@ describe('Regression: App Run Discovery, Selection & Error Handling', () => {
       getSource: vi.fn().mockResolvedValue(null),
     };
 
-    render(<App adapter={mockAdapter} />);
+    render(<App adapter={mockAdapter} isDemo={true} />);
 
     await waitFor(() => {
       expect(screen.getAllByText(/payments-microservice/i).length).toBeGreaterThan(0);
@@ -71,7 +71,7 @@ describe('Regression: App Run Discovery, Selection & Error Handling', () => {
       getSource: vi.fn().mockResolvedValue(null),
     };
 
-    render(<App adapter={mockAdapter} />);
+    render(<App adapter={mockAdapter} isDemo={true} />);
 
     await waitFor(() => {
       expect(screen.getByText(/No Recorded Runs/i)).toBeDefined();
@@ -91,7 +91,7 @@ describe('Regression: App Run Discovery, Selection & Error Handling', () => {
       getSource: vi.fn().mockResolvedValue(null),
     };
 
-    render(<App adapter={mockAdapter} />);
+    render(<App adapter={mockAdapter} isDemo={true} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Failed to Load Runs/i)).toBeDefined();
@@ -134,7 +134,7 @@ describe('Regression: App Run Discovery, Selection & Error Handling', () => {
       getSource: vi.fn().mockResolvedValue(null),
     };
 
-    render(<App adapter={mockAdapter} />);
+    render(<App adapter={mockAdapter} isDemo={true} />);
 
     await waitFor(() => {
       expect(screen.getAllByText(/Project-A/i).length).toBeGreaterThan(0);
@@ -293,6 +293,7 @@ describe('Regression: Keyboard Accessibility & Navigation', () => {
 
     render(
       <App
+        isDemo={true}
         adapter={{
           getRuns: vi.fn().mockResolvedValue(FIXTURE_RUNS),
           getRun: vi.fn().mockResolvedValue(FIXTURE_RUNS[0]),
@@ -496,7 +497,7 @@ describe('Holistic Project Map & Semantic Zoom', () => {
   });
 
   it('clears test execution trace and maintains clean mode hygiene when switching to Changes mode', async () => {
-    render(<App initialScreen="workspace" />);
+    render(<App isDemo={true} initialScreen="workspace" />);
 
     // Select the failing test from the tests sidebar
     const failItem = await screen.findByTitle('tests/test_auth.py::test_login_expired_token');
@@ -758,7 +759,7 @@ describe('Phase 4 Regression: Empty/Error States, Demo Gating & Verification', (
   it('maintains sample demo accessibility via project selector screen and restores demo mode', async () => {
     const val = parseAndValidateV3(v3HpackJson);
     const adapter = new ImportedAdapter(val.data!);
-    render(<App adapter={adapter} initialScreen="selector" />);
+    render(<App adapter={adapter} isDemo={true} initialScreen="selector" />);
 
     await waitFor(() => {
       expect(screen.getAllByText(/hpack-repo/i).length).toBeGreaterThan(0);
@@ -825,7 +826,7 @@ describe('Phase 4 Regression: Empty/Error States, Demo Gating & Verification', (
       getSource: vi.fn().mockResolvedValue(null),
     };
 
-    render(<App adapter={mockAdapter} initialScreen="selector" />);
+    render(<App adapter={mockAdapter} isDemo={true} initialScreen="selector" />);
 
     await waitFor(() => {
       expect(screen.getByText(/auth-service \(Imported\)/i)).toBeDefined();
