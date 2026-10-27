@@ -1,4 +1,4 @@
-from faultmesh.agents.scout import ScoutAgent
+from faultmesh.agents.scout import ProposalConfiguration, ScoutAgent
 
-__all__ = ["ScoutAgent"]
+__all__ = ["ProposalConfiguration", "ScoutAgent"]
 
