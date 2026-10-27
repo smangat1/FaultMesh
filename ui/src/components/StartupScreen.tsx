@@ -19,33 +19,64 @@ export const StartupScreen: React.FC<StartupScreenProps> = ({
   activeRun = null,
   onReturnToWorkspace,
 }) => {
+  const isMacDesktop =
+    typeof navigator !== 'undefined' &&
+    /Electron/i.test(navigator.userAgent) &&
+    (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
         height: '100%',
         width: '100%',
         backgroundColor: '#101114',
         color: '#f8fafc',
         fontFamily: 'var(--font-sans)',
-        padding: '24px',
         boxSizing: 'border-box',
       }}
     >
+      {/* Draggable Titlebar Region for Desktop Window Movement & Resizing */}
+      <div
+        data-testid="startup-titlebar"
+        style={{
+          height: '42px',
+          width: '100%',
+          flexShrink: 0,
+          // @ts-expect-error WebkitAppRegion
+          WebkitAppRegion: 'drag',
+          userSelect: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          paddingLeft: isMacDesktop ? '78px' : '16px',
+          paddingRight: '16px',
+          boxSizing: 'border-box',
+        }}
+      />
+
       <div
         style={{
-          maxWidth: '460px',
-          width: '100%',
+          flex: 1,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          textAlign: 'center',
-          gap: '24px',
+          justifyContent: 'center',
+          padding: '24px',
+          boxSizing: 'border-box',
         }}
       >
+        <div
+          style={{
+            maxWidth: '460px',
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: '24px',
+          }}
+        >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <h1
             style={{
@@ -153,5 +184,6 @@ export const StartupScreen: React.FC<StartupScreenProps> = ({
         )}
       </div>
     </div>
-  );
+  </div>
+);
 };

@@ -220,5 +220,20 @@ describe('Real-project-first Startup Screen', () => {
       expect(screen.getByRole('button', { name: /watch agent repair/i })).toBeDefined();
       expect(screen.getByRole('button', { name: /open project json/i })).toBeDefined();
     });
+
+    const selectorTitlebar = screen.getByTestId('selector-titlebar');
+    expect(selectorTitlebar).toBeDefined();
+    expect(selectorTitlebar.style.height).toBe('42px');
+    expect(selectorTitlebar.style.userSelect).toBe('none');
+  });
+
+  it('provides a top draggable titlebar region for desktop window movement and resizing', () => {
+    render(<App />);
+
+    const titlebar = screen.getByTestId('startup-titlebar');
+    expect(titlebar).toBeDefined();
+    expect(titlebar.style.height).toBe('42px');
+    expect(titlebar.style.userSelect).toBe('none');
+    expect(titlebar.style.flexShrink).toBe('0');
   });
 });
