@@ -59,6 +59,13 @@ describe('SpectateHook', () => {
 
     harness.emit({
       ...base,
+      sequence: 1,
+      event: 'session_started',
+      root_display_name: 'demo',
+    });
+
+    harness.emit({
+      ...base,
       sequence: 2,
       event: 'file_changed',
       path: 'src/demo.py',
@@ -99,7 +106,7 @@ describe('SpectateHook', () => {
     expect(screen.getByText(/def value/)).toBeDefined();
     expect(screen.getByText(/return 1/)).toBeDefined();
     expect(screen.getByText('symbol:src/demo.py:value')).toBeDefined();
-    expect(screen.getByText(/final map highlight wiring remains/i)).toBeDefined();
+    expect(screen.getByText(/highlighted on the watched project's live map/i)).toBeDefined();
 
     harness.emit({
       ...base,
@@ -110,7 +117,7 @@ describe('SpectateHook', () => {
       parse_ok: false,
       parse_error: 'invalid syntax at line 1',
     });
-    expect(screen.getByRole('alert').textContent).toContain('Last good map symbols are retained');
+    expect(screen.getByRole('alert').textContent).toContain('Structure from last good parse (stale)');
   });
 
   it('remembers not now for one file during the session', async () => {

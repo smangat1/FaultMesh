@@ -156,8 +156,21 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
+          {activeRun?.isLive && (
+            <span
+              className={`badge-status ${activeRun.liveStatus === 'live' ? 'pass' : 'empty'}`}
+              title={activeRun.liveStatus === 'live'
+                ? 'Live watched-project structure; tests are not rerun'
+                : 'Stopped; displaying the last known watched-project map'}
+            >
+              {activeRun.liveStatus === 'live'
+                ? `LIVE: ${activeRun.project}`
+                : 'STOPPED · LAST KNOWN'}
+            </span>
+          )}
+
           {/* Persistent Compact Imported Label */}
-          {activeRun?.isRealImport && (
+          {activeRun?.isRealImport && !activeRun.isLive && (
             <span
               style={{
                 display: 'inline-flex',
@@ -211,7 +224,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Outcome Summary Pill: Derived explicitly from RunOutcome */}
-          {activeRun && (() => {
+          {activeRun && (!activeRun.isLive || (activeRun.v2RunCount ?? 0) > 0) && (() => {
             const outcome = activeRun.runOutcome || (activeRun.harnessStatus as any);
             const isStructureOnly = activeRun.isRealImport && (activeRun.v2RunCount === 0 || !outcome);
 

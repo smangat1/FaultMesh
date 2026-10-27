@@ -1,3 +1,11 @@
+import type {
+  V3FileNode,
+  V3SkipRecord,
+  V3StaticEdge,
+  V3SymbolNode,
+  V3UnresolvedReference,
+} from '../import';
+
 export interface ProjectChoice {
   handle: string;
   displayName: string;
@@ -8,26 +16,19 @@ export interface LineRange {
   end_line: number;
 }
 
-export interface LiveStaticEdge {
+export interface SpectateFileSnapshot {
   id: string;
-  layer: 'static';
-  kind: 'imports' | 'possible_call' | 'defines' | 'contains';
-  source_id: string;
-  target_id: string | null;
-  callsite_path: string;
-  callsite_line: number;
-  resolution_reason: string;
-  confidence: 'resolved' | 'ambiguous' | 'unresolved';
-  external_module: string | null;
-  removed: boolean;
-  revision_side: 'head' | 'base';
+  path: string;
+  content_sha256: string;
+  line_count: number;
+  parse_ok: boolean;
+  parse_error: string | null;
 }
 
-export interface LiveUnresolvedReference {
-  path: string;
-  line: number;
-  text: string;
-  reason: string;
+export interface SpectateStructurePayload {
+  files: V3FileNode[];
+  symbols: V3SymbolNode[];
+  skips: V3SkipRecord[];
 }
 
 export interface StaleRelationshipPath {
@@ -53,8 +54,14 @@ export interface SpectateEvent {
     | 'watch_error'
     | 'root_missing'
     | 'session_ended';
+  root_display_name?: string;
+  files?: SpectateFileSnapshot[];
+  structure?: SpectateStructurePayload;
   path?: string;
   kind?: 'created' | 'modified' | 'deleted' | 'renamed';
+  from_path?: string | null;
+  to_path?: string | null;
+  previous_sha256?: string | null;
   new_sha256?: string | null;
   changed_line_ranges?: LineRange[];
   affected_file_ids?: string[];
@@ -62,16 +69,20 @@ export interface SpectateEvent {
   changed_node_ids?: string[];
   parse_ok?: boolean;
   parse_error?: string | null;
+  file?: V3FileNode | null;
+  symbols?: V3SymbolNode[];
+  kept_last_good_symbols?: boolean;
   sha256?: string;
   text?: string | null;
   complete?: boolean;
   skipped_reason?: string | null;
-  edges?: LiveStaticEdge[];
-  unresolved?: LiveUnresolvedReference[];
+  edges?: V3StaticEdge[];
+  unresolved?: V3UnresolvedReference[];
   external_modules?: string[];
   stale_paths?: StaleRelationshipPath[];
   partial_reasons?: string[];
   truncated?: boolean;
+  evidence_content_sha256?: string;
   reason?: string;
 }
 

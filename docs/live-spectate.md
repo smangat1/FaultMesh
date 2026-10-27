@@ -81,6 +81,27 @@ relationships. Deleted nodes are IDs in the delta; static relationships remain A
 When optional V2 evidence is loaded, its observed-symbol `content_sha256` is compared only with the
 containing file hash. A mismatch emits `evidence_stale`; it does not rerun or reinterpret evidence.
 
+## Live map binding
+
+The renderer reduces `initial_snapshot`, `structure_update`, and `relationship_update` records into
+the same V3 structure shape used by imported data, then delegates graph construction to the existing
+`ImportedAdapter`. There is no parallel fixture contract: starting a watch replaces the sample or
+imported structure with the watched project's file clusters, symbols, unresolved references, and
+static edges. The live session ID is the dataset identity, so a new watched project fits the entire
+map while settled changes update nodes and edges without resetting the current camera or rearranging
+existing positions.
+
+The header labels the dataset as `Live: <folder>` while the watcher is running. Stop, root loss, and
+terminal errors keep the final map only as `Stopped · last known`; they never leave it labeled live.
+Changed V3 IDs are highlighted directly on that map. Parse failures keep last-good nodes and edges,
+mark the affected file and symbols as stale, and pair that structure with the current source fact.
+The source/diff panel uses only ordered engine events. Node source snippets are sliced only when the
+already-received source record hash matches the current containing-file hash.
+
+Live mode does not fabricate test evidence. If explicit V2 evidence was imported before watching,
+the adapter retains it and applies the existing containing-file hash checks; otherwise the live map
+is presented as structure-only with the explicit note that tests were not rerun.
+
 ## Threat model
 
 The selected project and child output are untrusted. Main-process path validation rejects missing,
@@ -100,8 +121,6 @@ path and cannot choose a command or arguments.
 - Polling observes stable versions, not every transient byte write. That is deliberate.
 - Rename detection is best-effort from inode and content identity; a delete/create pair can remain
   two facts when identity is ambiguous.
-- The minimal UI hook highlights IDs in its own state. Wiring those IDs into Gemini's evolving map
-  component is deliberately left to the final layout integration.
 - Native dialog and process lifecycle behavior must be checked per desktop platform. There is no
   automatic OS notification or OS-level popup.
 
@@ -169,14 +188,8 @@ copy selected as the watch root:
 python scripts/spectate_demo_editor.py /absolute/path/to/throwaway-copy
 ```
 
-## Hand-off for Gemini
+## UI invariants
 
-Consume the ordered `spectate-1.1` stream and keep the existing map layout positions. Build the
-whole-project static layer from `initial_snapshot`, `structure_update`, and `relationship_update`.
-Match
-`affected_file_ids`, `affected_symbol_ids`, and `changed_node_ids` directly to V3 IDs. Show source
-and diff as exact facts against the previous stable snapshot; show parse errors while retaining the
-last good symbols; label watching as **Watching (no tests rerun)**; and mark V2 evidence stale only
-from `evidence_stale`. The polished layout must preserve explicit opt-in and Stop controls. It must
-not add model-written explanations, editor attribution, fake test results, observed-edge claims, or
-silent bound failures.
+The integrated layout preserves explicit opt-in and Stop controls, ordered event processing, quiet
+change banners, and stable map positions. It does not add model-written explanations, editor
+attribution, fake test results, observed-edge claims, or silent bound failures.

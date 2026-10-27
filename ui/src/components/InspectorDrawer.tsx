@@ -244,6 +244,22 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
           {/* Body Content */}
           <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            {selectedNode.structureStale && (
+              <div
+                role="alert"
+                style={{
+                  padding: '8px 10px',
+                  border: '1px solid rgba(249, 115, 22, 0.45)',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                  color: '#fdba74',
+                  fontSize: '11px',
+                }}
+              >
+                Structure from last good parse (stale). Line ranges and metadata are retained facts,
+                not a parse of the current source.
+              </div>
+            )}
             {/* 2. What it does / Grounded Metadata */}
             {selectedNode.description ? (
               <div
@@ -1618,6 +1634,11 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                   {currentFile.parseError && (
                     <div style={{ color: '#f87171', fontSize: '11px' }}>
                       Parse error: {currentFile.parseError}
+                    </div>
+                  )}
+                  {currentFile.structureStale && (
+                    <div role="alert" style={{ color: '#fdba74', fontSize: '11px' }}>
+                      Structure from last good parse (stale).
                     </div>
                   )}
                 </div>

@@ -86,6 +86,7 @@ export interface CodeNode {
   parentId?: string;
   qualifiedName?: string;
   isTest?: boolean;
+  structureStale?: boolean;
 }
 
 export interface FileCluster {
@@ -103,6 +104,7 @@ export interface FileCluster {
   isTest?: boolean;
   parseError?: string | null;
   gitStatus?: string;
+  structureStale?: boolean;
 }
 
 export interface PinnedSymbol {
@@ -197,6 +199,8 @@ export interface RunSummary {
   runOutcome?: V2RunOutcome;
   exitCode?: number | null;
   harnessError?: string | null;
+  isLive?: boolean;
+  liveStatus?: 'idle' | 'live' | 'stopped' | 'error';
 }
 
 export interface TestEvidence {
