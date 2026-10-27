@@ -13,5 +13,6 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    exclude: ['electron/**/*.test.cjs', 'node_modules/**', 'dist/**'],
   },
 });

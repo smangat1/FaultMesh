@@ -1,7 +1,9 @@
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
+const { attachSpectateBridge } = require('./spectate-main.cjs');
 
 let mainWindow = null;
+let spectateBridge = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -17,11 +19,23 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, 'spectate-preload.cjs'),
     },
     show: false,
   });
 
   const indexPath = path.join(__dirname, '../dist/index.html');
+  spectateBridge = attachSpectateBridge({
+    ipcMain,
+    dialog,
+    window: mainWindow,
+    indexPath,
+  });
+  mainWindow.once('closed', () => {
+    spectateBridge?.dispose('window_closed');
+    spectateBridge = null;
+    mainWindow = null;
+  });
   mainWindow.loadFile(indexPath).catch((err) => {
     console.error('Failed to load FaultMesh desktop app:', err);
   });
@@ -99,4 +113,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  spectateBridge?.dispose('app_quit');
+  spectateBridge = null;
 });
