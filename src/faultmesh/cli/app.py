@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal, cast
 
 import typer
 
 from faultmesh import __version__
 from faultmesh.analysis import ProjectAnalyzer
 from faultmesh.api import AnalysisOptions, analyze_repository, reproduce_incident
+from faultmesh.benchmark.phase2 import Arm, Phase2PilotOptions, run_phase2_pilot
 from faultmesh.config import FaultMeshConfig
 from faultmesh.evidence import EvidenceStore
 from faultmesh.project_runner import (
@@ -36,6 +37,72 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Evidence-driven, offline-first bug discovery and reproduction for Python.",
 )
+benchmark_app = typer.Typer(no_args_is_help=True, help="Bounded reproducible benchmarks.")
+app.add_typer(benchmark_app, name="benchmark")
+
+
+@benchmark_app.command("phase2-pilot")
+def phase2_pilot(
+    manifest: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
+    ],
+    raw_out: Annotated[Path, typer.Option(resolve_path=True)],
+    arms: Annotated[str, typer.Option()],
+    seeds: Annotated[str, typer.Option()],
+    max_properties: Annotated[int, typer.Option(min=1)],
+    max_examples: Annotated[int, typer.Option(min=1)],
+    confirmation_runs: Annotated[int, typer.Option(min=1)],
+    max_model_calls: Annotated[int, typer.Option(min=1)],
+    max_repairs: Annotated[int, typer.Option(min=0)],
+    timeout_seconds: Annotated[int, typer.Option(min=1)],
+    split: Annotated[str, typer.Option(help="development, heldout, or all")] = "all",
+    model_path: Annotated[Path | None, typer.Option(resolve_path=True)] = None,
+    llama_cli: Annotated[str, typer.Option()] = "llama-completion",
+) -> None:
+    """Run the locked phase-2 proposal pilot without changing its budgets."""
+
+    allowed_arms = {
+        "slm-only",
+        "baseline-only",
+        "combined",
+        "heuristic-ablation",
+    }
+    parsed_arms = tuple(part.strip() for part in arms.split(",") if part.strip())
+    if not parsed_arms or any(part not in allowed_arms for part in parsed_arms):
+        raise typer.BadParameter(f"arms must be drawn from {sorted(allowed_arms)}")
+    try:
+        parsed_seeds = tuple(int(part.strip()) for part in seeds.split(",") if part.strip())
+    except ValueError as exc:
+        raise typer.BadParameter("seeds must be comma-separated integers") from exc
+    if split not in {"development", "heldout", "all"}:
+        raise typer.BadParameter("split must be development, heldout, or all")
+    try:
+        summary, report_path = run_phase2_pilot(
+            Phase2PilotOptions(
+                manifest=manifest,
+                raw_out=raw_out,
+                arms=cast(tuple[Arm, ...], parsed_arms),
+                seeds=parsed_seeds,
+                max_properties=max_properties,
+                max_examples=max_examples,
+                confirmation_runs=confirmation_runs,
+                max_model_calls=max_model_calls,
+                max_repairs=max_repairs,
+                timeout_seconds=timeout_seconds,
+                split=cast(Literal["development", "heldout", "all"], split),
+                model_path=model_path,
+                llama_cli=llama_cli,
+            )
+        )
+    except Exception as exc:
+        typer.secho(f"Phase 2 pilot failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {"raw": str(raw_out), "summary": str(summary), "report": str(report_path)},
+            indent=2,
+        )
+    )
 
 
 @app.command()
