@@ -220,6 +220,18 @@ The schema 3.0 structure contract, static-evidence limits, Git comparison behavi
 real-project V3 acceptance are documented in
 [docs/v3-static-structure.md](docs/v3-static-structure.md).
 
+## Try it manually
+
+1. Start the live observer on the deterministic playground:
+   ```console
+   faultmesh spectate examples/vscode_playground
+   ```
+2. In a second terminal, prepare and run the scripted editor to simulate code edits against a throwaway copy:
+   ```console
+   python scripts/spectate_demo_editor.py
+   ```
+3. Or open `examples/vscode_playground` in VS Code to make edits by hand and watch FaultMesh update in real time.
+
 ## Safety
 
 Scanning is non-executing. Verification is a separate phase. Docker is the product default and

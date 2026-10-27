@@ -137,11 +137,11 @@ To run the observer directly:
 faultmesh spectate /absolute/path/to/python-project
 ```
 
-To repeat the editor sequence, run the following in another terminal against a throwaway example
-copy selected as the watch root:
+To repeat the editor sequence, run the following in another terminal against the deterministic
+playground (or pass an explicit target path):
 
 ```console
-python scripts/spectate_demo_editor.py /absolute/path/to/throwaway-copy
+python scripts/spectate_demo_editor.py
 ```
 
 ## Hand-off for Gemini
