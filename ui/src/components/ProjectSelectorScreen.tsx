@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import type { RunSummary, TestItem } from '../types';
 import {
   Compass,
@@ -17,6 +17,7 @@ import {
   Play,
   Loader2,
   Check,
+  FolderOpen,
 } from 'lucide-react';
 
 interface ProjectSelectorScreenProps {
@@ -29,6 +30,7 @@ interface ProjectSelectorScreenProps {
   isLoading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  onOpenFiles?: (files: FileList | File[]) => void;
 }
 
 export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
@@ -41,8 +43,17 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
   isLoading = false,
   error = null,
   onRetry,
+  onOpenFiles,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const failedTests = tests.filter((t) => t.status === 'fail');
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onOpenFiles?.(e.target.files);
+      e.target.value = '';
+    }
+  };
 
   // Distinct projects discovered in workspace
   const availableProjects = useMemo(() => {
@@ -233,7 +244,77 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
           </div>
         </section>
 
-        {/* 3. Project Selection & Test Execution */}
+        {/* 3. Open Real Project Export Section */}
+        {onOpenFiles && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#111620',
+              border: '1px dashed rgba(56, 189, 248, 0.35)',
+              borderRadius: '8px',
+              padding: '16px 20px',
+              gap: '16px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#38bdf8',
+                }}
+              >
+                <FolderOpen size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                  Open Real Project Export (.json)
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Load a deterministic schema 3.0 structure JSON (optional: schema 2.0 V2 run evidence). Pure client-side safe parser.
+                </div>
+              </div>
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".json"
+              multiple
+              style={{ display: 'none' }}
+              aria-label="Open Real Project JSON file input"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="btn-primary"
+              style={{
+                fontSize: '12px',
+                padding: '8px 16px',
+                backgroundColor: '#0284c7',
+                borderColor: '#0369a1',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              aria-label="Open Project JSON Export"
+            >
+              <FolderOpen size={14} />
+              <span>Open Project JSON</span>
+            </button>
+          </div>
+        )}
+
+        {/* 4. Project Selection & Test Execution */}
         <section
           style={{
             display: 'flex',
@@ -277,6 +358,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
               >
                 {availableProjects.map((proj) => {
                   const isSelected = selectedProject === proj;
+                  const isDemo = proj === 'auth-service';
                   return (
                     <button
                       key={proj}
@@ -296,7 +378,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                       role="radio"
                       aria-checked={isSelected}
                     >
-                      {proj}
+                      {proj} {isDemo ? '(Sample Demo)' : '(Imported)'}
                     </button>
                   );
                 })}
@@ -305,40 +387,65 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
 
             {/* Right: Run Project Action */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                onClick={handleRunProject}
-                disabled={isExecutingRun}
-                className="btn-primary"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  padding: '6px 14px',
-                  backgroundColor: '#10b981',
-                  borderColor: '#059669',
-                  color: '#ffffff',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: isExecutingRun ? 'not-allowed' : 'pointer',
-                  opacity: isExecutingRun ? 0.75 : 1,
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
-                }}
-                title={`Run pytest test suite on ${selectedProject}`}
-                aria-label={`Run ${selectedProject}`}
-              >
-                {isExecutingRun ? (
-                  <>
-                    <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                    <span>Running pytest...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play size={12} fill="currentColor" />
-                    <span>Run {selectedProject}</span>
-                  </>
-                )}
-              </button>
+              {activeRun?.isRealImport ? (
+                <button
+                  onClick={() => onOpenWorkspace()}
+                  className="btn-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    padding: '6px 14px',
+                    backgroundColor: '#0284c7',
+                    borderColor: '#0369a1',
+                    color: '#ffffff',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                  }}
+                  title={`Explore ${selectedProject} static structure map`}
+                  aria-label={`Explore ${selectedProject}`}
+                >
+                  <ArrowRight size={13} />
+                  <span>Explore Project Map</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleRunProject}
+                  disabled={isExecutingRun}
+                  className="btn-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    padding: '6px 14px',
+                    backgroundColor: '#10b981',
+                    borderColor: '#059669',
+                    color: '#ffffff',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: isExecutingRun ? 'not-allowed' : 'pointer',
+                    opacity: isExecutingRun ? 0.75 : 1,
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                  }}
+                  title={`Run pytest test suite on ${selectedProject}`}
+                  aria-label={`Run ${selectedProject}`}
+                >
+                  {isExecutingRun ? (
+                    <>
+                      <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                      <span>Running pytest...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play size={12} fill="currentColor" />
+                      <span>Run {selectedProject}</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -590,7 +697,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {failedTests.length > 0 && onOpenWorkspace && (
+                  {failedTests.length > 0 && onOpenWorkspace && !activeRun?.isRealImport && (
                     <button
                       onClick={() => onOpenWorkspace(undefined, true)}
                       className="btn-secondary"

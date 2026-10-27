@@ -1,9 +1,13 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import { TestDetailsPane } from '../components/TestDetailsPane';
 import { GraphView, computeDeterministicPositions } from '../components/GraphView';
 import type { FaultMeshAdapter } from '../adapter';
+import { ImportedAdapter } from '../adapter/importedAdapter';
+import { parseAndValidateV3 } from '../import';
 import type { RunSummary, TestItem, GraphData, CodeNode } from '../types';
 import { FIXTURE_RUNS, FIXTURE_TESTS, FIXTURE_GRAPH } from '../fixtures';
 
@@ -508,6 +512,71 @@ describe('Holistic Project Map & Semantic Zoom', () => {
     await waitFor(() => {
       expect(changesTab.getAttribute('aria-checked')).toBe('true');
       expect(screen.queryByRole('button', { name: /clear test highlight/i })).toBeNull();
+    });
+  });
+});
+
+describe('Phase 2 Regression: Real V3 Import, Strict Separation & Responsive Layouts', () => {
+  const FIXTURES_DIR = path.resolve(__dirname, '../../../docs/fixtures');
+  const v3HpackJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v3-hpack-structure.json'), 'utf-8');
+
+  it('guarantees real imported project contains zero demo IDs, no SAMPLE badges, no runtime_observed edges, and no step badges', async () => {
+    const val = parseAndValidateV3(v3HpackJson);
+    expect(val.success).toBe(true);
+
+    const adapter = new ImportedAdapter(val.data!);
+    const runs = await adapter.getRuns();
+    const graph = await adapter.getGraph(runs[0].id);
+
+    // 1. Zero demo IDs
+    for (const node of graph.nodes) {
+      expect(node.id).not.toContain('auth-regression');
+      expect(node.id).not.toContain('tokens.py');
+      expect(node.id).not.toContain('validate_token');
+    }
+
+    // 2. Zero runtime_observed edges or call steps
+    for (const edge of graph.edges) {
+      expect(edge.category).not.toBe('runtime_observed');
+      expect(edge.category === 'static_call' || edge.category === 'static_import').toBe(true);
+      expect(edge.stepLabel).toBeUndefined();
+      expect(edge.testIds).toBeUndefined();
+    }
+
+    // 3. UI rendering: real adapter shows imported label and NO 'SAMPLE DATA' badge
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Imported: hpack-repo @ c2edbee - static structure/i)).toBeDefined();
+    });
+
+    expect(screen.queryByText(/SAMPLE DATA/i)).toBeNull();
+    // Agent Auto-Repair button is strictly hidden for real imports
+    expect(screen.queryByRole('button', { name: /agent auto-repair/i })).toBeNull();
+  });
+
+  it('renders correctly at 1024x700 and 1440x920 viewport dimensions without errors', async () => {
+    const val = parseAndValidateV3(v3HpackJson);
+    const adapter = new ImportedAdapter(val.data!);
+
+    // Test 1024x700
+    window.innerWidth = 1024;
+    window.innerHeight = 700;
+    const { unmount } = render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/hpack-repo/i).length).toBeGreaterThan(0);
+    });
+
+    unmount();
+
+    // Test 1440x920
+    window.innerWidth = 1440;
+    window.innerHeight = 920;
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/hpack-repo/i).length).toBeGreaterThan(0);
     });
   });
 });

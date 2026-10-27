@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import type { RunSummary } from '../types';
 import {
   ChevronLeft,
@@ -6,6 +6,7 @@ import {
   Activity,
   Layers,
   GitBranch,
+  FolderOpen,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -18,6 +19,7 @@ interface HeaderProps {
   failedTestCount?: number;
   errorCount?: number;
   diagnosticsCount?: number;
+  onOpenFiles?: (files: FileList | File[]) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,13 +30,23 @@ export const Header: React.FC<HeaderProps> = ({
   failedTestCount = 0,
   errorCount = 0,
   diagnosticsCount = 0,
+  onOpenFiles,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isMacDesktop =
     typeof navigator !== 'undefined' &&
     /Electron/i.test(navigator.userAgent) &&
     (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
 
   const totalProblemTests = failedTestCount + errorCount;
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onOpenFiles?.(e.target.files);
+      // Reset input so same file can be re-opened if desired
+      e.target.value = '';
+    }
+  };
 
   return (
     <header
@@ -136,6 +148,30 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
+          {/* Persistent Small Imported Label */}
+          {activeRun?.isRealImport && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '10px',
+                fontFamily: 'var(--font-mono)',
+                color: '#38bdf8',
+                backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                padding: '2px 7px',
+                borderRadius: 'var(--radius-sm)',
+              }}
+              title={`V3 static structure export: ${activeRun.contentSha256 || activeRun.id}`}
+            >
+              Imported: {activeRun.project} @ {activeRun.gitRevision.slice(0, 7)} - static structure
+              {activeRun.v2RunCount && activeRun.v2RunCount > 0
+                ? ` / ${activeRun.v2RunCount} run${activeRun.v2RunCount > 1 ? 's' : ''}`
+                : ''}
+            </span>
+          )}
+
           {/* Outcome Summary Pill: Never show green COMPLETED when tests failed! */}
           {activeRun && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
@@ -176,7 +212,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right: Workspace Views (Streamlined: Map vs Run Diagnostics, redundant views eliminated) */}
+        {/* Right: Workspace Views & Open JSON action */}
         <div
           style={{
             display: 'flex',
@@ -187,6 +223,41 @@ export const Header: React.FC<HeaderProps> = ({
             WebkitAppRegion: 'no-drag',
           }}
         >
+          {/* Open JSON Export Button */}
+          {onOpenFiles && (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".json"
+                multiple
+                style={{ display: 'none' }}
+                aria-label="Open JSON file input"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-ghost btn-sm"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: '11px',
+                  padding: '3px 8px',
+                  color: 'var(--text-secondary)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                }}
+                title="Open local V3 static structure or V2 test run evidence JSON export"
+                aria-label="Open JSON Export"
+              >
+                <FolderOpen size={12} />
+                <span>Open JSON</span>
+              </button>
+            </>
+          )}
           <nav
             style={{
               display: 'flex',

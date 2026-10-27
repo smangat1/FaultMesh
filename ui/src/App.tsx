@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FaultMeshAdapter } from './adapter';
-import { FixtureAdapter } from './adapter';
+import { FixtureAdapter, ImportedAdapter } from './adapter';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -13,6 +13,14 @@ import {
   AGENT_ORIGINAL_SNIPPET,
   type AgentLogEntry,
 } from './agent/agentSimulation';
+import {
+  validateV3Structure,
+  validateV2RunEvidence,
+  MAX_V3_SIZE_BYTES,
+  type V3StructureExport,
+  type V2RunEvidenceExport,
+} from './import';
+import { AlertTriangle } from 'lucide-react';
 import './styles/theme.css';
 
 const DEFAULT_ADAPTER = new FixtureAdapter(0);
@@ -23,6 +31,8 @@ interface AppProps {
 }
 
 export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScreen = 'selector' }) => {
+  const [activeAdapter, setActiveAdapter] = useState<FaultMeshAdapter>(adapter);
+  const [importError, setImportError] = useState<string | null>(null);
   const [currentScreen, setCurrentScreen] = useState<'selector' | 'workspace'>(initialScreen);
   const [activeView, setActiveView] = useState<'map' | 'diagnostics'>('map');
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -69,7 +79,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setIsLoadingRuns(true);
     setRunsError(null);
     try {
-      const loadedRuns = await adapter.getRuns();
+      const loadedRuns = await activeAdapter.getRuns();
       setRuns(loadedRuns);
       if (loadedRuns.length > 0) {
         setActiveRunId((prev) => {
@@ -86,7 +96,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     } finally {
       setIsLoadingRuns(false);
     }
-  }, [adapter]);
+  }, [activeAdapter]);
 
   useEffect(() => {
     loadRuns();
@@ -100,8 +110,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
 
     try {
       const [loadedTests, loadedGraph] = await Promise.all([
-        adapter.getTests(runId),
-        adapter.getGraph(runId),
+        activeAdapter.getTests(runId),
+        activeAdapter.getGraph(runId),
       ]);
 
       // Guard against stale async responses if user switched runs quickly
@@ -233,6 +243,88 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     }
   };
 
+  // File import handler for local V3 and V2 JSON exports
+  const handleImportFiles = async (files: FileList | File[]) => {
+    setImportError(null);
+    try {
+      const fileList = Array.from(files);
+      if (fileList.length === 0) return;
+
+      let v3Doc: V3StructureExport | null = null;
+      const v2Docs: V2RunEvidenceExport[] = [];
+
+      for (const f of fileList) {
+        if (f.size > MAX_V3_SIZE_BYTES) {
+          throw new Error(`File "${f.name}" (${(f.size / (1024 * 1024)).toFixed(1)} MB) exceeds 64 MB size limit`);
+        }
+        const text = await f.text();
+        let json: Record<string, unknown>;
+        try {
+          json = JSON.parse(text);
+        } catch (err) {
+          throw new Error(`Malformed JSON in file "${f.name}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        if (json.schema_version === '3.0') {
+          const val = validateV3Structure(json, f.size);
+          if (!val.success) {
+            throw new Error(`V3 validation failed for "${f.name}": ${val.errors.map((e) => e.message).join('; ')}`);
+          }
+          v3Doc = val.data!;
+        } else if (json.schema_version === '2.0') {
+          const val = validateV2RunEvidence(json, f.size);
+          if (!val.success) {
+            throw new Error(`V2 validation failed for "${f.name}": ${val.errors.map((e) => e.message).join('; ')}`);
+          }
+          v2Docs.push(val.data!);
+        } else {
+          throw new Error(
+            `Unsupported schema_version in "${f.name}": expected "3.0" for structure or "2.0" for run evidence, found "${String(json.schema_version)}"`
+          );
+        }
+      }
+
+      if (!v3Doc) {
+        if (activeAdapter instanceof ImportedAdapter) {
+          for (const v2 of v2Docs) {
+            activeAdapter.addV2Run(v2);
+          }
+          const loadedRuns = await activeAdapter.getRuns();
+          setRuns(loadedRuns);
+          if (loadedRuns.length > 0) {
+            setActiveRunId(loadedRuns[0].id);
+            await loadActiveRunData(loadedRuns[0].id);
+          }
+          return;
+        }
+        throw new Error(
+          'Please select a V3 static structure JSON export (schema_version 3.0). V2 evidence requires a matching V3 structure.'
+        );
+      }
+
+      // Valid V3 document loaded
+      const newAdapter = new ImportedAdapter(v3Doc, v2Docs);
+      setActiveAdapter(newAdapter);
+
+      // Reset selection and pins to prevent stale state
+      setPinnedSymbols([]);
+      setSelectedNodeId(null);
+      setSelectedFile(null);
+      setSelectedTestId(null);
+      setIsAgentActive(false);
+
+      const loadedRuns = await newAdapter.getRuns();
+      setRuns(loadedRuns);
+      if (loadedRuns.length > 0) {
+        setActiveRunId(loadedRuns[0].id);
+      }
+      setCurrentScreen('workspace');
+    } catch (err) {
+      // Keep previous dataset and show specific dismissible error
+      setImportError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleCloseInspector = () => {
     setSelectedNodeId(null);
     setSelectedFile(null);
@@ -251,8 +343,17 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setSelectedNodeId(step.targetNodeId);
     setSelectedFile(null);
 
-    // 2. Keep all file clusters expanded during simulation replay so architectural understanding remains
-    setCollapsedFiles(new Set());
+    // 2. Unfold active step's target file if collapsed, preserving existing layout
+    if (step.targetNodeId) {
+      const targetNode = graphData.nodes.find((n) => n.id === step.targetNodeId);
+      if (targetNode && collapsedFiles.has(targetNode.file)) {
+        setCollapsedFiles((prev) => {
+          const next = new Set(prev);
+          next.delete(targetNode.file);
+          return next;
+        });
+      }
+    }
 
     // 3. Test Status Time-Travel (revert to fail if jumping back to steps 0..3)
     if (step.activeTestStatus) {
@@ -315,6 +416,13 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setIsAgentActive(true);
     setIsAgentPlaying(true);
     setAgentLogs([]);
+    setCollapsedFiles((prev) => {
+      const next = new Set(prev);
+      next.delete('tests/test_auth.py');
+      next.delete('auth/service.py');
+      next.delete('auth/tokens.py');
+      return next;
+    });
     applyAgentStep(0);
   }, [applyAgentStep]);
 
@@ -363,6 +471,44 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
         color: 'var(--text-primary)',
       }}
     >
+      {importError && (
+        <div
+          role="alert"
+          style={{
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            borderBottom: '1px solid #ef4444',
+            color: '#fca5a5',
+            padding: '8px 16px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            zIndex: 9999,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={15} color="#ef4444" />
+            <span>{importError}</span>
+          </div>
+          <button
+            onClick={() => setImportError(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#fca5a5',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '2px 6px',
+            }}
+            aria-label="Dismiss error"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {currentScreen === 'selector' ? (
         <ProjectSelectorScreen
           runs={runs}
@@ -376,7 +522,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
               setSelectedTestId(testId);
             }
             setCurrentScreen('workspace');
-            if (startAgent) {
+            if (startAgent && !activeRun?.isRealImport) {
               startAgentSimulation();
             }
           }}
@@ -393,6 +539,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
               ? () => loadActiveRunData(activeRunId)
               : undefined
           }
+          onOpenFiles={handleImportFiles}
         />
       ) : (
         <>
@@ -404,6 +551,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
             failedTestCount={failedTestCount}
             errorCount={errorCount}
             diagnosticsCount={diagnosticsCount}
+            onOpenFiles={handleImportFiles}
           />
 
           <main
@@ -501,8 +649,14 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     onSelectViewMode={handleSelectViewMode}
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
-                    isAgentMode={isAgentActive}
-                    onToggleAgentMode={isAgentActive ? stopAgentSimulation : startAgentSimulation}
+                    isAgentMode={activeRun?.isRealImport ? false : isAgentActive}
+                    onToggleAgentMode={
+                      activeRun?.isRealImport
+                        ? undefined
+                        : isAgentActive
+                        ? stopAgentSimulation
+                        : startAgentSimulation
+                    }
                     agentActiveNodeId={currentAgentStep?.targetNodeId}
                     agentPhase={currentAgentStep?.phase}
                     agentPhaseLabel={currentAgentStep?.phaseLabel}

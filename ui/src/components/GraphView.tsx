@@ -315,7 +315,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     // 1. Add File Clusters (clean filename label without cluttering persistent text)
     fileClusters.forEach((fc) => {
       const fileId = `file:${fc.file}`;
-      const isCollapsed = isAgentMode ? false : collapsedFiles.has(fc.file);
+      const isCollapsed = collapsedFiles.has(fc.file);
       const pos = positions[fileId] || { x: 480, y: 360 };
 
       nodes.push({
@@ -332,14 +332,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
           tier: fc.tier || '',
           description: fc.description || '',
           lineCount: fc.lineCount,
+          isGhost: fc.isGhost,
         },
         position: pos,
       });
     });
 
-    // 2. Add Symbol child nodes (ONLY for uncollapsed files in manual mode; ALL files during agent replay)
+    // 2. Add Symbol child nodes (ONLY for uncollapsed files - genuine semantic zooming)
     graphData.nodes.forEach((n) => {
-      if (collapsedFiles.has(n.file) && !isAgentMode) return;
+      if (collapsedFiles.has(n.file)) return;
 
       const pos = positions[n.id] || { x: 480, y: 360 };
       const isTestItem = tests.some((t) => t.id === n.id);
@@ -369,8 +370,12 @@ export const GraphView: React.FC<GraphViewProps> = ({
           lineEnd: n.lineEnd,
           stepNumber,
           rawName: n.name,
+          isGhost: n.isGhost,
+          signature: n.signature,
+          docstringFirstLine: n.docstringFirstLine,
+          contentHash: n.contentHash,
         },
-        classes: staggerClass,
+        classes: `${staggerClass}${n.isGhost ? ' ghost-node' : ''}`,
         position: pos,
       });
 
@@ -462,6 +467,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
           testIds: e.testIds || [],
           stepNumber: stepNum,
           stepLabel: stepNum !== undefined ? `[${stepNum}]` : '',
+          confidence: e.confidence,
+          kind: e.kind,
+          isGhost: e.isGhost,
+          resolutionReason: e.resolutionReason,
         },
       });
     });
@@ -715,6 +724,53 @@ export const GraphView: React.FC<GraphViewProps> = ({
               opacity: 0.55,
             },
           },
+          // Ambiguous static edges: warm amber dashed line with restrained glow
+          {
+            selector: 'edge[confidence = "ambiguous"]',
+            style: {
+              'line-color': '#d97706',
+              'target-arrow-color': '#d97706',
+              'line-style': 'dashed',
+              'line-dash-pattern': [4, 3],
+              opacity: 0.75,
+              width: 1.1,
+              'z-index': 12,
+            },
+          },
+          // Unresolved static edges: faint dotted line
+          {
+            selector: 'edge[confidence = "unresolved"]',
+            style: {
+              'line-color': '#475569',
+              'target-arrow-color': '#475569',
+              'line-style': 'dotted',
+              opacity: 0.35,
+              width: 0.75,
+              'z-index': 4,
+            },
+          },
+          // Ghost edges: base-side removed relationships
+          {
+            selector: 'edge[?isGhost]',
+            style: {
+              'line-color': '#64748b',
+              'target-arrow-color': '#64748b',
+              'line-style': 'dashed',
+              opacity: 0.25,
+              width: 0.75,
+            },
+          },
+          // Ghost nodes: distinct base-side removed elements that do not look current
+          {
+            selector: 'node[?isGhost]',
+            style: {
+              'border-width': 1.5,
+              'border-style': 'dashed',
+              'border-color': '#ef4444',
+              opacity: 0.45,
+              'background-color': '#1c1917',
+            },
+          },
           // --- Observed Edges for selected test: Cyan strand with Sequential Step Badges ---
           {
             selector: 'edge.observed-for-test',
@@ -835,8 +891,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'background-color': '#334155',
               'border-width': 0,
               opacity: 0.28,
-              width: 4.5,
-              height: 4.5,
               label: '',
               'z-index': 5,
             },
@@ -849,8 +903,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'border-width': 1,
               'border-color': '#334155',
               opacity: 0.40,
-              width: 8,
-              height: 8,
               label: 'data(shortLabel)',
               color: '#64748b',
               'font-size': '8.5px',
@@ -879,12 +931,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 2,
             },
           },
-          // Impacted nodes: stable size (8.5px), high contrast, restrained colors
+          // Impacted nodes: high contrast, restrained colors, exact preserved shape and size
           {
             selector: 'node.agent-impacted',
             style: {
-              width: 8.5,
-              height: 8.5,
               opacity: 1.0,
               'transition-property': 'background-color, border-color, border-width',
               'transition-duration': 0.35,
@@ -899,8 +949,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'background-color': '#ef4444',
               'border-width': 1.2,
               'border-color': '#fca5a5',
-              width: 8.5,
-              height: 8.5,
               label: 'data(shortLabel)',
               color: '#fca5a5',
               'font-weight': 600,
@@ -915,8 +963,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'background-color': '#0284c7',
               'border-width': 1.2,
               'border-color': '#38bdf8',
-              width: 8.0,
-              height: 8.0,
               label: 'data(shortLabel)',
               color: '#7dd3fc',
               'font-weight': 500,
@@ -931,8 +977,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'background-color': '#d97706',
               'border-width': 1.2,
               'border-color': '#f59e0b',
-              width: 8.5,
-              height: 8.5,
               label: 'data(shortLabel)',
               color: '#fde68a',
               'font-weight': 600,

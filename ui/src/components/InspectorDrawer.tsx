@@ -242,61 +242,185 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
           {/* Body Content */}
           <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
-            {/* 2. What it does (Role explanation) */}
-            <div
-              style={{
-                backgroundColor: '#131b28',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '10px 12px',
-              }}
-            >
+            {/* 2. What it does / Grounded Metadata */}
+            {selectedNode.description ? (
               <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '4px',
+                  backgroundColor: '#131b28',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 12px',
                 }}
               >
-                <span
+                <div
                   style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '4px',
                   }}
                 >
-                  What It Does
-                </span>
-                <span
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    What It Does
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      color: '#94a3b8',
+                      padding: '1px 4px',
+                      backgroundColor: '#1e293b',
+                      borderRadius: '2px',
+                    }}
+                  >
+                    Sample description
+                  </span>
+                </div>
+
+                <p
                   style={{
-                    fontSize: '9px',
-                    color: '#94a3b8',
-                    padding: '1px 4px',
-                    backgroundColor: '#1e293b',
-                    borderRadius: '2px',
+                    fontSize: '12px',
+                    lineHeight: '1.5',
+                    color: 'var(--text-primary)',
+                    margin: 0,
                   }}
                 >
-                  Sample description
-                </span>
+                  {selectedNode.description}
+                </p>
               </div>
-
-              <p
+            ) : (
+              <div
                 style={{
-                  fontSize: '12px',
-                  lineHeight: '1.5',
-                  color: selectedNode.description ? 'var(--text-primary)' : 'var(--text-muted)',
-                  margin: 0,
+                  backgroundColor: '#131b28',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
                 }}
               >
-                {selectedNode.description || 'Description unavailable in fixture sample.'}
-              </p>
-            </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: '#38bdf8',
+                    }}
+                  >
+                    Grounded Metadata (V3)
+                  </span>
+                  {selectedNode.isGhost && (
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        color: '#f87171',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        padding: '1px 5px',
+                        borderRadius: '2px',
+                      }}
+                    >
+                      Ghost (Base-side)
+                    </span>
+                  )}
+                </div>
 
-            {/* 3. Active Remediation Files & Real Engineering Explanation */}
-            {((isAgentActive) || selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'tests/test_auth.py::test_login_expired_token' || selectedNode.id === 'auth/service.py::login_with_token') && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '11px', lineHeight: 1.4 }}>
+                  {selectedNode.signature && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Signature: </span>
+                      <code style={{ color: '#e2e8f0', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.signature}
+                      </code>
+                    </div>
+                  )}
+
+                  <div>
+                    <span style={{ color: '#94a3b8', fontWeight: 600 }}>Docstring: </span>
+                    <span style={{ color: selectedNode.docstringFirstLine ? '#cbd5e1' : 'var(--text-muted)', fontStyle: selectedNode.docstringFirstLine ? 'italic' : 'normal' }}>
+                      {selectedNode.docstringFirstLine ? `"${selectedNode.docstringFirstLine}"` : 'None in export'}
+                    </span>
+                  </div>
+
+                  {selectedNode.parameterNames && selectedNode.parameterNames.length > 0 && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Parameters: </span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.parameterNames.join(', ')}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedNode.bases && selectedNode.bases.length > 0 && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Bases: </span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.bases.join(', ')}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedNode.decorators && selectedNode.decorators.length > 0 && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Decorators: </span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.decorators.map((d) => `@${d}`).join(' ')}
+                      </span>
+                    </div>
+                  )}
+
+                  <div>
+                    <span style={{ color: '#94a3b8', fontWeight: 600 }}>Static Edges: </span>
+                    <span style={{ color: '#cbd5e1' }}>
+                      {edges.filter((e) => e.target === selectedNode.id && !e.id.startsWith('containment:')).length} incoming · {edges.filter((e) => e.source === selectedNode.id && !e.id.startsWith('containment:')).length} outgoing
+                    </span>
+                  </div>
+
+                  {selectedNode.contentHash && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>SHA-256: </span>
+                      <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
+                        {selectedNode.contentHash.slice(0, 16)}…
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Test coverage summary if tests are loaded */}
+                  {(() => {
+                    const executingTests = tests.filter((t) => t.exercisedNodeIds?.includes(selectedNode.id));
+                    return (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontWeight: 600 }}>Test Coverage: </span>
+                        <span style={{ color: executingTests.length > 0 ? '#34d399' : 'var(--text-muted)' }}>
+                          {executingTests.length > 0
+                            ? `Executed by ${executingTests.length} test${executingTests.length > 1 ? 's' : ''}`
+                            : 'No executed coverage recorded'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Active Remediation Files & Real Engineering Explanation (Demo only) */}
+            {((isAgentActive) || (selectedNode.description && (selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'tests/test_auth.py::test_login_expired_token' || selectedNode.id === 'auth/service.py::login_with_token'))) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {/* Honest Simulation Demarcation Notice */}
                 <div
@@ -674,8 +798,60 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                   isCandidatePatch={isAgentActive && agentPhase === 'patching'}
                 />
               ) : (
-                <div style={{ padding: '12px', fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                  Source snippet unavailable.
+                <div
+                  style={{
+                    padding: '12px',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    backgroundColor: '#0c1017',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 'var(--radius-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', paddingBottom: '6px' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8', fontWeight: 600 }}>
+                      {selectedNode.file}:{selectedNode.lineStart}–{selectedNode.lineEnd}
+                    </span>
+                    <span className={`badge-change ${selectedNode.changeStatus}`}>
+                      {selectedNode.changeStatus}
+                    </span>
+                  </div>
+
+                  {selectedNode.signature && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: '#e2e8f0', backgroundColor: '#131822', padding: '6px 8px', borderRadius: '3px' }}>
+                      {selectedNode.signature}
+                    </div>
+                  )}
+
+                  {selectedNode.docstringFirstLine && (
+                    <div style={{ fontStyle: 'italic', color: '#94a3b8', fontSize: '11px', padding: '2px 0' }}>
+                      "{selectedNode.docstringFirstLine}"
+                    </div>
+                  )}
+
+                  {selectedNode.contentHash && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      SHA-256: {selectedNode.contentHash}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: '#fbbf24',
+                      backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                      border: '1px solid rgba(245, 158, 11, 0.25)',
+                      borderRadius: '4px',
+                      padding: '8px 10px',
+                      lineHeight: '1.4',
+                      marginTop: '2px',
+                    }}
+                  >
+                    source text not included in this export
+                  </div>
                 </div>
               )}
             </div>
@@ -1277,17 +1453,55 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
               >
                 Architectural Role & Summary
               </div>
-              <p
-                style={{
-                  fontSize: '12px',
-                  color: '#e2e8f0',
-                  lineHeight: '1.5',
-                  margin: 0,
-                }}
-              >
-                {currentFile.description ||
-                  `Source file defining ${currentFile.symbolCount} functions/classes within the ${currentFile.tier || 'application'} domain.`}
-              </p>
+              {currentFile.description ? (
+                <p
+                  style={{
+                    fontSize: '12px',
+                    color: '#e2e8f0',
+                    lineHeight: '1.5',
+                    margin: 0,
+                  }}
+                >
+                  {currentFile.description}
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '11px', color: '#94a3b8' }}>
+                  <div>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>File: </span>
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>{currentFile.file}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>Child Symbols: </span>
+                    <span>{currentFile.symbolCount}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>Line Count: </span>
+                    <span>{currentFile.lineCount}</span>
+                  </div>
+                  {currentFile.contentHash && (
+                    <div>
+                      <span style={{ color: '#cbd5e1', fontWeight: 600 }}>SHA-256: </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{currentFile.contentHash.slice(0, 16)}…</span>
+                    </div>
+                  )}
+                  {currentFile.gitStatus && (
+                    <div>
+                      <span style={{ color: '#cbd5e1', fontWeight: 600 }}>Git Status: </span>
+                      <span className={`badge-change ${currentFile.changeStatus}`}>{currentFile.gitStatus}</span>
+                    </div>
+                  )}
+                  {currentFile.isGhost && (
+                    <div style={{ color: '#f87171', fontSize: '11px' }}>
+                      Ghost file: removed in head worktree, present in base revision.
+                    </div>
+                  )}
+                  {currentFile.parseError && (
+                    <div style={{ color: '#f87171', fontSize: '11px' }}>
+                      Parse error: {currentFile.parseError}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Cluster Map Controls */}
               {onToggleCollapseFile && (
