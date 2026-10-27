@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FaultMeshAdapter } from './adapter';
-import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter } from './adapter';
+import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter } from './adapter';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -9,7 +9,10 @@ import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { ReplayComparisonView } from './components/ReplayComparisonView';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
+import { StartupScreen } from './components/StartupScreen';
 import { SpectateHook } from './components/SpectateHook';
+import { useLiveSpectate } from './spectate/useLiveSpectate';
+import { isDemoMode } from './utils/demo';
 import {
   AGENT_SIMULATION_STEPS,
   AGENT_ORIGINAL_SNIPPET,
@@ -26,15 +29,23 @@ import { AlertTriangle } from 'lucide-react';
 import type { LiveSpectateState } from './spectate/liveState';
 import './styles/theme.css';
 
-const DEFAULT_ADAPTER = new FixtureAdapter(0);
-
-interface AppProps {
+export interface AppProps {
   adapter?: FaultMeshAdapter;
   initialScreen?: 'selector' | 'workspace';
+  isDemo?: boolean;
 }
 
-export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScreen = 'selector' }) => {
-  const [activeAdapter, setActiveAdapter] = useState<FaultMeshAdapter>(adapter);
+export const App: React.FC<AppProps> = ({
+  adapter,
+  initialScreen = 'selector',
+  isDemo,
+}) => {
+  const isDemoActive = isDemo ?? isDemoMode();
+  const [activeAdapter, setActiveAdapter] = useState<FaultMeshAdapter>(() => {
+    if (adapter) return adapter;
+    return isDemoActive ? new FixtureAdapter(0) : new EmptyAdapter();
+  });
+
   const [importError, setImportError] = useState<string | null>(null);
   const [currentScreen, setCurrentScreen] = useState<'selector' | 'workspace'>(initialScreen);
   const [activeView, setActiveView] = useState<'map' | 'diagnostics' | 'replay'>('map');
@@ -57,6 +68,12 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   useEffect(() => {
     activeAdapterRef.current = activeAdapter;
   }, [activeAdapter]);
+
+  useEffect(() => {
+    if (adapter) {
+      setActiveAdapter(adapter);
+    }
+  }, [adapter]);
 
   useEffect(() => {
     activeRunIdRef.current = activeRunId;
@@ -429,6 +446,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     });
   }, []);
 
+  const spectate = useLiveSpectate({ onLiveStateChange: handleLiveStateChange });
+
   const handleCloseInspector = () => {
     setSelectedNodeId(null);
     setSelectedFile(null);
@@ -614,38 +633,49 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
       )}
 
       {currentScreen === 'selector' ? (
-        <ProjectSelectorScreen
-          runs={runs}
-          activeRun={activeRun}
-          tests={tests}
-          onSelectRun={(runId) => {
-            setActiveRunId(runId);
-          }}
-          onResetToSample={handleResetToSampleDemo}
-          onOpenWorkspace={(testId, startAgent) => {
-            if (testId) {
-              setSelectedTestId(testId);
+        isDemoActive ? (
+          <ProjectSelectorScreen
+            runs={runs}
+            activeRun={activeRun}
+            tests={tests}
+            onSelectRun={(runId) => {
+              setActiveRunId(runId);
+            }}
+            onResetToSample={handleResetToSampleDemo}
+            onOpenWorkspace={(testId, startAgent) => {
+              if (testId) {
+                setSelectedTestId(testId);
+              }
+              setCurrentScreen('workspace');
+              if (startAgent && !activeRun?.isRealImport) {
+                startAgentSimulation();
+              }
+            }}
+            onOpenDiagnostics={() => {
+              setActiveView('diagnostics');
+              setCurrentScreen('workspace');
+            }}
+            isLoading={isLoadingRuns || isLoadingRunData}
+            error={runsError || runDataError}
+            onRetry={
+              runsError
+                ? loadRuns
+                : activeRunId
+                ? () => loadActiveRunData(activeRunId)
+                : undefined
             }
-            setCurrentScreen('workspace');
-            if (startAgent && !activeRun?.isRealImport) {
-              startAgentSimulation();
-            }
-          }}
-          onOpenDiagnostics={() => {
-            setActiveView('diagnostics');
-            setCurrentScreen('workspace');
-          }}
-          isLoading={isLoadingRuns || isLoadingRunData}
-          error={runsError || runDataError}
-          onRetry={
-            runsError
-              ? loadRuns
-              : activeRunId
-              ? () => loadActiveRunData(activeRunId)
-              : undefined
-          }
-          onOpenFiles={handleImportFiles}
-        />
+            onOpenFiles={handleImportFiles}
+          />
+        ) : (
+          <StartupScreen
+            onSelectProject={spectate.startWatching}
+            isBusy={spectate.busy}
+            hasBridge={spectate.hasBridge}
+            statusNote={spectate.statusNote}
+            activeRun={activeRun}
+            onReturnToWorkspace={() => setCurrentScreen('workspace')}
+          />
+        )
       ) : (
         <>
           <Header
@@ -842,7 +872,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
         </>
       )}
       {currentScreen === 'workspace' && (
-        <SpectateHook onLiveStateChange={handleLiveStateChange} />
+        <SpectateHook controller={spectate} />
       )}
     </div>
   );
