@@ -6,7 +6,7 @@ import ast
 import re
 from typing import Literal, TypeAlias
 
-from faultmesh.schemas import ConstraintSpec, PropertySpec
+from faultmesh.schemas import ConstraintSpec, IntegerStrategy, PropertySpec
 
 
 class PreconditionCompilationError(ValueError):
@@ -39,6 +39,13 @@ class PreconditionCompiler:
             text = declaration.strip().strip("`").replace("≤", "<=").replace("≥", ">=")
             range_match = _RANGE_SENTENCE.fullmatch(text)
             if range_match:
+                if any(
+                    not isinstance(argument.strategy, IntegerStrategy)
+                    for argument in specification.arguments
+                ):
+                    raise PreconditionCompilationError(
+                        "the all-integer range declaration cannot describe text or list inputs"
+                    )
                 minimum, maximum = (int(value) for value in range_match.groups())
                 if maximum < minimum:
                     raise PreconditionCompilationError(f"invalid declared range: {declaration}")
@@ -102,7 +109,7 @@ class PreconditionCompiler:
         names = {argument.name for argument in specification.arguments}
         if isinstance(node, ast.Name) and node.id in names:
             return node.id
-        if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        if isinstance(node, ast.Constant) and type(node.value) is int:
             return node.value
         if (
             isinstance(node, ast.UnaryOp)
@@ -127,6 +134,8 @@ class PreconditionCompiler:
         left, right, kind = constraint.left, constraint.right, constraint.kind
         if isinstance(left, str) and isinstance(right, int):
             strategy = strategies[left]
+            if not isinstance(strategy, IntegerStrategy):
+                return False
             if kind == "ge":
                 return strategy.minimum >= right
             if kind == "gt":
@@ -137,6 +146,8 @@ class PreconditionCompiler:
                 return strategy.maximum < right
         if isinstance(left, int) and isinstance(right, str):
             strategy = strategies[right]
+            if not isinstance(strategy, IntegerStrategy):
+                return False
             if kind == "le":
                 return strategy.minimum >= left
             if kind == "lt":

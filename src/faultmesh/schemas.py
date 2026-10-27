@@ -11,6 +11,10 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCHEMA_VERSION: Literal["1.0"] = "1.0"
+MAX_TEXT_ALPHABET_SIZE = 64
+MAX_TEXT_LENGTH = 256
+MAX_INTEGER_LIST_LENGTH = 64
+MAX_SERIALIZED_INPUT_BYTES = 16_384
 
 
 def utc_now() -> datetime:
@@ -86,6 +90,7 @@ class FunctionMetadata(StrictModel):
     assertions: list[str] = Field(default_factory=list)
     is_method: bool = False
     is_async: bool = False
+    is_generator: bool = False
 
 
 class ClassMetadata(StrictModel):
@@ -135,15 +140,65 @@ class IntegerStrategy(StrictModel):
         return self
 
 
+class TextStrategy(StrictModel):
+    kind: Literal["text"] = "text"
+    alphabet: str = Field(min_length=1, max_length=MAX_TEXT_ALPHABET_SIZE)
+    minimum_length: Annotated[int, Field(ge=0, le=MAX_TEXT_LENGTH)] = 0
+    maximum_length: Annotated[int, Field(ge=0, le=MAX_TEXT_LENGTH)] = 32
+
+    @field_validator("alphabet")
+    @classmethod
+    def valid_alphabet(cls, value: str) -> str:
+        if len(set(value)) != len(value):
+            raise ValueError("text strategy alphabet characters must be unique")
+        if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
+            raise ValueError("text strategy alphabet cannot contain Unicode surrogates")
+        return value
+
+    @model_validator(mode="after")
+    def ordered_lengths(self) -> TextStrategy:
+        if self.maximum_length < self.minimum_length:
+            raise ValueError("text maximum_length must be >= minimum_length")
+        return self
+
+
+class IntegerListStrategy(StrictModel):
+    kind: Literal["integer_lists"] = "integer_lists"
+    element_minimum: int = -100
+    element_maximum: int = 100
+    minimum_length: Annotated[int, Field(ge=0, le=MAX_INTEGER_LIST_LENGTH)] = 0
+    maximum_length: Annotated[int, Field(ge=0, le=MAX_INTEGER_LIST_LENGTH)] = 16
+
+    @model_validator(mode="after")
+    def ordered_bounds(self) -> IntegerListStrategy:
+        if self.element_maximum < self.element_minimum:
+            raise ValueError("list element_maximum must be >= element_minimum")
+        if self.maximum_length < self.minimum_length:
+            raise ValueError("list maximum_length must be >= minimum_length")
+        return self
+
+
+InputStrategy = Annotated[
+    IntegerStrategy | TextStrategy | IntegerListStrategy,
+    Field(discriminator="kind"),
+]
+
+
 class ArgumentSpec(StrictModel):
     name: str
-    strategy: IntegerStrategy
+    strategy: InputStrategy
 
 
 class ConstraintSpec(StrictModel):
     kind: Literal["le", "lt", "ge", "gt", "eq", "ne"]
     left: str | int
     right: str | int
+
+    @model_validator(mode="after")
+    def reject_boolean_literals(self) -> ConstraintSpec:
+        if type(self.left) is bool or type(self.right) is bool:
+            raise ValueError("boolean constraint operands are not supported")
+        return self
 
 
 class NoExceptionOracle(StrictModel):
@@ -162,29 +217,98 @@ class ResultBetweenOracle(StrictModel):
     inclusive: bool = True
 
 
+class ResultLengthOracle(StrictModel):
+    kind: Literal["result_length_le_arg", "result_length_eq_arg"]
+    argument: str
+
+
+class ResultListNondecreasingOracle(StrictModel):
+    kind: Literal["result_list_nondecreasing"] = "result_list_nondecreasing"
+
+
+class ResultListPreservesMultisetOracle(StrictModel):
+    kind: Literal["result_list_preserves_multiset"] = "result_list_preserves_multiset"
+    argument: str
+
+
 OracleSpec = Annotated[
-    NoExceptionOracle | ResultBoundOracle | ResultBetweenOracle,
+    NoExceptionOracle
+    | ResultBoundOracle
+    | ResultBetweenOracle
+    | ResultLengthOracle
+    | ResultListNondecreasingOracle
+    | ResultListPreservesMultisetOracle,
     Field(discriminator="kind"),
 ]
 
 
 class PropertySpec(StrictModel):
-    schema_version: Literal["1.0"] = SCHEMA_VERSION
+    schema_version: Literal["1.0", "1.1"] = SCHEMA_VERSION
     target: SourceReference
     qualified_name: str
     arguments: list[ArgumentSpec]
     constraints: list[ConstraintSpec] = Field(default_factory=list)
     oracle: OracleSpec
     oracle_explanation: str = Field(min_length=1)
+    contract_citation: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     evidence: list[SourceReference] = Field(min_length=1)
     max_examples: Annotated[int, Field(ge=1, le=10_000)] = 200
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 1
 
     @model_validator(mode="after")
-    def unique_argument_names(self) -> PropertySpec:
+    def valid_closed_contract(self) -> PropertySpec:
         names = [argument.name for argument in self.arguments]
         if len(set(names)) != len(names):
             raise ValueError("property argument names must be unique")
+        strategies = {argument.name: argument.strategy for argument in self.arguments}
+        for constraint in self.constraints:
+            for operand in (constraint.left, constraint.right):
+                if isinstance(operand, str):
+                    if operand not in strategies:
+                        raise ValueError(f"constraint references unknown argument: {operand}")
+                    if not isinstance(strategies[operand], IntegerStrategy):
+                        raise ValueError("integer comparisons require integer argument operands")
+        oracle = self.oracle
+        if isinstance(oracle, ResultBoundOracle):
+            if not isinstance(strategies.get(oracle.argument), IntegerStrategy):
+                raise ValueError("integer result-bound oracle requires an integer argument")
+        elif isinstance(oracle, ResultBetweenOracle):
+            if not isinstance(
+                strategies.get(oracle.lower_argument), IntegerStrategy
+            ) or not isinstance(strategies.get(oracle.upper_argument), IntegerStrategy):
+                raise ValueError("between oracle requires two integer arguments")
+        elif isinstance(oracle, ResultLengthOracle):
+            if not isinstance(
+                strategies.get(oracle.argument), (TextStrategy, IntegerListStrategy)
+            ):
+                raise ValueError("result-length oracle requires a text or integer-list argument")
+        elif isinstance(oracle, ResultListPreservesMultisetOracle):
+            if not isinstance(strategies.get(oracle.argument), IntegerListStrategy):
+                raise ValueError("multiset oracle requires an integer-list argument")
+        elif isinstance(oracle, ResultListNondecreasingOracle) and not any(
+            isinstance(strategy, IntegerListStrategy) for strategy in strategies.values()
+        ):
+            raise ValueError("nondecreasing oracle requires an integer-list input domain")
+
+        uses_typed_extension = any(
+            not isinstance(strategy, IntegerStrategy) for strategy in strategies.values()
+        ) or isinstance(
+            oracle,
+            (
+                ResultLengthOracle,
+                ResultListNondecreasingOracle,
+                ResultListPreservesMultisetOracle,
+            ),
+        )
+        if self.schema_version == "1.0" and uses_typed_extension:
+            raise ValueError("typed strategies and oracles require property schema 1.1")
+        citation = (self.contract_citation or "").strip()
+        if self.schema_version == "1.1" and len(citation) < 8:
+            raise ValueError(
+                "property schema 1.1 requires a specific source/docstring contract citation"
+            )
         return self
 
 
@@ -203,6 +327,21 @@ class ProposedHypothesis(StrictModel):
 class ScoutResponse(StrictModel):
     schema_version: Literal["1.0"] = SCHEMA_VERSION
     hypotheses: list[ProposedHypothesis] = Field(max_length=8)
+
+
+def scout_response_json_schema() -> dict[str, Any]:
+    """Return the inference schema with semantic versions explicit on the wire."""
+
+    schema = ScoutResponse.model_json_schema()
+    property_schema = schema["$defs"]["PropertySpec"]
+    properties = property_schema["properties"]
+    properties["schema_version"].pop("default", None)
+    properties["contract_citation"] = {"type": "string", "minLength": 8}
+    required = property_schema["required"]
+    for field in reversed(("schema_version", "contract_citation")):
+        if field not in required:
+            required.insert(0, field)
+    return schema
 
 
 class HypothesisRevision(StrictModel):

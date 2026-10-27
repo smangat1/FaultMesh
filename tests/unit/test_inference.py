@@ -10,6 +10,7 @@ from faultmesh.agents import ScoutAgent
 from faultmesh.analysis import ContextBuilder, ProjectAnalyzer
 from faultmesh.inference.backends import BackendResult, HeuristicBackend, LlamaCppCliBackend
 from faultmesh.inference.client import InferenceClient, InferenceValidationError
+from faultmesh.schemas import scout_response_json_schema
 
 
 @dataclass
@@ -28,6 +29,38 @@ def test_invalid_model_output_gets_bounded_repair_attempts() -> None:
     assert backend.calls == 3
 
 
+@dataclass
+class VersionRepairBackend:
+    prompts: list[str]
+
+    def generate(self, prompt: str, json_schema: dict[str, Any]) -> BackendResult:
+        del json_schema
+        self.prompts.append(prompt)
+        return BackendResult("not json", "invalid", "none", "test", 1.0)
+
+
+def test_repair_prompt_explains_typed_property_schema_version() -> None:
+    backend = VersionRepairBackend(prompts=[])
+
+    with pytest.raises(InferenceValidationError):
+        InferenceClient(backend, max_repair_attempts=1).scout("original prompt")
+
+    assert 'property_spec.schema_version "1.1"' in backend.prompts[1]
+
+
+def test_model_facing_schema_requires_explicit_typed_contract_fields() -> None:
+    schema = scout_response_json_schema()
+    property_schema = schema["$defs"]["PropertySpec"]
+
+    assert "schema_version" in property_schema["required"]
+    assert "contract_citation" in property_schema["required"]
+    assert "default" not in property_schema["properties"]["schema_version"]
+    assert property_schema["properties"]["contract_citation"] == {
+        "type": "string",
+        "minLength": 8,
+    }
+
+
 def test_llama_cli_backend_replaces_invalid_output_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -41,6 +74,9 @@ def test_llama_cli_backend_replaces_invalid_output_bytes(
         return subprocess.CompletedProcess(args[0], 0, b'{"text":"bad \xff"}', b"")
 
     monkeypatch.setattr(subprocess, "run", completed)
+    monkeypatch.setattr(
+        "faultmesh.inference.backends.platform.platform", lambda: "test-platform"
+    )
     result = LlamaCppCliBackend("llama-cli", model).generate("prompt", {})
     assert result.text == '{"text":"bad �"}'
     assert "--single-turn" in observed_command
@@ -51,6 +87,7 @@ class TamperedHeuristic(HeuristicBackend):
         result = super().generate(prompt, json_schema)
         payload = json.loads(result.text)
         for hypothesis in payload["hypotheses"]:
+            hypothesis["property_spec"]["qualified_name"] = "invented.other"
             hypothesis["source_references"][0]["content_hash"] = "invented"
             hypothesis["property_spec"]["target"]["content_hash"] = "invented"
             hypothesis["property_spec"]["evidence"][0]["content_hash"] = "invented"
@@ -75,6 +112,7 @@ def test_scout_deterministically_grounds_model_source_identity() -> None:
     ).inspect(function)
     proposed = inferred.response.hypotheses[0]
     assert proposed.source_references == [function.reference]
+    assert proposed.property_spec.qualified_name == function.qualified_name
     assert proposed.property_spec.target == function.reference
     assert proposed.property_spec.evidence == [function.reference]
 
