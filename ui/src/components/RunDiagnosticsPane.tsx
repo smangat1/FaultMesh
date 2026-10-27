@@ -8,6 +8,7 @@ import {
   FileCode,
   ShieldAlert,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 
 interface RunDiagnosticsPaneProps {
   activeRun: RunSummary | null;
@@ -69,7 +70,7 @@ export const RunDiagnosticsPane: React.FC<RunDiagnosticsPaneProps> = ({
             <GitBranch size={13} /> {activeRun.gitBranch} @ <span>{activeRun.gitRevision}</span>
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <Clock size={13} /> {activeRun.durationMs}ms duration
+            <Clock size={13} /> {formatDurationMs(activeRun.durationMs)} duration
           </span>
           <span>Commit: "{activeRun.commitMessage}"</span>
         </div>

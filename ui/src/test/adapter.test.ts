@@ -1,6 +1,10 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { describe, it, expect } from 'vitest';
 import { FixtureAdapter } from '../adapter/fixtureAdapter';
 import { HttpAdapter } from '../adapter/httpAdapter';
+import { ImportedAdapter } from '../adapter/importedAdapter';
+import { parseAndValidateV3, parseAndValidateV2 } from '../import';
 
 describe('FixtureAdapter', () => {
   const adapter = new FixtureAdapter(0);
@@ -131,7 +135,8 @@ describe('FixtureAdapter', () => {
     );
     expect(validateToken).toBeDefined();
     expect(validateToken?.lineStart).toBe(43);
-    const snippetLines = validateToken!.sourceSnippet.split('\n');
+    expect(validateToken!.sourceSnippet).toBeDefined();
+    const snippetLines = validateToken!.sourceSnippet!.split('\n');
     // Line 52 is line offset 52 - 43 = 9
     expect(snippetLines[9]).toContain('raise InvalidClaimError');
     expect(failingTest?.traceback).toContain('tokens.py", line 52');
@@ -153,5 +158,166 @@ describe('HttpAdapter Stub', () => {
 
   it('throws an informative error rather than silent failure or fake mock', async () => {
     await expect(httpAdapter.getRuns()).rejects.toThrow(/not implemented/i);
+  });
+});
+
+describe('Phase 2: ImportedAdapter (V3 Static Structure Graph)', () => {
+  const FIXTURES_DIR = path.resolve(__dirname, '../../../docs/fixtures');
+  const v3HpackJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v3-hpack-structure.json'), 'utf-8');
+  const v3ExampleJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v3-structure-example.json'), 'utf-8');
+
+  it('loads real hpack V3 structure without backend or synthesis', async () => {
+    const v3Res = parseAndValidateV3(v3HpackJson);
+    expect(v3Res.success).toBe(true);
+
+    const adapter = new ImportedAdapter(v3Res.data!);
+    const runs = await adapter.getRuns();
+    expect(runs).toHaveLength(1);
+    const run = runs[0];
+
+    expect(run.isRealImport).toBe(true);
+    expect(run.isFixture).toBe(false);
+    expect(run.project).toBe('hpack-repo');
+    expect(run.gitRevision).toBe('c2edbee3b5508e0b1689877fe6f173eafb097aef');
+    expect(run.unresolvedCount).toBe(461);
+    expect(run.parseErrorCount).toBe(0);
+
+    const graph = await adapter.getGraph(run.id);
+    expect(graph.files!.length).toBe(19);
+    expect(graph.nodes.length).toBe(171);
+    expect(graph.edges.length).toBeGreaterThan(0);
+
+    // Verify quiet honest nodes: no speculative description or complexity
+    for (const node of graph.nodes) {
+      expect(node.description).toBeUndefined();
+      expect(node.complexity).toBeUndefined();
+      expect(node.sourceSnippet).toBeUndefined();
+      // But grounded metadata is present
+      expect(node.signature).toBeDefined();
+      expect(node.lineStart).toBeGreaterThanOrEqual(1);
+      expect(node.lineEnd).toBeGreaterThanOrEqual(node.lineStart);
+    }
+
+    // Verify docstring is string or null
+    for (const node of graph.nodes) {
+      expect(node.docstringFirstLine === null || typeof node.docstringFirstLine === 'string').toBe(true);
+    }
+
+    // Verify edges have confidence and static provenance
+    for (const edge of graph.edges) {
+      expect(edge.confidence).toMatch(/^(resolved|ambiguous|unresolved)$/);
+      expect(edge.provenance).toMatch(/^static /);
+    }
+
+    // Verify getSource honesty: returns metadata, but NO fake source code
+    const sampleNode = graph.nodes[0];
+    const source = await adapter.getSource(run.id, sampleNode.id);
+    expect(source).not.toBeNull();
+    expect(source?.hasSourceText).toBe(false);
+    expect(source?.snippet).toBeUndefined();
+    expect(source?.lineStart).toBe(sampleNode.lineStart);
+    expect(source?.lineEnd).toBe(sampleNode.lineEnd);
+    expect(source?.signature).toBe(sampleNode.signature);
+  });
+
+  it('correctly maps git change status and ghost nodes from V3 structure', async () => {
+    const v3Res = parseAndValidateV3(v3ExampleJson);
+    expect(v3Res.success).toBe(true);
+    const doc = JSON.parse(JSON.stringify(v3Res.data!));
+
+    // Inject git symbol statuses and a ghost symbol
+    doc.git.symbols = [
+      { symbol_id: doc.symbols[0].id, status: 'modified' },
+      { symbol_id: doc.symbols[1].id, status: 'added' },
+    ];
+    doc.symbols.push({
+      id: 'symbol:src/buggy_python_project/bounds.py:old_helper',
+      path: 'src/buggy_python_project/bounds.py',
+      qualified_name: 'old_helper',
+      kind: 'function',
+      parent_id: 'file:src/buggy_python_project/bounds.py',
+      start_line: 10,
+      end_line: 15,
+      signature: 'def old_helper(): ...',
+      parameter_names: [],
+      decorators: [],
+      bases: [],
+      docstring: null,
+      content_sha256: 'deadbeef',
+      removed: true,
+      revision_side: 'base',
+    });
+
+    const adapter = new ImportedAdapter(doc);
+    const runs = await adapter.getRuns();
+    const graph = await adapter.getGraph(runs[0].id);
+
+    const modifiedNode = graph.nodes.find((n) => n.changeStatus === 'modified');
+    expect(modifiedNode).toBeDefined();
+    expect(modifiedNode?.id).toBe(doc.symbols[0].id);
+    expect(modifiedNode?.docstringFirstLine).toBe('Return ``value + 1`` but never exceed ``maximum``.');
+
+    const addedNode = graph.nodes.find((n) => n.changeStatus === 'added');
+    expect(addedNode).toBeDefined();
+    expect(addedNode?.id).toBe(doc.symbols[1].id);
+
+    const removedGhostNode = graph.nodes.find((n) => n.isGhost && n.changeStatus === 'removed');
+    expect(removedGhostNode).toBeDefined();
+    expect(removedGhostNode?.revisionSide).toBe('base');
+  });
+
+  it('supports V2 test evidence, test-coverage mapping, and multiple run switching', async () => {
+    const v2ParentJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-parent.json'), 'utf-8');
+    const v2ReplayJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-replay.json'), 'utf-8');
+
+    const v3Res = parseAndValidateV3(v3HpackJson);
+    const v2ParentRes = parseAndValidateV2(v2ParentJson);
+    const v2ReplayRes = parseAndValidateV2(v2ReplayJson);
+
+    expect(v3Res.success).toBe(true);
+    expect(v2ParentRes.success).toBe(true);
+    expect(v2ReplayRes.success).toBe(true);
+
+    const adapter = new ImportedAdapter(v3Res.data!, [v2ParentRes.data!, v2ReplayRes.data!]);
+    const runs = await adapter.getRuns();
+
+    // Verify 2 runs loaded
+    expect(runs).toHaveLength(2);
+    const parentRun = runs.find((r) => r.id === 'run-1c31adf64626');
+    const replayRun = runs.find((r) => r.id === 'run-9de6b4cb5a58');
+
+    expect(parentRun).toBeDefined();
+    expect(replayRun).toBeDefined();
+
+    // Verify replay provenance on replay run
+    expect(replayRun?.replayProvenance).toBeDefined();
+    expect(replayRun?.replayProvenance?.parent_run_id).toBe('run-1c31adf64626');
+    expect(replayRun?.replayProvenance?.comparison).toBe('SAME_FAILURE');
+    expect(replayRun?.fixtureLabel).toBe('Recorded Replay Run');
+
+    // Tests in parent run
+    const parentTests = await adapter.getTests(parentRun!.id);
+    expect(parentTests).toHaveLength(3);
+    const failedTest = parentTests.find((t) => t.status === 'fail');
+    expect(failedTest).toBeDefined();
+    expect(failedTest?.failureFingerprint).toBe('903afcd3b317b31e4efe2707558e22cb70890c1b774fc9affb093485808eb38e');
+    expect(failedTest?.phases?.length).toBeGreaterThan(0);
+    expect(failedTest?.exercisedNodeIds.length).toBeGreaterThan(0);
+    // Crucial rule: no runtime call edges
+    expect(failedTest?.observedEdgeIds).toHaveLength(0);
+    expect(failedTest?.callTracingAvailable).toBe(false);
+
+    // Tests in replay run
+    const replayTests = await adapter.getTests(replayRun!.id);
+    expect(replayTests).toHaveLength(1);
+    expect(replayTests[0].failureFingerprint).toBe(failedTest?.failureFingerprint);
+
+    // getTestEvidence adheres strictly to Rule 1: executedEdges is EMPTY (no arrows)
+    const evidence = await adapter.getTestEvidence(parentRun!.id, failedTest!.id);
+    expect(evidence).not.toBeNull();
+    expect(evidence?.coveredNodes.length).toBeGreaterThan(0);
+    expect(evidence?.executedEdges).toHaveLength(0);
+    expect(evidence?.callTracingAvailable).toBe(false);
+    expect(evidence?.observationNote).toContain('Static edges remain possibilities, not confirmed calls');
   });
 });

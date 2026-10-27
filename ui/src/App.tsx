@@ -1,14 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FaultMeshAdapter } from './adapter';
-import { FixtureAdapter } from './adapter';
+import { FixtureAdapter, ImportedAdapter } from './adapter';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
+import { ReplayComparisonView } from './components/ReplayComparisonView';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
 import { SpectateHook } from './components/SpectateHook';
+import {
+  AGENT_SIMULATION_STEPS,
+  AGENT_ORIGINAL_SNIPPET,
+  type AgentLogEntry,
+} from './agent/agentSimulation';
+import {
+  validateV3Structure,
+  validateV2RunEvidence,
+  MAX_V3_SIZE_BYTES,
+  type V3StructureExport,
+  type V2RunEvidenceExport,
+} from './import';
+import { AlertTriangle } from 'lucide-react';
 import './styles/theme.css';
 
 const DEFAULT_ADAPTER = new FixtureAdapter(0);
@@ -19,8 +33,10 @@ interface AppProps {
 }
 
 export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScreen = 'selector' }) => {
+  const [activeAdapter, setActiveAdapter] = useState<FaultMeshAdapter>(adapter);
+  const [importError, setImportError] = useState<string | null>(null);
   const [currentScreen, setCurrentScreen] = useState<'selector' | 'workspace'>(initialScreen);
-  const [activeView, setActiveView] = useState<'map' | 'diagnostics'>('map');
+  const [activeView, setActiveView] = useState<'map' | 'diagnostics' | 'replay'>('map');
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [tests, setTests] = useState<TestItem[]>([]);
@@ -48,6 +64,15 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   const [isLoadingRunData, setIsLoadingRunData] = useState<boolean>(false);
   const [runDataError, setRunDataError] = useState<string | null>(null);
 
+  // Autonomous Agent Repair Simulation State
+  const [isAgentActive, setIsAgentActive] = useState<boolean>(false);
+  const [agentStepIndex, setAgentStepIndex] = useState<number>(0);
+  const [isAgentPlaying, setIsAgentPlaying] = useState<boolean>(false);
+  const [agentSpeed, setAgentSpeed] = useState<number>(1);
+  const [isExplanationExpanded, setIsExplanationExpanded] = useState<boolean>(false);
+  const [, setAgentLogs] = useState<AgentLogEntry[]>([]);
+  const agentTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Request cancellation token / sequence counter to guard against async race conditions
   const requestSeq = useRef<number>(0);
 
@@ -56,7 +81,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setIsLoadingRuns(true);
     setRunsError(null);
     try {
-      const loadedRuns = await adapter.getRuns();
+      const loadedRuns = await activeAdapter.getRuns();
       setRuns(loadedRuns);
       if (loadedRuns.length > 0) {
         setActiveRunId((prev) => {
@@ -73,7 +98,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     } finally {
       setIsLoadingRuns(false);
     }
-  }, [adapter]);
+  }, [activeAdapter]);
 
   useEffect(() => {
     loadRuns();
@@ -87,8 +112,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
 
     try {
       const [loadedTests, loadedGraph] = await Promise.all([
-        adapter.getTests(runId),
-        adapter.getGraph(runId),
+        activeAdapter.getTests(runId),
+        activeAdapter.getGraph(runId),
       ]);
 
       // Guard against stale async responses if user switched runs quickly
@@ -112,7 +137,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
         setIsLoadingRunData(false);
       }
     }
-  }, [adapter]);
+  }, [activeAdapter]);
 
   useEffect(() => {
     if (!activeRunId) {
@@ -165,10 +190,26 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     setCollapsedFiles(new Set());
   };
 
+  const handleSelectViewMode = (mode: GraphViewMode) => {
+    setViewMode(mode);
+    if (mode === 'changes') {
+      setSelectedTestId(null);
+    }
+  };
+
   const handleSelectNode = (nodeId: string | null) => {
     setSelectedNodeId(nodeId);
     if (nodeId) {
       setSelectedFile(null);
+      // Auto-unfold parent file if currently collapsed so the node is visible
+      const node = graphData.nodes.find((n) => n.id === nodeId);
+      if (node && collapsedFiles.has(node.file)) {
+        setCollapsedFiles((prev) => {
+          const next = new Set(prev);
+          next.delete(node.file);
+          return next;
+        });
+      }
     }
   };
 
@@ -184,14 +225,262 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
     if (testId) {
       setSelectedNodeId(null);
       setSelectedFile(null);
+      // Auto-unfold files involved in the selected test trace
+      const test = tests.find((t) => t.id === testId);
+      if (test && test.exercisedNodeIds) {
+        const filesToUnfold = new Set<string>();
+        graphData.nodes.forEach((n) => {
+          if (test.exercisedNodeIds.includes(n.id) || n.id === testId) {
+            filesToUnfold.add(n.file);
+          }
+        });
+        if (filesToUnfold.size > 0) {
+          setCollapsedFiles((prev) => {
+            const next = new Set(prev);
+            filesToUnfold.forEach((f) => next.delete(f));
+            return next;
+          });
+        }
+      }
     }
   };
+
+  const handleSelectRun = (runId: string) => {
+    setActiveRunId(runId);
+    if (activeAdapter instanceof ImportedAdapter) {
+      activeAdapter.setActiveV2Run(runId);
+    }
+    setPinnedSymbols([]);
+    setSelectedNodeId(null);
+    setSelectedFile(null);
+    setSelectedTestId(null);
+  };
+
+  // File import handler for local V3 and V2 JSON exports
+  const handleImportFiles = async (files: FileList | File[]) => {
+    setImportError(null);
+    try {
+      const fileList = Array.from(files);
+      if (fileList.length === 0) return;
+
+      let v3Doc: V3StructureExport | null = null;
+      const v2Docs: V2RunEvidenceExport[] = [];
+
+      for (const f of fileList) {
+        if (f.size > MAX_V3_SIZE_BYTES) {
+          throw new Error(`File "${f.name}" (${(f.size / (1024 * 1024)).toFixed(1)} MB) exceeds 64 MB size limit`);
+        }
+        const text = await f.text();
+        let json: Record<string, unknown>;
+        try {
+          json = JSON.parse(text);
+        } catch (err) {
+          throw new Error(`Malformed JSON in file "${f.name}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        if (json.schema_version === '3.0') {
+          const val = validateV3Structure(json, f.size);
+          if (!val.success) {
+            throw new Error(`V3 validation failed for "${f.name}": ${val.errors.map((e) => e.message).join('; ')}`);
+          }
+          v3Doc = val.data!;
+        } else if (json.schema_version === '2.0') {
+          const val = validateV2RunEvidence(json, f.size);
+          if (!val.success) {
+            throw new Error(`V2 validation failed for "${f.name}": ${val.errors.map((e) => e.message).join('; ')}`);
+          }
+          v2Docs.push(val.data!);
+        } else {
+          throw new Error(
+            `Unsupported schema_version in "${f.name}": expected "3.0" for structure or "2.0" for run evidence, found "${String(json.schema_version)}"`
+          );
+        }
+      }
+
+      if (!v3Doc) {
+        if (activeAdapter instanceof ImportedAdapter) {
+          for (const v2 of v2Docs) {
+            activeAdapter.addV2Run(v2);
+          }
+          const loadedRuns = await activeAdapter.getRuns();
+          setRuns(loadedRuns);
+          if (loadedRuns.length > 0) {
+            setActiveRunId(loadedRuns[0].id);
+            await loadActiveRunData(loadedRuns[0].id);
+          }
+          return;
+        }
+        throw new Error(
+          'Please select a V3 static structure JSON export (schema_version 3.0). V2 evidence requires a matching V3 structure.'
+        );
+      }
+
+      // Valid V3 document loaded
+      const newAdapter = new ImportedAdapter(v3Doc, v2Docs);
+      setActiveAdapter(newAdapter);
+
+      // Reset selection and pins to prevent stale state
+      setPinnedSymbols([]);
+      setSelectedNodeId(null);
+      setSelectedFile(null);
+      setSelectedTestId(null);
+      setIsAgentActive(false);
+
+      const loadedRuns = await newAdapter.getRuns();
+      setRuns(loadedRuns);
+      if (loadedRuns.length > 0) {
+        setActiveRunId(loadedRuns[0].id);
+      }
+      setCurrentScreen('workspace');
+    } catch (err) {
+      // Keep previous dataset and show specific dismissible error
+      setImportError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleResetToSampleDemo = useCallback(() => {
+    setActiveAdapter(new FixtureAdapter(0));
+    setImportError(null);
+    setSelectedTestId(null);
+    setSelectedNodeId(null);
+    setSelectedFile(null);
+    setPinnedSymbols([]);
+    setIsAgentActive(false);
+  }, []);
 
   const handleCloseInspector = () => {
     setSelectedNodeId(null);
     setSelectedFile(null);
     setSelectedTestId(null);
   };
+
+  const currentAgentStep = isAgentActive ? AGENT_SIMULATION_STEPS[agentStepIndex] : null;
+
+  const applyAgentStep = useCallback((idx: number) => {
+    const step = AGENT_SIMULATION_STEPS[idx];
+    if (!step) return;
+
+    setAgentStepIndex(idx);
+
+    // 1. Target node selection: track active target without jarring drawer open/close layout shifts
+    setSelectedNodeId(step.targetNodeId);
+    setSelectedFile(null);
+
+    // 2. Unfold active step's target file if collapsed, preserving existing layout
+    if (step.targetNodeId) {
+      const targetNode = graphData.nodes.find((n) => n.id === step.targetNodeId);
+      if (targetNode && collapsedFiles.has(targetNode.file)) {
+        setCollapsedFiles((prev) => {
+          const next = new Set(prev);
+          next.delete(targetNode.file);
+          return next;
+        });
+      }
+    }
+
+    // 3. Test Status Time-Travel (revert to fail if jumping back to steps 0..3)
+    if (step.activeTestStatus) {
+      setTests((prev) =>
+        prev.map((t) =>
+          t.id === 'tests/test_auth.py::test_login_expired_token'
+            ? { ...t, status: step.activeTestStatus as any }
+            : t
+        )
+      );
+    }
+
+    // 4. Code Mutation State Time-Travel (revert code to original if jumping back to steps 0..2)
+    if (step.patchedSnippet && step.patchedDiff) {
+      setGraphData((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((n) =>
+          n.id === 'auth/tokens.py::validate_token'
+            ? { ...n, sourceSnippet: step.patchedSnippet!, gitDiff: step.patchedDiff!, changeStatus: 'modified' }
+            : n
+        ),
+      }));
+    } else {
+      // Revert code snippet and diff back to original pre-patch state when jumping backward!
+      setGraphData((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((n) =>
+          n.id === 'auth/tokens.py::validate_token'
+            ? { ...n, sourceSnippet: AGENT_ORIGINAL_SNIPPET, gitDiff: undefined, changeStatus: 'modified' }
+            : n
+        ),
+      }));
+    }
+
+    // 5. View Mode Time-Travel (Structure mode in steps 0..4, Changes mode in step 5)
+    if (step.phase === 'resolved') {
+      setViewMode('changes');
+    } else {
+      setViewMode('structure');
+    }
+
+    // Append to agent thought logs
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    setAgentLogs((prev) => [
+      ...prev,
+      {
+        id: `agent-log-${Date.now()}-${idx}`,
+        timestamp: timeStr,
+        phase: step.phase,
+        title: step.log.title,
+        message: step.log.message,
+        badge: step.log.badge,
+        codeTarget: step.targetNodeId,
+      },
+    ]);
+  }, []);
+
+  const startAgentSimulation = useCallback(() => {
+    setIsAgentActive(true);
+    setIsAgentPlaying(true);
+    setAgentLogs([]);
+    setCollapsedFiles((prev) => {
+      const next = new Set(prev);
+      next.delete('tests/test_auth.py');
+      next.delete('auth/service.py');
+      next.delete('auth/tokens.py');
+      return next;
+    });
+    applyAgentStep(0);
+  }, [applyAgentStep]);
+
+  const stopAgentSimulation = useCallback(() => {
+    setIsAgentActive(false);
+    setIsAgentPlaying(false);
+    if (agentTimerRef.current) clearTimeout(agentTimerRef.current);
+    if (activeRunId) {
+      loadActiveRunData(activeRunId);
+    }
+  }, [activeRunId, loadActiveRunData]);
+
+  // Playback timer effect with variable step duration
+  useEffect(() => {
+    if (!isAgentActive || !isAgentPlaying) {
+      if (agentTimerRef.current) clearTimeout(agentTimerRef.current);
+      return;
+    }
+
+    if (agentStepIndex >= AGENT_SIMULATION_STEPS.length - 1) {
+      setIsAgentPlaying(false);
+      return;
+    }
+
+    const currentStep = AGENT_SIMULATION_STEPS[agentStepIndex];
+    const duration = currentStep?.durationMs || 2500;
+    const delay = Math.round(duration / agentSpeed);
+    agentTimerRef.current = setTimeout(() => {
+      applyAgentStep(agentStepIndex + 1);
+    }, delay);
+
+    return () => {
+      if (agentTimerRef.current) clearTimeout(agentTimerRef.current);
+    };
+  }, [isAgentActive, isAgentPlaying, agentStepIndex, agentSpeed, applyAgentStep]);
 
   return (
     <div
@@ -205,6 +494,44 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
         color: 'var(--text-primary)',
       }}
     >
+      {importError && (
+        <div
+          role="alert"
+          style={{
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            borderBottom: '1px solid #ef4444',
+            color: '#fca5a5',
+            padding: '8px 16px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            zIndex: 9999,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={15} color="#ef4444" />
+            <span>{importError}</span>
+          </div>
+          <button
+            onClick={() => setImportError(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#fca5a5',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '2px 6px',
+            }}
+            aria-label="Dismiss error"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {currentScreen === 'selector' ? (
         <ProjectSelectorScreen
           runs={runs}
@@ -213,11 +540,15 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
           onSelectRun={(runId) => {
             setActiveRunId(runId);
           }}
-          onOpenWorkspace={(testId) => {
+          onResetToSample={handleResetToSampleDemo}
+          onOpenWorkspace={(testId, startAgent) => {
             if (testId) {
               setSelectedTestId(testId);
             }
             setCurrentScreen('workspace');
+            if (startAgent && !activeRun?.isRealImport) {
+              startAgentSimulation();
+            }
           }}
           onOpenDiagnostics={() => {
             setActiveView('diagnostics');
@@ -232,17 +563,21 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
               ? () => loadActiveRunData(activeRunId)
               : undefined
           }
+          onOpenFiles={handleImportFiles}
         />
       ) : (
         <>
           <Header
+            runs={runs}
             activeRun={activeRun}
+            onSelectRun={handleSelectRun}
             onBackToSelector={() => setCurrentScreen('selector')}
             activeView={activeView}
             onSelectView={setActiveView}
             failedTestCount={failedTestCount}
             errorCount={errorCount}
             diagnosticsCount={diagnosticsCount}
+            onOpenFiles={handleImportFiles}
           />
 
           <main
@@ -278,6 +613,14 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
             {/* Diagnostics View */}
             {activeView === 'diagnostics' ? (
               <RunDiagnosticsPane activeRun={activeRun} graphData={graphData} />
+            ) : activeView === 'replay' ? (
+              <ReplayComparisonView
+                activeRun={activeRun}
+                runs={runs}
+                adapter={activeAdapter}
+                onSelectRun={handleSelectRun}
+                onSelectTest={handleSelectTest}
+              />
             ) : (
               /* Holistic Map Workspace */
               <div
@@ -300,6 +643,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   onSelectFile={handleSelectFile}
                   collapsedFiles={collapsedFiles}
                   onToggleCollapseFile={handleToggleCollapseFile}
+                  onCollapseAllFiles={handleCollapseAllFiles}
+                  onExpandAllFiles={handleExpandAllFiles}
                   nodes={graphData.nodes}
                   pinnedSymbols={pinnedSymbols}
                   onPinSymbol={handlePinSymbol}
@@ -307,6 +652,8 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   selectedNodeId={selectedNodeId}
                   onSelectNode={handleSelectNode}
                   viewMode={viewMode}
+                  isRealImport={activeRun?.isRealImport}
+                  harnessError={activeRun?.harnessError}
                 />
 
                 {/* 2. Center: Dominant Whole-Project Map */}
@@ -323,6 +670,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   <GraphView
                     graphData={graphData}
                     tests={tests}
+                    datasetKey={`${activeRun?.id || 'none'}:${activeRun?.contentSha256 || activeRun?.envelopeHeadSha || 'none'}`}
                     selectedTestId={selectedTestId}
                     onSelectTest={handleSelectTest}
                     selectedNodeId={selectedNodeId}
@@ -335,9 +683,49 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                     onCollapseAllFiles={handleCollapseAllFiles}
                     onExpandAllFiles={handleExpandAllFiles}
                     viewMode={viewMode}
-                    onSelectViewMode={setViewMode}
+                    onSelectViewMode={handleSelectViewMode}
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
+                    isRealImport={activeRun?.isRealImport}
+                    isAgentMode={activeRun?.isRealImport ? false : isAgentActive}
+                    onToggleAgentMode={
+                      activeRun?.isRealImport
+                        ? undefined
+                        : isAgentActive
+                        ? stopAgentSimulation
+                        : startAgentSimulation
+                    }
+                    agentActiveNodeId={currentAgentStep?.targetNodeId}
+                    agentPhase={currentAgentStep?.phase}
+                    agentPhaseLabel={currentAgentStep?.phaseLabel}
+                    agentActionPill={currentAgentStep?.actionPill}
+                    agentActiveEdgeIds={currentAgentStep?.activeEdgeIds}
+                    agentZoomTarget={currentAgentStep?.cameraZoom}
+                    isInspectorOpen={Boolean(selectedNodeId || selectedTestId || selectedFile)}
+                    agentStepIndex={agentStepIndex}
+                    totalAgentSteps={AGENT_SIMULATION_STEPS.length}
+                    isAgentPlaying={isAgentPlaying}
+                    onToggleAgentPlay={() => setIsAgentPlaying((prev) => !prev)}
+                    onPrevAgentStep={() => {
+                      setIsAgentPlaying(false);
+                      applyAgentStep(Math.max(0, agentStepIndex - 1));
+                    }}
+                    onNextAgentStep={() => {
+                      setIsAgentPlaying(false);
+                      applyAgentStep(
+                        Math.min(AGENT_SIMULATION_STEPS.length - 1, agentStepIndex + 1)
+                      );
+                    }}
+                    onRestartAgent={startAgentSimulation}
+                    onJumpAgentStep={(idx) => {
+                      setIsAgentPlaying(false);
+                      applyAgentStep(idx);
+                    }}
+                    agentSpeed={agentSpeed}
+                    onChangeAgentSpeed={setAgentSpeed}
+                    currentAgentStep={currentAgentStep}
+                    isExplanationExpanded={isExplanationExpanded}
+                    onToggleExplanationExpand={() => setIsExplanationExpanded((prev) => !prev)}
                   />
                 </div>
 
@@ -359,6 +747,12 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   onPinSymbol={handlePinSymbol}
                   onUnpinSymbol={handleUnpinSymbol}
                   onClose={handleCloseInspector}
+                  isAgentActive={activeRun?.isRealImport ? false : isAgentActive}
+                  agentPhase={currentAgentStep?.phase}
+                  agentPhaseEvidence={currentAgentStep?.phaseEvidence}
+                  agentPatchedSnippet={currentAgentStep?.patchedSnippet}
+                  agentPatchedDiff={currentAgentStep?.patchedDiff}
+                  onReplayInvestigation={activeRun?.isRealImport ? undefined : startAgentSimulation}
                 />
               </div>
             )}

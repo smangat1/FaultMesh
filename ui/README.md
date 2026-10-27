@@ -100,3 +100,50 @@ Visual verification artifacts are maintained in `docs/screenshots/` (captured at
 - `05_pinned_shortlist_1440x920.png`: Active pinned shortlist working set with elevated map priorities.
 - `06_search_jump_1440x920.png`: Search jump dropdown matching symbols and tests with keyboard navigation.
 - `07_large_sample_default_zoom_1440x920.png`: Repository-wide constellation view with balanced density.
+
+---
+
+## Open Real Project Data (V3 Structure + V2 Run Evidence)
+
+FaultMesh supports loading locally generated JSON artifacts without any server, network connection, or backend process:
+
+### 1. Generating Structure and Run Evidence Files
+
+Generate a V3 static structure export from your Python repository using the FaultMesh CLI:
+```bash
+python -m faultmesh.cli structure /path/to/repo --output structure.json
+```
+
+Optionally execute a pytest run and record dynamic test evidence (line coverage and failure traces):
+```bash
+python -m faultmesh.cli pytest /path/to/repo --output run-parent.json
+```
+
+To record a replay comparison run (re-running tests against a modified worktree or patch):
+```bash
+python -m faultmesh.cli pytest /path/to/repo --output run-replay.json
+```
+
+### 2. Loading Files in the UI
+
+1. Open FaultMesh desktop UI or click **Open Project JSON** from the project selector screen or the header.
+2. Select your `structure.json` (`schema_version "3.0"`).
+3. Optionally select one or more `run.json` (`schema_version "2.0"`) evidence files simultaneously in the file picker.
+4. FaultMesh validates schemas, joins dynamic coverage line numbers to AST symbols, and renders the whole-project map.
+
+### 3. Comparing Parent and Replay Runs
+
+- When multiple runs or replay runs are loaded, switch active runs using the run switcher dropdown in the header.
+- For replay runs with recorded replay provenance (`run.replay`), click the **Replay Comparison** tab in the navigation bar to inspect:
+  - Outcome comparison status (`SAME_FAILURE`, `DIFFERENT_FAILURE`, `PASSED_ON_REPLAY`).
+  - Side-by-side failure fingerprints (SHA-256).
+  - Side-by-side bounded pytest failure output.
+  - Venn breakdown of observed symbol sets (executed in both, parent only, replay only).
+  - In accordance with truth in evidence, replay comparisons strictly report recorded data without claiming candidate fixes are "diagnosed" or "verified".
+
+### 4. What Is NOT Supported (Explicit Boundaries)
+
+- **No live server / HTTP API:** The UI runs 100% locally in your native desktop renderer via client-side File APIs.
+- **No live test execution or backend runner:** The UI visualizes exported run records; it does not execute arbitrary code or shell commands.
+- **No automated fixing on real repositories:** Autonomous repair simulation is a sample demo feature gated to the bundled `auth-service` sample project and is disabled on real imports.
+- **No runtime call-edge reconstruction without an execution tracer:** Test coverage identifies executed code symbols, not call sequences. Static AST edges are never promoted to runtime calls.

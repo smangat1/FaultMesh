@@ -15,6 +15,7 @@ export const FIXTURE_RUNS: RunSummary[] = [
     startedAt: '2026-10-26T10:14:02.000Z',
     completedAt: '2026-10-26T10:14:02.420Z',
     durationMs: 420,
+    runOutcome: 'FAILED',
     isFixture: true,
     fixtureLabel: 'Sample data (fixture): auth-service regression',
     stats: {
@@ -51,6 +52,7 @@ export const FIXTURE_RUNS: RunSummary[] = [
     startedAt: '2026-10-26T09:30:10.000Z',
     completedAt: '2026-10-26T09:30:10.045Z',
     durationMs: 45,
+    runOutcome: 'NO_TESTS',
     isFixture: true,
     fixtureLabel: 'Sample data (fixture): empty test run',
     stats: {
@@ -80,6 +82,7 @@ export const FIXTURE_RUNS: RunSummary[] = [
     startedAt: '2026-10-26T08:15:22.000Z',
     completedAt: '2026-10-26T08:15:22.140Z',
     durationMs: 140,
+    runOutcome: 'COLLECTION_ERROR',
     isFixture: true,
     fixtureLabel: 'Sample data (fixture): collection failure',
     errorMessage:

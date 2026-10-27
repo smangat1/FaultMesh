@@ -1,0 +1,263 @@
+{
+  "schema_version": "2.0",
+  "run": {
+    "schema_version": "2.0",
+    "id": "run-9de6b4cb5a58",
+    "config_version": "2.0",
+    "target": {
+      "root_name": "hpack",
+      "origin_url": null,
+      "revision": "c2edbee3b5508e0b1689877fe6f173eafb097aef",
+      "dirty": false,
+      "content_sha256": "4124014cf29a40294a56947c79031811d2d0b0f82220d8eb8e5af91d3849a6ea"
+    },
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_faultmesh_injected_failure.py::test_faultmesh_injected_wrong_integer_encoding"
+    ],
+    "working_directory": ".",
+    "limits": {
+      "timeout_seconds": 300,
+      "memory": "512m",
+      "cpus": 1.0,
+      "pids": 128,
+      "max_output_bytes": 1000000,
+      "max_evidence_bytes": 10000000
+    },
+    "environment": {
+      "base_image": "python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377",
+      "resolved_image_id": "sha256:41242ff8bcb8bda7755aa1d4a832902523b8b14a1968ffb204ec3296c0268f75",
+      "registry_digest": null,
+      "dependency_pins": [],
+      "installed_packages": [
+        "Pygments==2.21.0",
+        "coverage==7.10.7",
+        "hypothesis==6.152.1",
+        "iniconfig==2.3.1",
+        "packaging==26.3",
+        "pip==24.0",
+        "pluggy==1.7.0",
+        "pytest-json-report==1.5.0",
+        "pytest-metadata==3.1.1",
+        "pytest==9.0.3",
+        "setuptools==79.0.1",
+        "sortedcontainers==2.4.0",
+        "wheel==0.46.3"
+      ],
+      "docker_server_version": null
+    },
+    "started_at": "2026-10-26T14:00:00Z",
+    "finished_at": "2026-10-26T14:00:00Z",
+    "duration_ms": 640,
+    "exit_code": 1,
+    "termination": "EXITED",
+    "outcome": "FAILED",
+    "summary": {
+      "collected": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "errors": 0,
+      "xfailed": null,
+      "xpassed": null
+    },
+    "stdout_truncated": false,
+    "stderr_truncated": false,
+    "error": null,
+    "artifacts": {
+      "directory": "faultmesh-v2-runs/runs/run-9de6b4cb5a58",
+      "run_record": "faultmesh-v2-runs/runs/run-9de6b4cb5a58/run.json",
+      "config": "faultmesh-v2-runs/runs/run-9de6b4cb5a58/config.json",
+      "stdout": "faultmesh-v2-runs/runs/run-9de6b4cb5a58/stdout.txt",
+      "stderr": "faultmesh-v2-runs/runs/run-9de6b4cb5a58/stderr.txt",
+      "pytest_report": null,
+      "dockerfile": "faultmesh-v2-runs/runs/run-9de6b4cb5a58/Dockerfile",
+      "tests": null,
+      "observation_report": null,
+      "source_snapshot": null
+    },
+    "observation_requested": true,
+    "observation_status": "COMPLETE",
+    "test_case_count": 1,
+    "replay": {
+      "parent_run_id": "run-1c31adf64626",
+      "parent_test_id": "tests/test_faultmesh_injected_failure.py::test_faultmesh_injected_wrong_integer_encoding",
+      "original_failure_fingerprint": "903afcd3b317b31e4efe2707558e22cb70890c1b774fc9affb093485808eb38e",
+      "original_installed_packages": null,
+      "comparison": "SAME_FAILURE"
+    },
+    "collection_observation": []
+  },
+  "tests": [
+    {
+      "schema_version": "2.0",
+      "run_id": "run-9de6b4cb5a58",
+      "node_id": "tests/test_faultmesh_injected_failure.py::test_faultmesh_injected_wrong_integer_encoding",
+      "outcome": "FAILED",
+      "phases": [
+        {
+          "phase": "setup",
+          "outcome": "PASSED",
+          "duration_ms": 0.13815899995961445,
+          "failure_text": null,
+          "failure_truncated": false
+        },
+        {
+          "phase": "call",
+          "outcome": "FAILED",
+          "duration_ms": 0.5642600000328457,
+          "failure_text": "AssertionError: assert bytearray(b'\\n') == b'\\x00'",
+          "failure_truncated": false
+        },
+        {
+          "phase": "teardown",
+          "outcome": "PASSED",
+          "duration_ms": 1.5049160000444317,
+          "failure_text": null,
+          "failure_truncated": false
+        }
+      ],
+      "duration_ms": 2.207335000036892,
+      "failure_text": "def test_faultmesh_injected_wrong_integer_encoding() -> None:\n        # Deliberately wrong: 10 with a 5-bit prefix is encoded as b\"\\x0a\".\n>       assert encode_integer(10, 5) == b\"\\x00\"\nE       AssertionError: assert bytearray(b'\\n') == b'\\x00'\nE         \nE         At index 0 diff: 10 != 0\nE         Use -v to get more diff\n\ntests/test_faultmesh_injected_failure.py:6: AssertionError",
+      "failure_truncated": false,
+      "failure_fingerprint": "903afcd3b317b31e4efe2707558e22cb70890c1b774fc9affb093485808eb38e",
+      "observation": {
+        "status": "COMPLETE",
+        "instrumentation_version": "coverage-contexts-1.0",
+        "source_revision": "c2edbee3b5508e0b1689877fe6f173eafb097aef",
+        "source_content_sha256": "4124014cf29a40294a56947c79031811d2d0b0f82220d8eb8e5af91d3849a6ea",
+        "files": [
+          {
+            "path": "src/hpack/hpack.py",
+            "content_sha256": "4ab14aab1a856cee45aea3169854167b16dac9ef9ec4cef1ed1d5da82439769d",
+            "lines": [
+              {
+                "line": 55,
+                "phases": [
+                  "call"
+                ]
+              },
+              {
+                "line": 57,
+                "phases": [
+                  "call"
+                ]
+              },
+              {
+                "line": 61,
+                "phases": [
+                  "call"
+                ]
+              },
+              {
+                "line": 65,
+                "phases": [
+                  "call"
+                ]
+              },
+              {
+                "line": 67,
+                "phases": [
+                  "call"
+                ]
+              },
+              {
+                "line": 68,
+                "phases": [
+                  "call"
+                ]
+              }
+            ],
+            "mapping_status": "MAPPED"
+          },
+          {
+            "path": "tests/test_faultmesh_injected_failure.py",
+            "content_sha256": "c64644bc96c97749281480c349f89f07c7c01c582de35dbd87a5ef08c3e5621c",
+            "lines": [
+              {
+                "line": 6,
+                "phases": [
+                  "call"
+                ]
+              }
+            ],
+            "mapping_status": "MAPPED"
+          }
+        ],
+        "symbols": [
+          {
+            "evidence_type": "TEST_EXECUTED_SYMBOL",
+            "path": "src/hpack/hpack.py",
+            "content_sha256": "4ab14aab1a856cee45aea3169854167b16dac9ef9ec4cef1ed1d5da82439769d",
+            "qualified_name": "encode_integer",
+            "start_line": 50,
+            "end_line": 78,
+            "executed_lines": [
+              55,
+              57,
+              61,
+              65,
+              67,
+              68
+            ],
+            "phases": [
+              "call"
+            ]
+          },
+          {
+            "evidence_type": "TEST_EXECUTED_SYMBOL",
+            "path": "tests/test_faultmesh_injected_failure.py",
+            "content_sha256": "c64644bc96c97749281480c349f89f07c7c01c582de35dbd87a5ef08c3e5621c",
+            "qualified_name": "test_faultmesh_injected_wrong_integer_encoding",
+            "start_line": 4,
+            "end_line": 6,
+            "executed_lines": [
+              6
+            ],
+            "phases": [
+              "call"
+            ]
+          }
+        ],
+        "unmapped": [],
+        "outside_root_files": 0,
+        "unknown_contexts": [],
+        "error": null
+      }
+    }
+  ],
+  "source_snapshot": {
+    "schema_version": "2.0",
+    "revision": "c2edbee3b5508e0b1689877fe6f173eafb097aef",
+    "content_sha256": "4124014cf29a40294a56947c79031811d2d0b0f82220d8eb8e5af91d3849a6ea",
+    "files": [
+      {
+        "path": "src/hpack/hpack.py",
+        "content_sha256": "4ab14aab1a856cee45aea3169854167b16dac9ef9ec4cef1ed1d5da82439769d",
+        "line_count": 450,
+        "parse_error": null,
+        "symbols": [
+          {
+            "path": "src/hpack/hpack.py",
+            "qualified_name": "encode_integer",
+            "kind": "function",
+            "start_line": 50,
+            "end_line": 78,
+            "executable_lines": [
+              55,
+              57,
+              61,
+              65,
+              67,
+              68
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "missing_artifacts": []
+}
