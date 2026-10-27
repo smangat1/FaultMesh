@@ -10,7 +10,14 @@ from faultmesh.agents import ScoutAgent
 from faultmesh.analysis import ContextBuilder, ProjectAnalyzer
 from faultmesh.inference.backends import BackendResult, HeuristicBackend, LlamaCppCliBackend
 from faultmesh.inference.client import InferenceClient, InferenceValidationError
-from faultmesh.schemas import scout_response_json_schema
+from faultmesh.inference.client import ModelCallBudget
+from faultmesh.schemas import (
+    FunctionMetadata,
+    ParameterMetadata,
+    SourceReference,
+    scout_response_json_schema,
+    scout_response_json_schema_for,
+)
 
 
 @dataclass
@@ -27,6 +34,23 @@ def test_invalid_model_output_gets_bounded_repair_attempts() -> None:
     with pytest.raises(InferenceValidationError):
         InferenceClient(backend, max_repair_attempts=2).scout("prompt")
     assert backend.calls == 3
+
+
+def test_total_call_budget_subordinates_json_repair_limit() -> None:
+    backend = InvalidBackend()
+    budget = ModelCallBudget(2)
+
+    with pytest.raises(InferenceValidationError) as captured:
+        InferenceClient(backend, max_repair_attempts=2).scout("original", budget=budget)
+
+    assert backend.calls == 2
+    assert budget.used == 2
+    assert [attempt.raw_response for attempt in captured.value.attempts] == [
+        "not json",
+        "not json",
+    ]
+    assert captured.value.attempts[0].phase == "initial"
+    assert captured.value.attempts[1].phase == "json_repair"
 
 
 @dataclass
@@ -59,6 +83,46 @@ def test_model_facing_schema_requires_explicit_typed_contract_fields() -> None:
         "type": "string",
         "minLength": 8,
     }
+
+
+@pytest.mark.parametrize(
+    ("annotation", "expected_strategy", "expected_oracle"),
+    [
+        ("int", "IntegerStrategy", "result_le_arg"),
+        ("str", "TextStrategy", "result_length_le_arg"),
+        ("list[int]", "IntegerListStrategy", "ResultListNondecreasingOracle"),
+    ],
+)
+def test_function_schema_specializes_arguments_and_oracles(
+    annotation: str, expected_strategy: str, expected_oracle: str
+) -> None:
+    function = FunctionMetadata(
+        name="target",
+        qualified_name="target",
+        reference=SourceReference(path="target.py", start_line=1, end_line=2),
+        parameters=[
+            ParameterMetadata(
+                name="value",
+                annotation=annotation,
+                kind="positional",
+            )
+        ],
+        return_annotation=annotation,
+        source="def target(value):\n    return value\n",
+    )
+
+    schema = scout_response_json_schema_for(function)
+    property_schema = schema["$defs"]["PropertySpec"]
+    arguments = property_schema["properties"]["arguments"]
+    serialized_oracle = json.dumps(property_schema["properties"]["oracle"])
+
+    assert property_schema["properties"]["schema_version"]["const"] == "1.1"
+    assert arguments["minItems"] == len(function.parameters)
+    assert any(
+        item["properties"]["strategy"]["$ref"].endswith(expected_strategy)
+        for item in arguments["prefixItems"]
+    )
+    assert expected_oracle in serialized_oracle
 
 
 def test_llama_cli_backend_replaces_invalid_output_bytes(

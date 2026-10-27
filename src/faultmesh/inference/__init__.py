@@ -4,7 +4,11 @@ from faultmesh.inference.backends import (
     LlamaCppCliBackend,
     LlamaCppServerBackend,
 )
-from faultmesh.inference.client import InferenceClient, InferenceValidationError
+from faultmesh.inference.client import (
+    InferenceClient,
+    InferenceValidationError,
+    ModelCallBudget,
+)
 
 __all__ = [
     "HeuristicBackend",
@@ -13,5 +17,6 @@ __all__ = [
     "InferenceValidationError",
     "LlamaCppCliBackend",
     "LlamaCppServerBackend",
+    "ModelCallBudget",
 ]
 

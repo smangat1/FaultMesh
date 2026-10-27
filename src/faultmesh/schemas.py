@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
@@ -344,6 +345,115 @@ def scout_response_json_schema() -> dict[str, Any]:
     return schema
 
 
+def scout_response_json_schema_for(function: FunctionMetadata) -> dict[str, Any]:
+    """Specialize the model-facing schema to one indexed function.
+
+    This is only a generation aid. ``ScoutResponse`` and ``SpecificationValidator`` remain the
+    runtime authorities, so a schema-conforming proposal can still be semantically unsupported.
+    """
+
+    schema = copy.deepcopy(scout_response_json_schema())
+    supported = {
+        parameter.name: parameter.annotation
+        for parameter in function.parameters
+        if parameter.kind in {"positional", "keyword_only"}
+        and parameter.annotation in {"int", "str", "list[int]"}
+    }
+    property_schema = schema["$defs"]["PropertySpec"]
+    strategy_def = {
+        "int": "IntegerStrategy",
+        "str": "TextStrategy",
+        "list[int]": "IntegerListStrategy",
+    }
+    prefix_items = [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "name": {"const": name, "type": "string"},
+                "strategy": {"$ref": f"#/$defs/{strategy_def[annotation]}"},
+            },
+            "required": ["name", "strategy"],
+        }
+        for name, annotation in supported.items()
+    ]
+    property_schema["properties"]["arguments"] = {
+        "type": "array",
+        "prefixItems": prefix_items,
+        "minItems": len(prefix_items),
+        "maxItems": len(prefix_items),
+        "items": False,
+    }
+    property_schema["properties"]["schema_version"] = {
+        "const": "1.1",
+        "type": "string",
+    }
+
+    integer_names = [name for name, annotation in supported.items() if annotation == "int"]
+    text_names = [name for name, annotation in supported.items() if annotation == "str"]
+    list_names = [name for name, annotation in supported.items() if annotation == "list[int]"]
+    oracle_variants: list[dict[str, Any]] = [{"$ref": "#/$defs/NoExceptionOracle"}]
+    if function.return_annotation == "int":
+        for name in integer_names:
+            oracle_variants.append(
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {
+                            "enum": ["result_le_arg", "result_ge_arg"],
+                            "type": "string",
+                        },
+                        "argument": {"const": name, "type": "string"},
+                    },
+                    "required": ["kind", "argument"],
+                }
+            )
+        if len(integer_names) >= 2:
+            oracle_variants.append({"$ref": "#/$defs/ResultBetweenOracle"})
+    elif function.return_annotation == "str":
+        for name in text_names:
+            oracle_variants.append(
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {
+                            "enum": ["result_length_le_arg", "result_length_eq_arg"],
+                            "type": "string",
+                        },
+                        "argument": {"const": name, "type": "string"},
+                    },
+                    "required": ["kind", "argument"],
+                }
+            )
+    elif function.return_annotation == "list[int]":
+        if list_names:
+            oracle_variants.append({"$ref": "#/$defs/ResultListNondecreasingOracle"})
+        for name in list_names:
+            oracle_variants.append(
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {
+                            "const": "result_list_preserves_multiset",
+                            "type": "string",
+                        },
+                        "argument": {"const": name, "type": "string"},
+                    },
+                    "required": ["kind", "argument"],
+                }
+            )
+    property_schema["properties"]["oracle"] = {"oneOf": oracle_variants}
+    if not integer_names:
+        property_schema["properties"]["constraints"]["maxItems"] = 0
+        schema["$defs"]["ProposedHypothesis"]["properties"]["preconditions"][
+            "maxItems"
+        ] = 0
+    return schema
+
+
 class HypothesisRevision(StrictModel):
     revision: Annotated[int, Field(ge=1)]
     changed_at: datetime = Field(default_factory=utc_now)
@@ -371,6 +481,17 @@ class HypothesisRecord(StrictModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class InferenceAttempt(StrictModel):
+    call_index: Annotated[int, Field(ge=1)]
+    phase: Literal["initial", "json_repair", "semantic_retry"]
+    prompt_sha256: str
+    raw_response: str
+    latency_ms: Annotated[float, Field(ge=0)]
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    validation_error: str | None = None
+
+
 class InferenceMetadata(StrictModel):
     backend: str
     model: str
@@ -379,6 +500,9 @@ class InferenceMetadata(StrictModel):
     prompt_tokens: int | None = Field(default=None, ge=0)
     completion_tokens: int | None = Field(default=None, ge=0)
     repair_attempts: Annotated[int, Field(ge=0)] = 0
+    model_calls: Annotated[int, Field(ge=0)] = 0
+    unused_model_calls: Annotated[int, Field(ge=0)] = 0
+    attempts: list[InferenceAttempt] = Field(default_factory=list)
 
 
 class ExperimentResult(StrictModel):
@@ -398,6 +522,7 @@ class ExperimentResult(StrictModel):
     stdout: str = ""
     stderr: str = ""
     duration_ms: Annotated[float, Field(ge=0)] = 0.0
+    evaluations: Annotated[int, Field(ge=0)] = 0
     seed: int
     environment: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)

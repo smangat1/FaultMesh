@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -9,11 +10,36 @@ from typing import Any
 from pydantic import ValidationError
 
 from faultmesh.inference.backends import BackendResult, InferenceBackend
-from faultmesh.schemas import InferenceMetadata, ScoutResponse, scout_response_json_schema
+from faultmesh.schemas import (
+    InferenceAttempt,
+    InferenceMetadata,
+    ScoutResponse,
+    scout_response_json_schema,
+)
 
 
 class InferenceValidationError(RuntimeError):
-    pass
+    def __init__(self, message: str, attempts: list[InferenceAttempt]) -> None:
+        super().__init__(message)
+        self.attempts = attempts
+
+
+@dataclass
+class ModelCallBudget:
+    """One shared allowance across generation, syntax repair, and semantic retry."""
+
+    maximum: int
+    used: int = 0
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.maximum - self.used)
+
+    def consume(self) -> int:
+        if self.remaining == 0:
+            raise InferenceValidationError("total model-call budget exhausted", [])
+        self.used += 1
+        return self.used
 
 
 @dataclass(frozen=True)
@@ -43,20 +69,44 @@ class InferenceClient:
         self.backend = backend
         self.max_repair_attempts = max_repair_attempts
 
-    def scout(self, prompt: str) -> ValidatedInference:
-        schema: dict[str, Any] = scout_response_json_schema()
+    def scout(
+        self,
+        prompt: str,
+        *,
+        json_schema: dict[str, Any] | None = None,
+        budget: ModelCallBudget | None = None,
+        phase: str = "initial",
+    ) -> ValidatedInference:
+        schema: dict[str, Any] = json_schema or scout_response_json_schema()
+        call_budget = budget or ModelCallBudget(self.max_repair_attempts + 1)
         total_latency = 0.0
         latest: BackendResult | None = None
         current_prompt = prompt
         errors: list[str] = []
+        attempts: list[InferenceAttempt] = []
         for attempt in range(self.max_repair_attempts + 1):
+            if call_budget.remaining == 0:
+                errors.append("total model-call budget exhausted before JSON repair")
+                break
+            call_index = call_budget.consume()
             latest = self.backend.generate(current_prompt, schema)
             total_latency += latest.latency_ms
+            error: str | None = None
             try:
                 response = ScoutResponse.model_validate_json(_extract_json(latest.text))
             except (ValueError, ValidationError, json.JSONDecodeError) as exc:
-                errors.append(str(exc))
-                if attempt >= self.max_repair_attempts:
+                error = str(exc)
+                errors.append(error)
+                attempts.append(
+                    _attempt(
+                        call_index,
+                        phase if attempt == 0 else "json_repair",
+                        current_prompt,
+                        latest,
+                        error,
+                    )
+                )
+                if attempt >= self.max_repair_attempts or call_budget.remaining == 0:
                     break
                 current_prompt = (
                     "Return only corrected JSON conforming to the supplied schema. "
@@ -66,6 +116,15 @@ class InferenceClient:
                     f"Previous response:\n{latest.text[:6000]}"
                 )
                 continue
+            attempts.append(
+                _attempt(
+                    call_index,
+                    phase if attempt == 0 else "json_repair",
+                    current_prompt,
+                    latest,
+                    None,
+                )
+            )
             return ValidatedInference(
                 response=response,
                 metadata=InferenceMetadata(
@@ -76,10 +135,35 @@ class InferenceClient:
                     prompt_tokens=latest.prompt_tokens,
                     completion_tokens=latest.completion_tokens,
                     repair_attempts=attempt,
+                    model_calls=len(attempts),
+                    unused_model_calls=call_budget.remaining,
+                    attempts=attempts,
                 ),
             )
         raise InferenceValidationError(
             "model did not produce a valid ScoutResponse after repair attempts: "
-            + " | ".join(errors)
+            + " | ".join(errors),
+            attempts,
         )
+
+
+def _attempt(
+    call_index: int,
+    phase: str,
+    prompt: str,
+    result: BackendResult,
+    error: str | None,
+) -> InferenceAttempt:
+    if phase not in {"initial", "json_repair", "semantic_retry"}:
+        raise ValueError(f"unknown inference phase: {phase}")
+    return InferenceAttempt(
+        call_index=call_index,
+        phase=phase,
+        prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        raw_response=result.text,
+        latency_ms=result.latency_ms,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+        validation_error=error,
+    )
 
