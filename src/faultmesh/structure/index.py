@@ -196,6 +196,43 @@ def _walk_python_files(root: Path) -> tuple[list[Path], list[SkipRecord]]:
     return sorted(files), sorted(skips, key=lambda item: (item.path, item.reason))
 
 
+def index_python_bytes(
+    relative: str, data: bytes
+) -> tuple[FileNode, list[SymbolNode], ParseErrorRecord | None]:
+    """Index one already-bounded Python file without importing or executing it."""
+    line_count = len(data.splitlines())
+    parse_error: str | None = None
+    error: ParseErrorRecord | None = None
+    try:
+        source = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        source = ""
+        parse_error = f"non-UTF-8 source at byte {exc.start}"
+        error = ParseErrorRecord(path=relative, message=parse_error)
+    tree: ast.Module | None = None
+    if parse_error is None:
+        try:
+            tree = ast.parse(source, filename=relative)
+        except SyntaxError as exc:
+            parse_error = f"{exc.msg} at line {exc.lineno}"
+            error = ParseErrorRecord(path=relative, line=exc.lineno, message=exc.msg)
+    file_node = FileNode(
+        id=f"file:{relative}",
+        path=relative,
+        module=module_name(relative),
+        content_sha256=_sha256(data),
+        line_count=line_count,
+        is_test=_is_test(relative),
+        parse_error=parse_error,
+    )
+    symbols: list[SymbolNode] = []
+    if tree is not None:
+        collector = _SymbolCollector(source, relative)
+        collector.visit(tree)
+        symbols = collector.symbols
+    return file_node, symbols, error
+
+
 def build_structure_index(root: Path) -> StructureIndex:
     root = root.resolve()
     if not root.is_dir():
@@ -207,38 +244,11 @@ def build_structure_index(root: Path) -> StructureIndex:
     for path in paths:
         relative = path.relative_to(root).as_posix()
         data = path.read_bytes()
-        line_count = len(data.splitlines())
-        parse_error: str | None = None
-        try:
-            source = data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            source = ""
-            parse_error = f"non-UTF-8 source at byte {exc.start}"
-            errors.append(ParseErrorRecord(path=relative, message=parse_error))
-        tree: ast.Module | None = None
-        if parse_error is None:
-            try:
-                tree = ast.parse(source, filename=relative)
-            except SyntaxError as exc:
-                parse_error = f"{exc.msg} at line {exc.lineno}"
-                errors.append(
-                    ParseErrorRecord(path=relative, line=exc.lineno, message=exc.msg)
-                )
-        files.append(
-            FileNode(
-                id=f"file:{relative}",
-                path=relative,
-                module=module_name(relative),
-                content_sha256=_sha256(data),
-                line_count=line_count,
-                is_test=_is_test(relative),
-                parse_error=parse_error,
-            )
-        )
-        if tree is not None:
-            collector = _SymbolCollector(source, relative)
-            collector.visit(tree)
-            symbols.extend(collector.symbols)
+        file_node, file_symbols, error = index_python_bytes(relative, data)
+        files.append(file_node)
+        symbols.extend(file_symbols)
+        if error is not None:
+            errors.append(error)
     return StructureIndex(
         files=sorted(files, key=lambda item: item.path),
         symbols=sorted(symbols, key=lambda item: (item.path, item.start_line, item.id)),

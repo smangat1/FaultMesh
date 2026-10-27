@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "desktop": "tsc && vite build && electron electron/main.cjs",
     "start": "npm run desktop",
-    "test": "vitest run"
+    "test": "vitest run && node --test electron/*.test.cjs",
+    "test:electron": "node --test electron/*.test.cjs"
   },
   "dependencies": {
     "cytoscape": "^3.30.4",
