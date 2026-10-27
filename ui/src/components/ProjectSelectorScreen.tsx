@@ -98,6 +98,11 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
     setTimeout(() => setExecutionMessage(null), 4000);
   };
 
+  const isMacDesktop =
+    typeof navigator !== 'undefined' &&
+    /Electron/i.test(navigator.userAgent) &&
+    (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
+
   return (
     <div
       style={{
@@ -111,13 +116,31 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
         fontFamily: 'var(--font-sans)',
       }}
     >
+      {/* Top Draggable Titlebar Region for Electron macOS */}
+      <div
+        data-testid="selector-titlebar"
+        style={{
+          height: '42px',
+          width: '100%',
+          flexShrink: 0,
+          // @ts-expect-error WebkitAppRegion
+          WebkitAppRegion: 'drag',
+          userSelect: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          paddingLeft: isMacDesktop ? '78px' : '16px',
+          paddingRight: '16px',
+          boxSizing: 'border-box',
+        }}
+      />
+
       {/* Container */}
       <div
         style={{
           maxWidth: '1020px',
           width: '100%',
           margin: '0 auto',
-          padding: '48px 28px 64px 28px',
+          padding: '24px 28px 64px 28px',
           display: 'flex',
           flexDirection: 'column',
           gap: '36px',

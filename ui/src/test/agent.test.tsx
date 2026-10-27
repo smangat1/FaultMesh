@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import {
@@ -8,6 +8,14 @@ import {
 } from '../agent/agentSimulation';
 
 describe('Autonomous Agent Live Simulation & Code Mutation', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '?demo=1');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
   it('defines valid agent simulation steps, active remediation files, and real engineering explanation', () => {
     expect(AGENT_SIMULATION_STEPS.length).toBeGreaterThanOrEqual(5);
 
@@ -34,7 +42,7 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
   });
 
   it('allows selecting target project and triggering test suite run', async () => {
-    render(<App initialScreen="selector" />);
+    render(<App isDemo={true} initialScreen="selector" />);
 
     // Wait for project selector radio options to load
     const authRadio = await screen.findByRole('radio', { name: /auth-service/i });
@@ -49,7 +57,7 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
   });
 
   it('allows launching agent auto-repair and inspects active remediation files and real explanation', async () => {
-    render(<App initialScreen="selector" />);
+    render(<App isDemo={true} initialScreen="selector" />);
 
     // Launch agent auto-repair
     const agentBtn = await screen.findByRole('button', { name: /watch agent repair/i });
@@ -204,7 +212,7 @@ describe('Autonomous Agent Live Simulation & Code Mutation', () => {
   });
 
   it('progressively discloses evidence across diagnosing, tracing, inspecting, patching, and verification', async () => {
-    render(<App initialScreen="selector" />);
+    render(<App isDemo={true} initialScreen="selector" />);
 
     // Launch agent auto-repair from selector
     const agentBtn = await screen.findByRole('button', { name: /watch agent repair/i });
