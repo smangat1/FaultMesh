@@ -22,6 +22,7 @@ import {
   type V2RunEvidenceExport,
 } from './import';
 import { AlertTriangle } from 'lucide-react';
+import { SpectateHook } from './components/SpectateHook';
 import './styles/theme.css';
 
 const DEFAULT_ADAPTER = new FixtureAdapter(0);
@@ -758,6 +759,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
           </main>
         </>
       )}
+      {currentScreen === 'workspace' && <SpectateHook />}
     </div>
   );
 };

@@ -22,6 +22,13 @@ from faultmesh.project_runner import (
     run_project_tests,
 )
 from faultmesh.project_runner.replay import open_run_store
+from faultmesh.spectate.engine import (
+    SpectateEngine,
+    SpectateError,
+    default_limits,
+    run_until_stdin_close_or_signal,
+    stdout_sink,
+)
 from faultmesh.structure import build_structure_export, load_structure_export, load_v2_export
 from faultmesh.telemetry import configure_json_logging
 
@@ -326,6 +333,70 @@ def structure_summary(
             sort_keys=True,
         )
     )
+
+
+@app.command("spectate")
+def spectate_command(
+    watch_root: Annotated[
+        Path, typer.Argument(exists=True, file_okay=False, resolve_path=True)
+    ],
+    max_files: Annotated[int, typer.Option(min=1)] = 2_000,
+    max_file_bytes: Annotated[int, typer.Option(min=1)] = 512 * 1024,
+    max_diff_lines: Annotated[int, typer.Option(min=1)] = 2_000,
+    max_events_per_second: Annotated[int, typer.Option(min=1)] = 200,
+    max_line_length: Annotated[int, typer.Option(min=1)] = 20_000,
+    max_stdout_line_bytes: Annotated[int, typer.Option(min=512)] = 1024 * 1024,
+    debounce_ms: Annotated[int, typer.Option(min=0)] = 250,
+    poll_ms: Annotated[int, typer.Option(min=1)] = 100,
+    coverage: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            resolve_path=True,
+            help="Optional V2 evidence export used only for stale-hash facts.",
+        ),
+    ] = None,
+) -> None:
+    """Emit local-only stable Python source changes as newline-delimited JSON."""
+    defaults = default_limits()
+    limits = defaults.model_copy(
+        update={
+            "max_files": max_files,
+            "max_file_bytes": max_file_bytes,
+            "max_diff_lines": max_diff_lines,
+            "max_events_per_second": max_events_per_second,
+            "max_line_length": max_line_length,
+            "max_stdout_line_bytes": max_stdout_line_bytes,
+            "debounce_ms": debounce_ms,
+            "poll_ms": poll_ms,
+        }
+    )
+    evidence_hashes: dict[str, set[str]] = {}
+    if coverage is not None:
+        exported = load_v2_export(coverage)
+        for case in exported.tests:
+            if case.observation is None:
+                continue
+            for observed in case.observation.symbols:
+                evidence_hashes.setdefault(observed.path, set()).add(
+                    observed.content_sha256
+                )
+    try:
+        engine = SpectateEngine(
+            watch_root,
+            limits=limits,
+            sink=stdout_sink,
+            evidence_hashes=evidence_hashes,
+        )
+        typer.echo(
+            f"FaultMesh spectate watching {watch_root.name}; no tests are rerun.",
+            err=True,
+        )
+        run_until_stdin_close_or_signal(engine)
+    except (OSError, SpectateError, ValueError) as exc:
+        typer.secho(f"FaultMesh spectate failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
 
 
 @app.command()

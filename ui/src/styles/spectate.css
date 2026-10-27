@@ -1,0 +1,212 @@
+.spectate-hook {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+}
+
+.spectate-status {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(560px, calc(100vw - 28px));
+  padding: 5px 7px 5px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: rgba(21, 25, 34, 0.96);
+  color: var(--text-secondary);
+  font-size: 11px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+}
+
+.spectate-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.spectate-status.is-watching .spectate-status-dot {
+  background: var(--status-pass);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.spectate-status-note {
+  position: absolute;
+  left: 14px;
+  bottom: 58px;
+  max-width: 420px;
+  padding: 6px 9px;
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-sm);
+  background: rgba(28, 34, 46, 0.98);
+  color: var(--text-secondary);
+  font-size: 11px;
+  pointer-events: auto;
+}
+
+.spectate-banner {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 360px;
+  max-width: calc(100vw - 40px);
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--change-modified-border);
+  border-radius: var(--radius-md);
+  background: rgba(28, 34, 46, 0.98);
+  color: var(--text-secondary);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
+}
+
+.spectate-banner span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spectate-banner strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.spectate-panel {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  bottom: 0;
+  width: min(620px, 46vw);
+  min-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow: auto;
+  border-left: 1px solid var(--border-default);
+  background: rgba(14, 17, 23, 0.985);
+  box-shadow: -18px 0 45px rgba(0, 0, 0, 0.32);
+  pointer-events: auto;
+}
+
+.spectate-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spectate-panel-header h2 {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.spectate-eyebrow {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.spectate-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.spectate-facts span {
+  padding: 2px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.spectate-parse-error {
+  padding: 8px 10px;
+  border: 1px solid var(--status-error-border);
+  border-left: 3px solid var(--status-error);
+  border-radius: var(--radius-sm);
+  background: var(--status-error-bg);
+  color: #fdba74;
+  font-size: 11px;
+}
+
+.spectate-code-section,
+.spectate-node-ids {
+  min-height: 0;
+}
+
+.spectate-code-section h3,
+.spectate-node-ids h3 {
+  margin-bottom: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.spectate-code-section pre {
+  min-height: 96px;
+  max-height: 31vh;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
+  color: #d8dee9;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.spectate-truncated,
+.spectate-gap,
+.spectate-node-ids p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.spectate-node-ids ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+}
+
+.spectate-node-ids li {
+  max-width: 100%;
+  padding: 2px 5px;
+  overflow: hidden;
+  border: 1px solid var(--change-modified-border);
+  border-radius: var(--radius-sm);
+  color: var(--change-modified);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .spectate-panel {
+    top: 48px;
+    width: min(560px, 72vw);
+    min-width: 360px;
+  }
+}
