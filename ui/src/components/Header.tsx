@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import type { RunSummary } from '../types';
 import {
   ChevronLeft,
@@ -6,35 +6,51 @@ import {
   Activity,
   Layers,
   GitBranch,
+  FolderOpen,
+  RotateCcw,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 
 interface HeaderProps {
   runs?: RunSummary[];
   activeRun: RunSummary | null;
   onSelectRun?: (runId: string) => void;
   onBackToSelector?: () => void;
-  activeView: 'map' | 'diagnostics';
-  onSelectView: (view: 'map' | 'diagnostics') => void;
+  activeView: 'map' | 'diagnostics' | 'replay';
+  onSelectView: (view: 'map' | 'diagnostics' | 'replay') => void;
   failedTestCount?: number;
   errorCount?: number;
   diagnosticsCount?: number;
+  onOpenFiles?: (files: FileList | File[]) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  runs = [],
   activeRun,
+  onSelectRun,
   onBackToSelector,
   activeView,
   onSelectView,
   failedTestCount = 0,
   errorCount = 0,
   diagnosticsCount = 0,
+  onOpenFiles,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isMacDesktop =
     typeof navigator !== 'undefined' &&
     /Electron/i.test(navigator.userAgent) &&
     (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
 
   const totalProblemTests = failedTestCount + errorCount;
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onOpenFiles?.(e.target.files);
+      // Reset input so same file can be re-opened if desired
+      e.target.value = '';
+    }
+  };
 
   return (
     <header
@@ -55,20 +71,24 @@ export const Header: React.FC<HeaderProps> = ({
           justifyContent: 'space-between',
           padding: '6px 14px',
           paddingLeft: isMacDesktop ? '78px' : '14px',
-          gap: '12px',
+          gap: '10px',
           minHeight: '40px',
-          flexWrap: 'nowrap',
-          minWidth: 0,
+          flexWrap: 'wrap',
+          rowGap: '6px',
+          columnGap: '10px',
+          width: '100%',
+          boxSizing: 'border-box',
         }}
       >
-        {/* Left: Project Return Button & Run Context (No FM logo, No FaultMesh title, No Run dropdown) */}
+        {/* Left: Project Return Button & Run Context */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
-            flexShrink: 1,
-            minWidth: 0,
+            gap: '8px',
+            flexShrink: 0,
+            flexWrap: 'wrap',
+            rowGap: '4px',
             // @ts-expect-error WebkitAppRegion
             WebkitAppRegion: 'no-drag',
           }}
@@ -128,21 +148,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Sample Data / Fixture Badge */}
           {activeRun?.isFixture && (
             <span
-              style={{
-                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                color: 'var(--change-modified)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
-                padding: '2px 6px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '10px',
-                fontWeight: 600,
-                letterSpacing: '0.03em',
-                fontFamily: 'var(--font-mono)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                flexShrink: 0,
-              }}
+              className="badge-status sample"
               title={activeRun.fixtureLabel || 'Read-only fixture data: synthetic sample artifacts'}
             >
               <AlertTriangle size={10} />
@@ -150,67 +156,237 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
-          {/* Outcome Summary Pill: Never show green COMPLETED when tests failed! */}
-          {activeRun && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              {activeRun.status === 'failed' ? (
-                <span
-                  className="badge-status error"
-                  title="Run harness aborted during collection"
-                >
-                  HARNESS FAILED
-                </span>
-              ) : activeRun.status === 'empty' ? (
-                <span
-                  style={{
-                    backgroundColor: 'var(--bg-raised)',
-                    border: '1px solid var(--border-default)',
-                    color: 'var(--text-secondary)',
-                    padding: '2px 6px',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
-                  EMPTY SCAN
-                </span>
-              ) : totalProblemTests > 0 ? (
-                <span
-                  className="badge-status fail"
-                  title={`${failedTestCount} failed, ${errorCount} error`}
-                >
-                  {failedTestCount > 0 ? `${failedTestCount} FAILED` : ''}
-                  {failedTestCount > 0 && errorCount > 0 ? ' · ' : ''}
-                  {errorCount > 0 ? `${errorCount} ERROR` : ''}
-                </span>
-              ) : (
-                <span className="badge-status pass">ALL PASSED</span>
-              )}
+          {/* Persistent Compact Imported Label */}
+          {activeRun?.isRealImport && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '10px',
+                fontFamily: 'var(--font-mono)',
+                color: '#38bdf8',
+                backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                padding: '2px 7px',
+                borderRadius: 'var(--radius-sm)',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+              title={`V3 static structure export: ${activeRun.contentSha256 || activeRun.id} • ${activeRun.project} @ ${activeRun.gitRevision.slice(0, 7)} - static structure${activeRun.v2RunCount ? ` / ${activeRun.v2RunCount} run${activeRun.v2RunCount > 1 ? 's' : ''}` : ''}`}
+            >
+              Imported{activeRun.v2RunCount && activeRun.v2RunCount > 1 ? ` (${activeRun.v2RunCount} runs)` : ''}
+            </span>
+          )}
 
-              <span
+          {/* Multiple Runs Switcher */}
+          {runs.length > 1 && onSelectRun && activeRun && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+              <select
+                value={activeRun.id}
+                onChange={(e) => onSelectRun(e.target.value)}
                 style={{
+                  backgroundColor: '#0f172a',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  color: '#38bdf8',
                   fontSize: '11px',
-                  color: 'var(--text-muted)',
                   fontFamily: 'var(--font-mono)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '2px 6px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                 }}
+                aria-label="Switch active test run"
+                title="Switch active test run evidence"
               >
-                {activeRun.durationMs}ms
-              </span>
+                {runs.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.id.slice(0, 14)} ({r.fixtureLabel || r.status})
+                  </option>
+                ))}
+              </select>
             </div>
           )}
+
+          {/* Outcome Summary Pill: Derived explicitly from RunOutcome */}
+          {activeRun && (() => {
+            const outcome = activeRun.runOutcome || (activeRun.harnessStatus as any);
+            const isStructureOnly = activeRun.isRealImport && (activeRun.v2RunCount === 0 || !outcome);
+
+            const isHarnessFailed =
+              outcome === 'COLLECTION_ERROR' ||
+              outcome === 'INFRASTRUCTURE_ERROR' ||
+              outcome === 'MALFORMED_REPORT' ||
+              (!outcome && activeRun.status === 'failed');
+
+            const isTimeout = outcome === 'TIMEOUT';
+            const isCancelled = outcome === 'CANCELLED';
+            const isNoTests = outcome === 'NO_TESTS';
+
+            return (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  flexShrink: 0,
+                  flexWrap: 'nowrap',
+                }}
+              >
+                {/* 1. Structure only: when no V2 run was imported */}
+                {isStructureOnly ? (
+                  <span
+                    className="badge-status empty"
+                    title="Static structure export (no test runs imported)"
+                  >
+                    STRUCTURE ONLY
+                  </span>
+                ) : isNoTests ? (
+                  /* 2. NO_TESTS: when a test run occurred but collected 0 tests */
+                  <span
+                    className="badge-status empty"
+                    title="No tests collected during test run"
+                  >
+                    NO TESTS COLLECTED
+                  </span>
+                ) : isHarnessFailed ? (
+                  /* 3. Harness Failure: COLLECTION_ERROR, INFRASTRUCTURE_ERROR, MALFORMED_REPORT */
+                  <span
+                    className="badge-status error"
+                    title={activeRun.errorMessage || `Test harness failed: ${outcome || 'COLLECTION_ERROR'}`}
+                  >
+                    HARNESS FAILED
+                  </span>
+                ) : (
+                  /* 4. Runs that executed tests or timed out / cancelled */
+                  <>
+                    {/* Failed / Error tests count */}
+                    {totalProblemTests > 0 && (
+                      <span
+                        className="badge-status fail"
+                        title={`${failedTestCount} failed, ${errorCount} error`}
+                      >
+                        {failedTestCount > 0 ? `${failedTestCount} FAILED` : ''}
+                        {failedTestCount > 0 && errorCount > 0 ? ' · ' : ''}
+                        {errorCount > 0 ? `${errorCount} ERROR` : ''}
+                      </span>
+                    )}
+
+                    {/* Timeout Pill (may be shown alongside FAILED count; never hidden, never green) */}
+                    {isTimeout && (
+                      <span
+                        className="badge-status error"
+                        title={activeRun.errorMessage || "Test execution timed out"}
+                      >
+                        TIMED OUT
+                      </span>
+                    )}
+
+                    {/* Cancelled Pill (may be shown alongside FAILED count; never hidden, never green) */}
+                    {isCancelled && (
+                      <span
+                        className="badge-status error"
+                        title={activeRun.errorMessage || "Test execution was cancelled"}
+                      >
+                        CANCELLED
+                      </span>
+                    )}
+
+                    {/* Only show ALL PASSED when outcome is strictly PASSED and 0 failed/errored tests */}
+                    {outcome === 'PASSED' && totalProblemTests === 0 && activeRun.stats.totalTests > 0 && (
+                      <span className="badge-status pass" title="All tests passed">
+                        ALL PASSED
+                      </span>
+                    )}
+
+                    {/* Fallback if outcome === 'FAILED' but problem tests count is 0 */}
+                    {outcome === 'FAILED' && totalProblemTests === 0 && (
+                      <span className="badge-status fail" title="Run outcome: FAILED">
+                        FAILED
+                      </span>
+                    )}
+
+                    {/* Fixture empty scan fallback */}
+                    {!outcome && activeRun.stats.totalTests === 0 && (
+                      <span className="badge-status empty" title="No tests discovered in run">
+                        EMPTY SCAN
+                      </span>
+                    )}
+
+                    {/* Fixture all-passed fallback only when completed with tests and 0 problems and no outcome set */}
+                    {!outcome && activeRun.status === 'completed' && totalProblemTests === 0 && activeRun.stats.totalTests > 0 && (
+                      <span className="badge-status pass" title="All tests passed">
+                        ALL PASSED
+                      </span>
+                    )}
+                  </>
+                )}
+
+                <span
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    flexShrink: 0,
+                  }}
+                >
+                  {formatDurationMs(activeRun.durationMs)}
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
-        {/* Right: Workspace Views (Streamlined: Map vs Run Diagnostics, redundant views eliminated) */}
+        {/* Right: Workspace Views & Open JSON action */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
             flexShrink: 0,
+            flexWrap: 'wrap',
+            rowGap: '4px',
             // @ts-expect-error WebkitAppRegion
             WebkitAppRegion: 'no-drag',
           }}
         >
+          {/* Open JSON Export Button */}
+          {onOpenFiles && (
+            <>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".json"
+                multiple
+                style={{ display: 'none' }}
+                aria-label="Open JSON file input"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-ghost btn-sm"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: '11px',
+                  padding: '3px 8px',
+                  color: 'var(--text-secondary)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                }}
+                title="Open local V3 static structure or V2 test run evidence JSON export"
+                aria-label="Open JSON Export"
+              >
+                <FolderOpen size={12} />
+                <span>Open JSON</span>
+              </button>
+            </>
+          )}
           <nav
             style={{
               display: 'flex',
@@ -264,6 +440,23 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               )}
             </button>
+
+            {(activeRun?.replayProvenance || runs.some((r) => r.replayProvenance)) && (
+              <button
+                onClick={() => onSelectView('replay')}
+                className={activeView === 'replay' ? 'btn-secondary' : 'btn-ghost'}
+                style={{
+                  padding: '3px 10px',
+                  fontSize: '11px',
+                  fontWeight: activeView === 'replay' ? 600 : 400,
+                  backgroundColor: activeView === 'replay' ? 'var(--bg-active)' : 'transparent',
+                }}
+                aria-current={activeView === 'replay' ? 'page' : undefined}
+              >
+                <RotateCcw size={12} />
+                Replay Comparison
+              </button>
+            )}
           </nav>
         </div>
       </div>

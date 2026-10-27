@@ -1,13 +1,18 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
-import { ZoomIn, ZoomOut, Maximize2, Search } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp, Bot } from 'lucide-react';
+import type { AgentPhase, AgentSimulationStep } from '../agent/agentSimulation';
+import { AGENT_SIMULATION_STEPS } from '../agent/agentSimulation';
+import { InvestigationReplayBar } from './InvestigationReplayBar';
+import { StepExplanationPopup } from './StepExplanationPopup';
 
 export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 
 interface GraphViewProps {
   graphData: GraphData;
   tests: TestItem[];
+  datasetKey?: string;
   selectedTestId: string | null;
   onSelectTest?: (testId: string | null) => void;
   selectedNodeId?: string | null;
@@ -23,6 +28,39 @@ interface GraphViewProps {
   onSelectViewMode?: (mode: GraphViewMode) => void;
   runStatus?: string;
   errorMessage?: string;
+  isAgentMode?: boolean;
+  onToggleAgentMode?: () => void;
+  agentActiveNodeId?: string | null;
+  agentPhase?: AgentPhase;
+  agentPhaseLabel?: string;
+  agentActionPill?: string;
+  agentActiveEdgeIds?: string[];
+  agentZoomTarget?: number;
+  isInspectorOpen?: boolean;
+  agentStepIndex?: number;
+  totalAgentSteps?: number;
+  isAgentPlaying?: boolean;
+  onToggleAgentPlay?: () => void;
+  onPrevAgentStep?: () => void;
+  onNextAgentStep?: () => void;
+  onRestartAgent?: () => void;
+  onJumpAgentStep?: (step: number) => void;
+  agentSpeed?: number;
+  onChangeAgentSpeed?: (speed: number) => void;
+  currentAgentStep?: AgentSimulationStep | null;
+  isExplanationExpanded?: boolean;
+  onToggleExplanationExpand?: () => void;
+  isRealImport?: boolean;
+  onCyReady?: (cy: Core) => void;
+}
+
+interface HoverTagInfo {
+  x: number;
+  y: number;
+  title: string;
+  subtitle?: string;
+  badge?: { text: string; color: string; bg: string };
+  meta?: string[];
 }
 
 /**
@@ -97,7 +135,9 @@ export function computeDeterministicPositions(
 
     sortedFileNodes.forEach((node, sIdx) => {
       const angle = (sIdx * ((2 * Math.PI) / Math.max(count, 1))) + 0.35;
-      const radius = 45 + ((sIdx * 37) % 35);
+      // Stagger radius between alternating orbits for sibling nodes to prevent cluster crowding
+      const radialOffset = count > 5 ? (sIdx % 2 === 0 ? 0 : 26) : 0;
+      const radius = 50 + radialOffset;
       const symX = Math.round(fileCenterX + Math.cos(angle) * radius);
       const symY = Math.round(fileCenterY + Math.sin(angle) * radius);
       positions[node.id] = { x: symX, y: symY };
@@ -110,6 +150,7 @@ export function computeDeterministicPositions(
 export const GraphView: React.FC<GraphViewProps> = ({
   graphData,
   tests,
+  datasetKey,
   selectedTestId,
   onSelectTest,
   selectedNodeId,
@@ -123,9 +164,35 @@ export const GraphView: React.FC<GraphViewProps> = ({
   onExpandAllFiles,
   viewMode: propViewMode,
   onSelectViewMode,
+  isAgentMode,
+  onToggleAgentMode,
+  agentActiveNodeId,
+  agentPhase,
+  agentPhaseLabel,
+  agentActionPill: _agentActionPill,
+  agentActiveEdgeIds = [],
+  agentZoomTarget = 1.15,
+  isInspectorOpen = false,
+  agentStepIndex = 0,
+  totalAgentSteps = 6,
+  isAgentPlaying = false,
+  onToggleAgentPlay,
+  onPrevAgentStep,
+  onNextAgentStep,
+  onRestartAgent,
+  onJumpAgentStep,
+  agentSpeed = 1,
+  onChangeAgentSpeed,
+  currentAgentStep,
+  isExplanationExpanded: propExplanationExpanded,
+  onToggleExplanationExpand,
+  isRealImport = false,
+  onCyReady,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const prevDatasetKeyRef = useRef<string | undefined>(datasetKey);
+  const prevSelectedTestIdRef = useRef<string | null>(selectedTestId);
 
   const [currentViewMode, setCurrentViewMode] = useState<GraphViewMode>(propViewMode || 'structure');
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,7 +200,29 @@ export const GraphView: React.FC<GraphViewProps> = ({
     (propViewMode ? propViewMode === 'structure' : true) && !selectedTestId
   );
   const [zoomLevel, setZoomLevel] = useState<'far' | 'mid' | 'close'>('mid');
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoverTag, setHoverTag] = useState<HoverTagInfo | null>(null);
+  const [isCameraTrackingPaused, setIsCameraTrackingPaused] = useState(false);
+  const [localExplanationExpanded, setLocalExplanationExpanded] = useState(false);
+
+  const isExplanationExpanded =
+    propExplanationExpanded !== undefined ? propExplanationExpanded : localExplanationExpanded;
+  const toggleExplanationExpand =
+    onToggleExplanationExpand || (() => setLocalExplanationExpanded((p) => !p));
+
+  const resolvedAgentStep =
+    currentAgentStep ||
+    (isAgentMode && agentStepIndex !== undefined ? AGENT_SIMULATION_STEPS[agentStepIndex] : null);
+
+  const agentCheckpoints = useMemo(
+    () =>
+      AGENT_SIMULATION_STEPS.map((s, idx) => ({
+        index: idx,
+        label: s.checkpointLabel || s.phaseLabel,
+        phase: s.phase,
+        phaseName: s.phaseLabel,
+      })),
+    []
+  );
 
   useEffect(() => {
     if (propViewMode && propViewMode !== currentViewMode) {
@@ -188,11 +277,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     const positions = computeDeterministicPositions(fileClusters, graphData.nodes);
 
-    // Compute execution step order if an active test is being traced
+    // Compute execution step order if an active test is being traced (Structure mode / test selection context only)
     const edgeStepMap = new Map<string, number>();
     const nodeStepMap = new Map<string, number>();
 
-    if (activeTest) {
+    if (activeTest && currentViewMode !== 'changes') {
       const observedEdges = graphData.edges.filter(
         (e) => e.category === 'runtime_observed' && e.testIds?.includes(activeTest.id)
       );
@@ -217,21 +306,30 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     }
 
-    // 1. Add File Clusters (with architectural role subtitle)
+    // Map deterministic sibling order within each file cluster for minimal label stagger
+    const nodeIndexInFile = new Map<string, number>();
+    fileClusters.forEach((fc) => {
+      const fNodes = graphData.nodes.filter((n) => n.file === fc.file);
+      const sorted = [...fNodes].sort((a, b) => {
+        if (a.changeStatus === 'modified') return -1;
+        if (b.changeStatus === 'modified') return 1;
+        return a.lineStart - b.lineStart;
+      });
+      sorted.forEach((n, idx) => {
+        nodeIndexInFile.set(n.id, idx);
+      });
+    });
+
+    // 1. Add File Clusters (clean filename label without cluttering persistent text)
     fileClusters.forEach((fc) => {
       const fileId = `file:${fc.file}`;
       const isCollapsed = collapsedFiles.has(fc.file);
       const pos = positions[fileId] || { x: 480, y: 360 };
 
-      const subtitle = fc.role ? `\n${fc.role}` : '';
-      const displayLabel = isCollapsed
-        ? `${fc.name}${subtitle ? ` • ${fc.role}` : ` (${fc.symbolCount})`}`
-        : `${fc.name}${subtitle}`;
-
       nodes.push({
         data: {
           id: fileId,
-          label: displayLabel,
+          label: fc.name,
           shortLabel: fc.name,
           file: fc.file,
           isFileCluster: true,
@@ -240,6 +338,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
           changeStatus: fc.changeStatus,
           role: fc.role || '',
           tier: fc.tier || '',
+          description: fc.description || '',
+          lineCount: fc.lineCount,
+          isGhost: fc.isGhost,
         },
         position: pos,
       });
@@ -258,6 +359,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
       const formattedLabel = `${stepPrefix}${n.name}`;
       const short = n.name.length > 18 ? `${n.name.substring(0, 16)}…` : n.name;
 
+      const sIdx = nodeIndexInFile.get(n.id) ?? 0;
+      const isOdd = sIdx % 2 === 1;
+      const staggerClass = isOdd ? 'label-stagger-top' : 'label-stagger-bottom';
+
       nodes.push({
         data: {
           id: n.id,
@@ -272,7 +377,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
           lineStart: n.lineStart,
           lineEnd: n.lineEnd,
           stepNumber,
+          rawName: n.name,
+          isGhost: n.isGhost,
+          signature: n.signature,
+          docstringFirstLine: n.docstringFirstLine,
+          contentHash: n.contentHash,
         },
+        classes: `${staggerClass}${n.isGhost ? ' ghost-node' : ''}`,
         position: pos,
       });
 
@@ -364,6 +475,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
           testIds: e.testIds || [],
           stepNumber: stepNum,
           stepLabel: stepNum !== undefined ? `[${stepNum}]` : '',
+          confidence: e.confidence,
+          kind: e.kind,
+          isGhost: e.isGhost,
+          resolutionReason: e.resolutionReason,
         },
       });
     });
@@ -377,12 +492,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   );
 
   // Priority set for label collision prevention:
-  // selected > pinned > failing > changed > hovered > others
+  // selected > pinned > failing > changed > others
   const priorityNodeIds = useMemo(() => {
     const set = new Set<string>();
     if (selectedNodeId) set.add(selectedNodeId);
     pinnedSymbolIds.forEach((id) => set.add(id));
-    if (hoveredNodeId) set.add(hoveredNodeId);
     tests.forEach((t) => {
       if (t.status === 'fail' || t.status === 'error') set.add(t.id);
     });
@@ -390,7 +504,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       if (n.changeStatus === 'modified' || n.changeStatus === 'added') set.add(n.id);
     });
     return set;
-  }, [selectedNodeId, pinnedSymbolIds, hoveredNodeId, tests, graphData.nodes]);
+  }, [selectedNodeId, pinnedSymbolIds, tests, graphData.nodes]);
 
   // 1. Initialize Cytoscape ONCE on container mount with preset deterministic layout
   useEffect(() => {
@@ -404,157 +518,167 @@ export const GraphView: React.FC<GraphViewProps> = ({
         autounselectify: false,
         wheelSensitivity: 0.25,
         style: [
-          // --- File Cluster Nodes (Clean circular dots with architectural subtitles) ---
+          // --- File Cluster Nodes (Sleek celestial dots, crisp clean labels) ---
           {
             selector: 'node[?isFileCluster]',
             style: {
               shape: 'ellipse',
-              width: 14,
-              height: 14,
-              'background-color': '#94a3b8',
-              'border-width': 0,
+              width: 12,
+              height: 12,
+              'background-color': '#1e293b',
+              'border-width': 1,
+              'border-color': '#475569',
               label: 'data(label)',
-              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              'font-family':
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
               'font-size': '10px',
-              'font-weight': 600,
+              'font-weight': 500,
               'text-valign': 'bottom',
               'text-halign': 'center',
-              'text-margin-y': 5,
+              'text-margin-y': 4,
               color: '#cbd5e1',
-              'text-wrap': 'wrap',
-              'text-max-width': '140px',
-              'text-background-color': '#101114',
-              'text-background-opacity': 0.85,
-              'text-background-padding': '3px',
-              'text-background-shape': 'roundrectangle',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.2,
+              'text-outline-opacity': 0.95,
               'z-index': 20,
             },
           },
-          // Expanded file center anchor
+          // Expanded file center anchor (minimalist subtle hub)
           {
             selector: 'node[?isFileCluster][!isCollapsed]',
             style: {
-              width: 13,
-              height: 13,
-              'background-color': '#475569',
-              'border-width': 1.5,
-              'border-color': '#94a3b8',
-              'border-opacity': 0.8,
-              color: '#94a3b8',
+              width: 5,
+              height: 5,
+              'background-color': '#334155',
+              'border-width': 0,
+              color: '#64748b',
+              'font-size': '9px',
             },
           },
           // Modified file
           {
             selector: 'node[?isFileCluster][changeStatus = "modified"]',
             style: {
-              'background-color': '#d29922',
-              'border-width': 1.5,
-              'border-color': '#f6c156',
-              width: 15,
-              height: 15,
+              'background-color': '#d97706',
+              'border-width': 1,
+              'border-color': '#f59e0b',
+              width: 12,
+              height: 12,
             },
           },
           // Added file
           {
             selector: 'node[?isFileCluster][changeStatus = "added"]',
             style: {
-              'background-color': '#38bdf8',
-              'border-width': 1.5,
-              'border-color': '#7dd3fc',
-              width: 15,
-              height: 15,
+              'background-color': '#0284c7',
+              'border-width': 1,
+              'border-color': '#38bdf8',
+              width: 12,
+              height: 12,
             },
           },
-          // --- Child Symbol Nodes (Functions / Classes: small circular dots) ---
+          // --- Child Symbol Nodes (Functions / Classes: sleek modern dots, no cartoon border) ---
           {
             selector: 'node[!isFileCluster]',
             style: {
               shape: 'ellipse',
-              width: 5.5,
-              height: 5.5,
+              width: 4.5,
+              height: 4.5,
               'background-color': '#64748b',
               'border-width': 0,
               label: '',
-              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              'font-size': '10px',
+              'font-family':
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              'font-size': '9px',
+              'font-weight': 400,
               'text-valign': 'bottom',
               'text-halign': 'center',
-              'text-margin-y': 4,
-              color: '#cbd5e1',
-              'text-max-width': '125px',
-              'text-wrap': 'ellipsis',
-              'text-background-color': '#101114',
-              'text-background-opacity': 0.85,
-              'text-background-padding': '2px',
-              'text-background-shape': 'roundrectangle',
+              'text-margin-y': 3,
+              color: '#94a3b8',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.0,
+              'text-outline-opacity': 0.95,
               'z-index': 15,
             },
           },
-          // Class nodes: slightly larger circular dot
+          // Minimal label stagger/offset for sibling function nodes in expanded clusters
+          {
+            selector: 'node[!isFileCluster].label-stagger-bottom',
+            style: {
+              'text-valign': 'bottom',
+              'text-margin-y': 4,
+            },
+          },
+          {
+            selector: 'node[!isFileCluster].label-stagger-top',
+            style: {
+              'text-valign': 'top',
+              'text-margin-y': -4,
+            },
+          },
+          // Class nodes
           {
             selector: 'node[kind = "class"]',
             style: {
               shape: 'ellipse',
-              width: 7,
-              height: 7,
-              'background-color': '#7c8c9e',
+              width: 6.5,
+              height: 6.5,
+              'background-color': '#818cf8',
+              'border-width': 0,
             },
           },
-          // Modified Code Node: Amber circle
+          // Modified Code Node: Clean warm amber circle
           {
             selector: 'node[!isFileCluster][changeStatus = "modified"]',
             style: {
-              'background-color': '#d29922',
-              'border-width': 1.5,
-              'border-color': '#f6c156',
-              width: 7.5,
-              height: 7.5,
+              'background-color': '#f59e0b',
+              'border-width': 0,
+              width: 6.5,
+              height: 6.5,
               'z-index': 25,
             },
           },
-          // Added Code Node: Restrained cyan circle
+          // Added Code Node: Clean sky cyan circle
           {
             selector: 'node[!isFileCluster][changeStatus = "added"]',
             style: {
               'background-color': '#38bdf8',
-              'border-width': 1.5,
-              'border-color': '#7dd3fc',
-              width: 7.5,
-              height: 7.5,
+              'border-width': 0,
+              width: 6.5,
+              height: 6.5,
               'z-index': 25,
             },
           },
-          // Failing Test Node: Crimson circle
+          // Failing Test Node: Solid crimson circle
           {
             selector: 'node[!isFileCluster][status = "fail"]',
             style: {
-              'background-color': '#f85149',
-              'border-width': 2,
-              'border-color': '#ff7b72',
-              width: 9,
-              height: 9,
+              'background-color': '#ef4444',
+              'border-width': 0,
+              width: 7.5,
+              height: 7.5,
               'z-index': 30,
             },
           },
-          // Error Test Node: Orange circle
+          // Error Test Node: Solid orange circle
           {
             selector: 'node[!isFileCluster][status = "error"]',
             style: {
-              'background-color': '#db6d28',
-              'border-width': 2,
-              'border-color': '#f0883e',
-              width: 8,
-              height: 8,
+              'background-color': '#f97316',
+              'border-width': 0,
+              width: 7.0,
+              height: 7.0,
               'z-index': 30,
             },
           },
-          // Passing Test Node: Green circle
+          // Passing Test Node: Emerald circle
           {
             selector: 'node[!isFileCluster][status = "pass"]',
             style: {
-              'background-color': '#238636',
-              width: 5,
-              height: 5,
+              'background-color': '#10b981',
+              'border-width': 0,
+              width: 4.5,
+              height: 4.5,
             },
           },
           // --- Containment rays from file center anchor to child symbols ---
@@ -562,9 +686,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
             selector: 'edge[category = "containment"]',
             style: {
               width: 0.75,
-              'line-color': '#243042',
+              'line-color': '#1e293b',
               'line-style': 'solid',
-              opacity: 0.35,
+              opacity: 0.45,
               'curve-style': 'straight',
               'target-arrow-shape': 'none',
               'z-index': 2,
@@ -577,7 +701,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               width: 1.2,
               'line-color': '#2e3b4e',
               'curve-style': 'bezier',
-              opacity: 0.6,
+              opacity: 0.65,
               'target-arrow-shape': 'none',
               'z-index': 5,
             },
@@ -592,7 +716,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'target-arrow-shape': 'triangle',
               'target-arrow-color': '#222d3d',
               'arrow-scale': 0.65,
-              opacity: 0.5,
+              opacity: 0.55,
               'z-index': 5,
             },
           },
@@ -608,6 +732,53 @@ export const GraphView: React.FC<GraphViewProps> = ({
               opacity: 0.55,
             },
           },
+          // Ambiguous static edges: warm amber dashed line with restrained glow
+          {
+            selector: 'edge[confidence = "ambiguous"]',
+            style: {
+              'line-color': '#d97706',
+              'target-arrow-color': '#d97706',
+              'line-style': 'dashed',
+              'line-dash-pattern': [4, 3],
+              opacity: 0.75,
+              width: 1.1,
+              'z-index': 12,
+            },
+          },
+          // Unresolved static edges: faint dotted line
+          {
+            selector: 'edge[confidence = "unresolved"]',
+            style: {
+              'line-color': '#475569',
+              'target-arrow-color': '#475569',
+              'line-style': 'dotted',
+              opacity: 0.35,
+              width: 0.75,
+              'z-index': 4,
+            },
+          },
+          // Ghost edges: base-side removed relationships
+          {
+            selector: 'edge[?isGhost]',
+            style: {
+              'line-color': '#64748b',
+              'target-arrow-color': '#64748b',
+              'line-style': 'dashed',
+              opacity: 0.25,
+              width: 0.75,
+            },
+          },
+          // Ghost nodes: distinct base-side removed elements that do not look current
+          {
+            selector: 'node[?isGhost]',
+            style: {
+              'border-width': 1.5,
+              'border-style': 'dashed',
+              'border-color': '#ef4444',
+              opacity: 0.45,
+              'background-color': '#1c1917',
+            },
+          },
           // --- Observed Edges for selected test: Cyan strand with Sequential Step Badges ---
           {
             selector: 'edge.observed-for-test',
@@ -615,50 +786,100 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'line-color': '#38bdf8',
               'target-arrow-color': '#38bdf8',
               'target-arrow-shape': 'triangle',
-              'arrow-scale': 0.85,
-              width: 1.6,
+              'arrow-scale': 0.75,
+              width: 1.75,
               opacity: 1.0,
               'z-index': 40,
               label: 'data(stepLabel)',
               'font-size': '9px',
-              'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              'font-weight': 700,
+              'font-family':
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              'font-weight': 600,
               color: '#38bdf8',
-              'text-background-color': '#101114',
-              'text-background-opacity': 0.9,
-              'text-background-padding': '2px',
-              'text-background-shape': 'roundrectangle',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.2,
+              'text-outline-opacity': 0.95,
             },
           },
-          // --- Test Dimming Classes (dims unexercised without removing) ---
+          // --- Dimming Classes ---
           {
             selector: 'node.dimmed',
             style: {
-              opacity: 0.22,
+              opacity: 0.15,
+              'text-opacity': 0,
             },
           },
           {
             selector: 'node.exercised',
             style: {
               opacity: 1.0,
-              'border-width': 1.8,
+              'border-width': 1.5,
               'border-color': '#38bdf8',
+              label: 'data(shortLabel)',
+              'text-opacity': 1,
+              'font-size': '10px',
+              'font-weight': 600,
+              color: '#38bdf8',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.2,
+              'text-outline-opacity': 0.95,
+              'z-index': 100,
+            },
+          },
+          {
+            selector: 'node.active-test-node',
+            style: {
+              opacity: 1.0,
+              'border-width': 2.0,
+              'border-color': '#ef4444',
+              label: 'data(shortLabel)',
+              'text-opacity': 1,
+              'font-size': '11px',
+              'font-weight': 700,
+              color: '#f87171',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.5,
+              'text-outline-opacity': 0.95,
+              'z-index': 110,
             },
           },
           {
             selector: 'edge.dimmed',
             style: {
-              opacity: 0.1,
+              opacity: 0.08,
             },
           },
-          // Selected node focus (luminous outline)
+          // Selected node focus (luminous crisp outline ring)
           {
             selector: 'node.selected-node',
             style: {
               'border-color': '#ffffff',
-              'border-width': 2.5,
+              'border-width': 2,
               'border-opacity': 1,
               'z-index': 999,
+            },
+          },
+          // Persistent connected edge highlight when node is selected
+          {
+            selector: 'edge.persistent-connected-edge',
+            style: {
+              'line-color': '#38bdf8',
+              'target-arrow-color': '#38bdf8',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.8,
+              width: 2.0,
+              opacity: 1.0,
+              'z-index': 90,
+            },
+          },
+          // Persistent connected neighbor node highlight when node is selected
+          {
+            selector: 'node.persistent-neighbor',
+            style: {
+              'border-color': '#38bdf8',
+              'border-width': 1.5,
+              opacity: 1.0,
+              'z-index': 80,
             },
           },
           // Neighbor highlighted on hover
@@ -670,7 +891,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 400,
             },
           },
-          // Show label class (driven by semantic zoom and collision prevention)
+          // Show label class
           {
             selector: 'node.show-label',
             style: {
@@ -690,9 +911,224 @@ export const GraphView: React.FC<GraphViewProps> = ({
             selector: 'edge.hovered',
             style: {
               'line-color': '#60a5fa',
-              width: 1.8,
-              opacity: 0.9,
+              'target-arrow-color': '#60a5fa',
+              width: 2.0,
+              opacity: 1.0,
               'z-index': 100,
+            },
+          },
+          // --- Autonomous Agent Investigation Classes: Refined Obsidian Aesthetics ---
+          // --- Autonomous Agent Investigation Classes: Refined Obsidian Aesthetics ---
+          // Greyed out unimpacted child nodes in agent mode: quiet architectural dots (no labels, clean slate)
+          {
+            selector: 'node[!isFileCluster].agent-unimpacted',
+            style: {
+              'background-color': '#334155',
+              'border-width': 0,
+              opacity: 0.28,
+              label: '',
+              'z-index': 5,
+            },
+          },
+          // Greyed out unimpacted file cluster anchors: subtle celestial hubs preserving repository structure
+          {
+            selector: 'node[?isFileCluster].agent-unimpacted',
+            style: {
+              'background-color': '#1e293b',
+              'border-width': 1,
+              'border-color': '#334155',
+              opacity: 0.40,
+              label: 'data(shortLabel)',
+              color: '#64748b',
+              'font-size': '8.5px',
+              'z-index': 10,
+            },
+          },
+          // Decisively grey out all non-containment unimpacted edges in agent mode
+          {
+            selector: 'edge.agent-unimpacted',
+            style: {
+              'line-color': '#1a2230',
+              opacity: 0.05,
+              'target-arrow-shape': 'none',
+              width: 0.5,
+              label: '',
+              'z-index': 1,
+            },
+          },
+          // Faint containment edges for unimpacted clusters so the architectural structure remains clear
+          {
+            selector: 'edge[category = "containment"].agent-unimpacted',
+            style: {
+              'line-color': '#1e293b',
+              opacity: 0.20,
+              width: 0.5,
+              'z-index': 2,
+            },
+          },
+          // Impacted nodes: high contrast, restrained colors, exact preserved shape and size
+          {
+            selector: 'node.agent-impacted',
+            style: {
+              opacity: 1.0,
+              'transition-property': 'background-color, border-color, border-width',
+              'transition-duration': 0.35,
+              'transition-timing-function': 'ease-in-out',
+              'z-index': 100,
+            },
+          },
+          // Failing test node (Red) - starting failure role
+          {
+            selector: 'node.agent-impacted[id = "tests/test_auth.py::test_login_expired_token"]',
+            style: {
+              'background-color': '#ef4444',
+              'border-width': 1.2,
+              'border-color': '#fca5a5',
+              label: 'data(shortLabel)',
+              color: '#fca5a5',
+              'font-weight': 600,
+              'font-size': '9.5px',
+              'z-index': 120,
+            },
+          },
+          // Intermediate call coordinator node (Cyan) - service examination role
+          {
+            selector: 'node.agent-impacted[id = "auth/service.py::login_with_token"]',
+            style: {
+              'background-color': '#0284c7',
+              'border-width': 1.2,
+              'border-color': '#38bdf8',
+              label: 'data(shortLabel)',
+              color: '#7dd3fc',
+              'font-weight': 500,
+              'font-size': '9.5px',
+              'z-index': 110,
+            },
+          },
+          // Candidate defect / patch site node (Amber) - proposed modification role
+          {
+            selector: 'node.agent-impacted[id = "auth/tokens.py::validate_token"]',
+            style: {
+              'background-color': '#d97706',
+              'border-width': 1.2,
+              'border-color': '#f59e0b',
+              label: 'data(shortLabel)',
+              color: '#fde68a',
+              'font-weight': 600,
+              'font-size': '9.5px',
+              'z-index': 120,
+            },
+          },
+          // Impacted file cluster nodes
+          {
+            selector: 'node[?isFileCluster].agent-impacted',
+            style: {
+              opacity: 0.85,
+              'border-color': '#64748b',
+              'border-width': 1,
+              label: 'data(label)',
+              color: '#cbd5e1',
+              'z-index': 80,
+            },
+          },
+          // Single Brief Color Flash Classes (rapid brightening on arrival, then settles)
+          {
+            selector: 'node.node-flash-red',
+            style: {
+              'background-color': '#f87171',
+              'border-color': '#ffffff',
+              'border-width': 1.8,
+            },
+          },
+          {
+            selector: 'node.node-flash-cyan',
+            style: {
+              'background-color': '#38bdf8',
+              'border-color': '#ffffff',
+              'border-width': 1.8,
+            },
+          },
+          {
+            selector: 'node.node-flash-amber',
+            style: {
+              'background-color': '#fbbf24',
+              'border-color': '#ffffff',
+              'border-width': 1.8,
+            },
+          },
+          {
+            selector: 'node.node-flash-purple',
+            style: {
+              'background-color': '#c084fc',
+              'border-color': '#ffffff',
+              'border-width': 1.8,
+            },
+          },
+          {
+            selector: 'node.node-flash-green',
+            style: {
+              'background-color': '#34d399',
+              'border-color': '#ffffff',
+              'border-width': 1.8,
+            },
+          },
+          // Containment strands for impacted files
+          {
+            selector: 'edge[category = "containment"].agent-impacted',
+            style: {
+              opacity: 0.35,
+              'line-color': '#334155',
+              'z-index': 10,
+            },
+          },
+          // Traveling edge illumination (wave of color traveling toward next node)
+          {
+            selector: 'edge.edge-illuminating',
+            style: {
+              'line-color': '#38bdf8',
+              'target-arrow-color': '#38bdf8',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.85,
+              width: 2.4,
+              opacity: 1.0,
+              'z-index': 95,
+            },
+          },
+          {
+            selector: 'edge.edge-illuminating-amber',
+            style: {
+              'line-color': '#f59e0b',
+              'target-arrow-color': '#f59e0b',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.85,
+              width: 2.4,
+              opacity: 1.0,
+              'z-index': 95,
+            },
+          },
+          // Traversed historical connection strands (accumulating trail)
+          {
+            selector: 'edge.edge-traversed-cyan',
+            style: {
+              'line-color': '#0284c7',
+              'target-arrow-color': '#0284c7',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.75,
+              width: 1.8,
+              opacity: 0.85,
+              'z-index': 90,
+            },
+          },
+          {
+            selector: 'edge.edge-traversed-amber',
+            style: {
+              'line-color': '#d97706',
+              'target-arrow-color': '#d97706',
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.75,
+              width: 1.8,
+              opacity: 0.85,
+              'z-index': 90,
             },
           },
         ],
@@ -703,12 +1139,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
         },
       });
 
-      // Zoom listener for semantic zoom level tracking (does not trigger layout destruction)
+      // Zoom listener for semantic zoom level tracking
       cy.on('zoom', () => {
         const z = cy.zoom();
         if (z < 0.8) setZoomLevel('far');
         else if (z < 1.3) setZoomLevel('mid');
         else setZoomLevel('close');
+        setHoverTag(null);
+      });
+
+      cy.on('pan', () => {
+        setHoverTag(null);
       });
 
       // Tap handlers
@@ -747,30 +1188,177 @@ export const GraphView: React.FC<GraphViewProps> = ({
         }
       });
 
-      // Mouseover / Mouseout with neighborhood strand illumination
+      // Interactive Hover Floating Tag on Node
       cy.on('mouseover', 'node', (evt: EventObject) => {
         const target = evt.target;
-        setHoveredNodeId(target.id());
         target.addClass('hovered');
         target.neighborhood('edge').addClass('hovered');
         target.neighborhood('node').addClass('neighbor-highlighted');
+
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originalEvt = evt.originalEvent as MouseEvent;
+        const x = originalEvt ? originalEvt.clientX - rect.left : target.renderedPosition().x;
+        const y = originalEvt ? originalEvt.clientY - rect.top : target.renderedPosition().y;
+
+        if (target.data('isFileCluster')) {
+          const isCollapsed = target.data('isCollapsed');
+          const changeStatus = target.data('changeStatus');
+          setHoverTag({
+            x,
+            y,
+            title: target.data('file'),
+            subtitle: target.data('role') || 'File Cluster',
+            badge:
+              changeStatus !== 'unchanged'
+                ? {
+                    text: changeStatus,
+                    color: changeStatus === 'modified' ? '#f59e0b' : '#38bdf8',
+                    bg: changeStatus === 'modified' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                  }
+                : target.data('tier')
+                ? { text: target.data('tier'), color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.15)' }
+                : undefined,
+            meta: [
+              `${target.data('symbolCount')} symbols • ${target.data('lineCount') || 100} lines`,
+              isCollapsed ? 'Collapsed dot (double-click to unfold)' : 'Unfolded constellation',
+            ],
+          });
+        } else {
+          const kind = target.data('kind');
+          const isTest = target.data('isTest');
+          const status = target.data('status');
+          const changeStatus = target.data('changeStatus');
+          const stepNumber = target.data('stepNumber');
+
+          let badge;
+          if (isTest && status !== 'neutral') {
+            badge = {
+              text: status.toUpperCase(),
+              color: status === 'fail' ? '#ef4444' : status === 'pass' ? '#10b981' : '#f97316',
+              bg:
+                status === 'fail'
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : status === 'pass'
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : 'rgba(249, 115, 22, 0.15)',
+            };
+          } else if (changeStatus !== 'unchanged') {
+            badge = {
+              text: changeStatus.toUpperCase(),
+              color: changeStatus === 'modified' ? '#f59e0b' : '#38bdf8',
+              bg: changeStatus === 'modified' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+            };
+          }
+
+          const meta: string[] = [];
+          if (stepNumber !== undefined) {
+            meta.push(`Execution Order: Step [${stepNumber}]`);
+          }
+          if (target.data('description')) {
+            meta.push(target.data('description'));
+          }
+
+          setHoverTag({
+            x,
+            y,
+            title: target.data('rawName') || target.data('label'),
+            subtitle: `${kind} in ${target.data('file')} (L${target.data('lineStart')}-${target.data('lineEnd')})`,
+            badge,
+            meta,
+          });
+        }
       });
 
       cy.on('mouseout', 'node', (evt: EventObject) => {
-        setHoveredNodeId(null);
         evt.target.removeClass('hovered');
         cy.elements().removeClass('hovered').removeClass('neighbor-highlighted');
+        setHoverTag(null);
       });
 
+      // Interactive Hover Floating Tag on Edge
       cy.on('mouseover', 'edge', (evt: EventObject) => {
-        evt.target.addClass('hovered');
+        const edge = evt.target;
+        edge.addClass('hovered');
+
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originalEvt = evt.originalEvent as MouseEvent;
+        const x = originalEvt ? originalEvt.clientX - rect.left : rect.width / 2;
+        const y = originalEvt ? originalEvt.clientY - rect.top : rect.height / 2;
+
+        const src = edge.source().data('rawName') || edge.source().data('label') || edge.source().id();
+        const tgt = edge.target().data('rawName') || edge.target().data('label') || edge.target().id();
+        const category = edge.data('category');
+        const stepNumber = edge.data('stepNumber');
+        const testIds = edge.data('testIds') as string[] | undefined;
+
+        let categoryLabel = 'Static AST Call';
+        let badgeText = 'Static Call';
+        let badgeColor = '#94a3b8';
+        let badgeBg = 'rgba(148, 163, 184, 0.15)';
+
+        if (category === 'runtime_observed') {
+          categoryLabel = 'Runtime Observed Call';
+          badgeText = 'Runtime Call';
+          badgeColor = '#38bdf8';
+          badgeBg = 'rgba(56, 189, 248, 0.15)';
+        } else if (category === 'containment') {
+          categoryLabel = 'Cluster Membership';
+          badgeText = 'Cluster Ray';
+          badgeColor = '#64748b';
+          badgeBg = 'rgba(100, 116, 139, 0.15)';
+        } else if (category === 'aggregated_structural') {
+          categoryLabel = 'Cross-File Dependency';
+          badgeText = 'Cross-File';
+          badgeColor = '#818cf8';
+          badgeBg = 'rgba(129, 140, 248, 0.15)';
+        }
+
+        const meta: string[] = [];
+        if (stepNumber !== undefined) {
+          meta.push(`Execution Order: Step [${stepNumber}]`);
+        }
+        if (testIds && testIds.length > 0) {
+          meta.push(`Observed in: ${testIds.join(', ')}`);
+        }
+        if (edge.data('provenance')) {
+          meta.push(edge.data('provenance'));
+        }
+
+        setHoverTag({
+          x,
+          y,
+          title: `${src} → ${tgt}`,
+          subtitle: categoryLabel,
+          badge: {
+            text: badgeText,
+            color: badgeColor,
+            bg: badgeBg,
+          },
+          meta,
+        });
+      });
+
+      // Track cursor movement on hovered nodes and edges for smooth positioning
+      cy.on('mousemove', 'node, edge', (evt: EventObject) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originalEvt = evt.originalEvent as MouseEvent;
+        if (originalEvt) {
+          const x = originalEvt.clientX - rect.left;
+          const y = originalEvt.clientY - rect.top;
+          setHoverTag((prev) => (prev ? { ...prev, x, y } : null));
+        }
       });
 
       cy.on('mouseout', 'edge', (evt: EventObject) => {
         evt.target.removeClass('hovered');
+        setHoverTag(null);
       });
 
       cyRef.current = cy;
+      onCyReady?.(cy);
       return;
     }
 
@@ -811,9 +1399,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
-    // Retain exact camera viewport
-    cy.viewport({ zoom: currentZoom, pan: currentPan });
-  }, [elements, onSelectNode, onSelectFile, onToggleCollapseFile]);
+    // Retain exact camera viewport on same-dataset mutations (collapse/expand, mode toggling),
+    // but fit the full graph with padding on dataset/run identity change.
+    if (datasetKey !== undefined && datasetKey !== prevDatasetKeyRef.current) {
+      prevDatasetKeyRef.current = datasetKey;
+      cy.fit(cy.elements(), 50);
+    } else {
+      cy.viewport({ zoom: currentZoom, pan: currentPan });
+    }
+  }, [elements, onSelectNode, onSelectFile, onToggleCollapseFile, datasetKey]);
 
   // Clean up Cytoscape on unmount
   useEffect(() => {
@@ -825,36 +1419,128 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, []);
 
-  // Update classes and dynamic highlights
+  // Update dynamic classes, selection focus, and persistent connection highlights
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
 
     cy.batch(() => {
-      // 1. Clear selection styling
-      cy.nodes().removeClass('selected-node');
+      // 1. Clear previous selection & connection focus classes
+      cy.nodes().removeClass('selected-node').removeClass('persistent-neighbor').removeClass('active-test-node');
+      cy.edges().removeClass('persistent-connected-edge');
+
+      // 2. Persistent Connection Highlight on Node/File Selection
       if (selectedNodeId) {
-        cy.getElementById(selectedNodeId).addClass('selected-node');
+        const target = cy.getElementById(selectedNodeId);
+        if (target.length > 0) {
+          target.addClass('selected-node').addClass('show-label');
+          const connectedEdges = target.connectedEdges();
+          connectedEdges.addClass('persistent-connected-edge');
+          const neighborNodes = target.neighborhood('node');
+          neighborNodes.addClass('persistent-neighbor').addClass('show-label');
+
+          // Dim everything else to give an intuitive persistent focused ego-graph
+          cy.nodes().forEach((n) => {
+            if (n.id() !== selectedNodeId && !neighborNodes.contains(n)) {
+              n.addClass('dimmed');
+            } else {
+              n.removeClass('dimmed');
+            }
+          });
+
+          cy.edges().forEach((e) => {
+            if (!connectedEdges.contains(e)) {
+              e.addClass('dimmed');
+            } else {
+              e.removeClass('dimmed');
+            }
+          });
+        }
       } else if (selectedFile) {
-        cy.getElementById(`file:${selectedFile}`).addClass('selected-node');
-      }
+        const fileNode = cy.getElementById(`file:${selectedFile}`);
+        if (fileNode.length > 0) {
+          fileNode.addClass('selected-node').addClass('show-label');
+          const connectedEdges = fileNode.connectedEdges();
+          connectedEdges.addClass('persistent-connected-edge');
+          const neighborNodes = fileNode.neighborhood('node');
+          neighborNodes.addClass('persistent-neighbor').addClass('show-label');
 
-      // 2. Mode-aware highlight & dimming
-      if (activeTest) {
-        // Highlighting active test coverage & runtime calls
-        const exercisedSet = new Set(activeTest.exercisedNodeIds);
-        exercisedSet.add(activeTest.id);
+          cy.nodes().forEach((n) => {
+            if (n.id() !== `file:${selectedFile}` && !neighborNodes.contains(n)) {
+              n.addClass('dimmed');
+            } else {
+              n.removeClass('dimmed');
+            }
+          });
 
+          cy.edges().forEach((e) => {
+            if (!connectedEdges.contains(e)) {
+              e.addClass('dimmed');
+            } else {
+              e.removeClass('dimmed');
+            }
+          });
+        }
+      } else if (currentViewMode === 'changes') {
+        // Changes Mode: clear test execution trace, highlight modified and added symbols, dim unchanged
         cy.nodes().forEach((n) => {
           if (n.data('isFileCluster')) {
             n.removeClass('dimmed');
             return;
           }
-          if (exercisedSet.has(n.id())) {
+          const status = n.data('changeStatus');
+          if (status === 'modified' || status === 'added') {
             n.addClass('exercised');
             n.removeClass('dimmed');
           } else {
             n.removeClass('exercised');
+            n.addClass('dimmed');
+          }
+        });
+        // Clear blue test execution path from changes overlay
+        cy.edges().removeClass('observed-for-test');
+        cy.edges().forEach((e) => {
+          const src = cy.getElementById(e.data('source'));
+          const tgt = cy.getElementById(e.data('target'));
+          const isRelatedToChange =
+            src.data('changeStatus') === 'modified' ||
+            src.data('changeStatus') === 'added' ||
+            tgt.data('changeStatus') === 'modified' ||
+            tgt.data('changeStatus') === 'added';
+          if (isRelatedToChange) {
+            e.removeClass('dimmed');
+          } else {
+            e.addClass('dimmed');
+          }
+        });
+      } else if (activeTest) {
+        // Highlighting active test coverage & runtime calls when no individual node is selected
+        const exercisedSet = new Set(activeTest.exercisedNodeIds);
+        exercisedSet.add(activeTest.id);
+
+        const exercisedFiles = new Set<string>();
+        exercisedSet.forEach((id) => {
+          const file = graphData.nodes.find((n) => n.id === id)?.file;
+          if (file) exercisedFiles.add(file);
+        });
+
+        cy.nodes().forEach((n) => {
+          if (n.data('isFileCluster')) {
+            const file = n.data('file');
+            if (exercisedFiles.has(file)) {
+              n.removeClass('dimmed');
+            } else {
+              n.addClass('dimmed');
+            }
+            return;
+          }
+          if (n.id() === activeTest.id) {
+            n.addClass('active-test-node').removeClass('dimmed');
+          } else if (exercisedSet.has(n.id())) {
+            n.addClass('exercised');
+            n.removeClass('dimmed');
+          } else {
+            n.removeClass('exercised').removeClass('active-test-node');
             n.addClass('dimmed');
           }
         });
@@ -872,23 +1558,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
             e.addClass('dimmed');
           }
         });
-      } else if (currentViewMode === 'changes') {
-        // Changes Mode: highlight modified and added symbols, dim unchanged
-        cy.nodes().forEach((n) => {
-          if (n.data('isFileCluster')) {
-            n.removeClass('dimmed');
-            return;
-          }
-          const status = n.data('changeStatus');
-          if (status === 'modified' || status === 'added') {
-            n.addClass('exercised');
-            n.removeClass('dimmed');
-          } else {
-            n.removeClass('exercised');
-            n.addClass('dimmed');
-          }
-        });
-        cy.edges().removeClass('observed-for-test');
       } else {
         // All Code / Structure Mode: full contrast on all elements
         cy.nodes().removeClass('dimmed').removeClass('exercised');
@@ -909,8 +1578,320 @@ export const GraphView: React.FC<GraphViewProps> = ({
           }
         });
       }
+      // 4. Autonomous Agent Investigation: Accumulating Trail, Role Highlighting & Impact Overview
+      cy.nodes()
+        .removeClass('agent-impacted')
+        .removeClass('agent-unimpacted');
+      cy.edges()
+        .removeClass('agent-impacted')
+        .removeClass('agent-unimpacted')
+        .removeClass('edge-illuminating')
+        .removeClass('edge-illuminating-amber')
+        .removeClass('edge-traversed-cyan')
+        .removeClass('edge-traversed-amber');
+
+      if (isAgentMode) {
+        // Accumulating trail nodes based on current step index (true time-travel replay)
+        const visitedNodeIds = new Set<string>();
+        visitedNodeIds.add('tests/test_auth.py::test_login_expired_token');
+        visitedNodeIds.add('file:tests/test_auth.py');
+
+        if (agentStepIndex >= 1) {
+          visitedNodeIds.add('auth/service.py::login_with_token');
+          visitedNodeIds.add('file:auth/service.py');
+        }
+        if (agentStepIndex >= 2) {
+          visitedNodeIds.add('auth/tokens.py::validate_token');
+          visitedNodeIds.add('file:auth/tokens.py');
+        }
+
+        // Accumulating trail edges based on current step index
+        const visitedEdgeIds = new Set<string>();
+        visitedEdgeIds.add('containment:file:tests/test_auth.py->tests/test_auth.py::test_login_expired_token');
+        if (agentStepIndex >= 1) {
+          visitedEdgeIds.add('e_test_fail_to_login');
+          visitedEdgeIds.add('containment:file:auth/service.py->auth/service.py::login_with_token');
+        }
+        if (agentStepIndex >= 2) {
+          visitedEdgeIds.add('e_login_to_validate');
+          visitedEdgeIds.add('containment:file:auth/tokens.py->auth/tokens.py::validate_token');
+        }
+
+        // Decisively grey out all non-visited nodes; spotlight visited/impacted nodes
+        cy.nodes().forEach((n) => {
+          if (visitedNodeIds.has(n.id())) {
+            n.addClass('agent-impacted');
+            n.removeClass('agent-unimpacted');
+            n.addClass('show-label');
+          } else {
+            n.addClass('agent-unimpacted');
+            n.removeClass('agent-impacted');
+            n.removeClass('show-label');
+          }
+        });
+
+        // Decisively grey out all non-visited edges; style traversed edges with accumulating trail
+        cy.edges().forEach((e) => {
+          if (visitedEdgeIds.has(e.id())) {
+            e.addClass('agent-impacted');
+            e.removeClass('agent-unimpacted');
+            if (e.id() === 'e_test_fail_to_login') {
+              e.addClass('edge-traversed-cyan');
+            } else if (e.id() === 'e_login_to_validate') {
+              e.addClass('edge-traversed-amber');
+            }
+          } else {
+            e.addClass('agent-unimpacted');
+            e.removeClass('agent-impacted');
+            e.removeClass('edge-traversed-cyan');
+            e.removeClass('edge-traversed-amber');
+          }
+        });
+      }
     });
-  }, [selectedNodeId, selectedFile, activeTest, zoomLevel, priorityNodeIds, currentViewMode]);
+  }, [
+    selectedNodeId,
+    selectedFile,
+    activeTest,
+    zoomLevel,
+    priorityNodeIds,
+    currentViewMode,
+    isAgentMode,
+    agentActiveNodeId,
+    agentPhase,
+    agentActiveEdgeIds,
+    agentStepIndex,
+  ]);
+
+  // Reset camera tracking pause when agent active mode restarts or changes
+  useEffect(() => {
+    if (!isAgentMode) {
+      setIsCameraTrackingPaused(false);
+    }
+  }, [isAgentMode]);
+
+  // Smooth Camera Gliding with Perfect Geometric Center & Zoom Out on Resolution
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !isAgentMode || !agentActiveNodeId || isCameraTrackingPaused) return;
+
+    let targetNode = cy.getElementById(agentActiveNodeId);
+    if (!targetNode || targetNode.length === 0) {
+      const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
+      if (file) {
+        targetNode = cy.getElementById(`file:${file}`);
+      }
+    }
+    if (!targetNode || targetNode.length === 0) return;
+
+    const modelPos = targetNode.position();
+    const targetZoom = agentZoomTarget || 1.15;
+
+    // Viewport visible dimensions: containerW is already the visible canvas between sidebar and drawer
+    const containerW = containerRef.current?.clientWidth || 800;
+    const containerH = containerRef.current?.clientHeight || 600;
+    const visibleCenterX = containerW / 2;
+    const bottomInset = isAgentMode ? 55 : 0;
+    const visibleCenterY = (containerH - bottomInset) / 2;
+
+    const targetPanX = visibleCenterX - modelPos.x * targetZoom;
+    const targetPanY = visibleCenterY - modelPos.y * targetZoom;
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    cy.stop();
+    cy.animate(
+      {
+        pan: { x: targetPanX, y: targetPanY },
+        zoom: targetZoom,
+      },
+      {
+        duration: prefersReducedMotion ? 0 : 500,
+        easing: 'ease-in-out-cubic',
+      }
+    );
+  }, [agentActiveNodeId, isAgentMode, agentZoomTarget, isCameraTrackingPaused, isInspectorOpen, graphData.nodes]);
+
+  // Selection camera: gently center/zoom on failing test node and exercised symbols in context,
+  // keeping rest of project map present (dimmed), not removed.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || isAgentMode) {
+      prevSelectedTestIdRef.current = selectedTestId;
+      return;
+    }
+
+    if (selectedTestId) {
+      const active = tests.find((t) => t.id === selectedTestId);
+      const targetEles = cy.collection();
+      const testNode = cy.getElementById(selectedTestId);
+      if (testNode.length > 0) targetEles.merge(testNode);
+
+      if (active?.exercisedNodeIds) {
+        active.exercisedNodeIds.forEach((id) => {
+          const node = cy.getElementById(id);
+          if (node.length > 0) {
+            targetEles.merge(node);
+          } else {
+            const file = graphData.nodes.find((n) => n.id === id)?.file;
+            if (file) {
+              const fileCluster = cy.getElementById(`file:${file}`);
+              if (fileCluster.length > 0) targetEles.merge(fileCluster);
+            }
+          }
+        });
+      }
+
+      if (targetEles.length > 0) {
+        const bb = targetEles.boundingBox();
+        const containerW = containerRef.current?.clientWidth || 800;
+        const containerH = containerRef.current?.clientHeight || 600;
+        const padding = 120; // generous padding keeps surrounding dimmed project map visible
+        const w = Math.max(bb.w, 120);
+        const h = Math.max(bb.h, 120);
+        const fitZoom = Math.min((containerW - padding * 2) / w, (containerH - padding * 2) / h);
+        const targetZoom = Math.max(0.95, Math.min(1.4, fitZoom));
+
+        const centerX = bb.x1 + bb.w / 2;
+        const centerY = bb.y1 + bb.h / 2;
+        const visibleCenterX = containerW / 2;
+        const visibleCenterY = containerH / 2;
+        const targetPanX = visibleCenterX - centerX * targetZoom;
+        const targetPanY = visibleCenterY - centerY * targetZoom;
+
+        const prefersReducedMotion =
+          typeof window !== 'undefined' &&
+          window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+        cy.stop();
+        cy.animate(
+          {
+            pan: { x: targetPanX, y: targetPanY },
+            zoom: targetZoom,
+          },
+          {
+            duration: prefersReducedMotion ? 0 : 350,
+            easing: 'ease-in-out-cubic',
+          }
+        );
+      }
+    } else if (prevSelectedTestIdRef.current && !selectedTestId) {
+      // Gentle fit when clearing test selection
+      const prefersReducedMotion =
+        typeof window !== 'undefined' &&
+        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+      cy.stop();
+      cy.animate(
+        {
+          fit: { eles: cy.elements(), padding: 50 },
+        },
+        {
+          duration: prefersReducedMotion ? 0 : 300,
+          easing: 'ease-in-out-cubic',
+        }
+      );
+    }
+
+    prevSelectedTestIdRef.current = selectedTestId;
+  }, [selectedTestId, tests, isAgentMode, graphData.nodes]);
+
+  // Detect manual user pan/zoom during agent mode to pause camera tracking
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    const onUserInteraction = (evt: EventObject) => {
+      if (isAgentMode && !isCameraTrackingPaused && evt.originalEvent) {
+        setIsCameraTrackingPaused(true);
+      }
+    };
+
+    cy.on('dragpan zoom', onUserInteraction);
+    return () => {
+      cy.removeListener('dragpan zoom', onUserInteraction);
+    };
+  }, [isAgentMode, isCameraTrackingPaused]);
+
+  // Single Brief Color Flash on Arrival & Traveling Edge Wave
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !isAgentMode || !agentActiveNodeId) return;
+
+    let targetNode = cy.getElementById(agentActiveNodeId);
+    if (!targetNode || targetNode.length === 0) {
+      const file = graphData.nodes.find((n) => n.id === agentActiveNodeId)?.file;
+      if (file) {
+        targetNode = cy.getElementById(`file:${file}`);
+      }
+    }
+    if (!targetNode || targetNode.length === 0) return;
+
+    // Determine flash color based on current action phase:
+    // Red: failing test identified (diagnosing)
+    // Cyan: examining relationship/function (tracing)
+    // Amber: suspicious modification or candidate patch inspected (inspecting, patching)
+    // Purple: verification trial executed (verifying)
+    // Green: successful recorded verification outcome (resolved)
+    let flashColorClass = 'node-flash-cyan';
+    if (agentPhase === 'diagnosing') flashColorClass = 'node-flash-red';
+    else if (agentPhase === 'inspecting' || agentPhase === 'patching') flashColorClass = 'node-flash-amber';
+    else if (agentPhase === 'verifying') flashColorClass = 'node-flash-purple';
+    else if (agentPhase === 'resolved') flashColorClass = 'node-flash-green';
+
+    // Active traveling edge for this transition
+    const travelingEdgeId =
+      agentStepIndex === 1
+        ? 'e_test_fail_to_login'
+        : agentStepIndex === 2
+        ? 'e_login_to_validate'
+        : null;
+
+    let travelingEdge: cytoscape.EdgeCollection | null = null;
+    if (travelingEdgeId) {
+      const edge = cy.getElementById(travelingEdgeId);
+      if (edge.length > 0) {
+        travelingEdge = edge;
+        const edgeColorClass = agentStepIndex === 2 ? 'edge-illuminating-amber' : 'edge-illuminating';
+        edge.addClass(edgeColorClass);
+      }
+    }
+
+    // Trigger single color flash on destination arrival
+    const flashDelay = travelingEdge ? 300 : 50;
+    const flashTimer = setTimeout(() => {
+      targetNode.addClass(flashColorClass);
+
+      // Settle edge into traversed history
+      if (travelingEdge) {
+        const edgeColorClass = agentStepIndex === 2 ? 'edge-illuminating-amber' : 'edge-illuminating';
+        const traversedClass = agentStepIndex === 2 ? 'edge-traversed-amber' : 'edge-traversed-cyan';
+        travelingEdge.removeClass(edgeColorClass).addClass(traversedClass);
+      }
+
+      // Settle node fill into softer persistent color after brief hold (350ms)
+      const settleTimer = setTimeout(() => {
+        targetNode.removeClass(flashColorClass);
+      }, 350);
+
+      return () => clearTimeout(settleTimer);
+    }, flashDelay);
+
+    return () => {
+      clearTimeout(flashTimer);
+      targetNode
+        .removeClass('node-flash-red')
+        .removeClass('node-flash-cyan')
+        .removeClass('node-flash-amber')
+        .removeClass('node-flash-purple')
+        .removeClass('node-flash-green');
+      if (travelingEdge) {
+        travelingEdge.removeClass('edge-illuminating').removeClass('edge-illuminating-amber');
+      }
+    };
+  }, [isAgentMode, agentActiveNodeId, agentPhase, agentStepIndex, graphData.nodes]);
 
   // ResizeObserver to handle container size changes cleanly
   useEffect(() => {
@@ -997,26 +1978,26 @@ export const GraphView: React.FC<GraphViewProps> = ({
           backgroundColor: '#101114',
         }}
       >
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-          No Project Map Available
-        </div>
-        <div style={{ fontSize: '12px', maxWidth: '420px', lineHeight: '1.5' }}>
-          No graph nodes or source files are recorded for this run.
+        <div
+          style={{
+            padding: '16px 24px',
+            backgroundColor: '#111722',
+            border: '1px solid #1e293b',
+            borderRadius: '6px',
+            color: '#94a3b8',
+            fontSize: '13px',
+            textAlign: 'center',
+            maxWidth: '440px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+          }}
+        >
+          {isRealImport
+            ? 'Structure file contains no symbols. The project may be empty or filtered out.'
+            : 'No graph nodes or source files are recorded for this run.'}
         </div>
       </div>
     );
   }
-
-  const isAllCollapsed =
-    fileClusters.length > 0 && fileClusters.every((fc) => collapsedFiles.has(fc.file));
-
-  const handleToggleAllCollapse = () => {
-    if (isAllCollapsed) {
-      onExpandAllFiles?.();
-    } else {
-      onCollapseAllFiles?.();
-    }
-  };
 
   return (
     <div
@@ -1039,15 +2020,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
           padding: '6px 14px',
           backgroundColor: '#11141a',
           borderBottom: '1px solid var(--border-default)',
-          gap: '12px',
+          gap: '10px',
           flexWrap: 'nowrap',
           zIndex: 10,
           minHeight: '38px',
+          overflowX: 'auto',
+          overflowY: 'hidden',
         }}
       >
-        {/* Left: Clear Layer Controls + Active Test Scope */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
-          {/* Layer Selector: All Code vs Changed Code */}
+        {/* Left: Core Navigation & Action Controls (Always flexShrink: 0 so buttons NEVER get cut off) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          {/* Layer Selector: Structure vs Changes */}
           <div
             style={{
               display: 'flex',
@@ -1071,6 +2054,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 border: 'none',
                 borderRadius: 'var(--radius-sm)',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
               role="radio"
               aria-label="Structure"
@@ -1091,6 +2075,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 border: 'none',
                 borderRadius: 'var(--radius-sm)',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
               role="radio"
               aria-label="Changes"
@@ -1101,9 +2086,121 @@ export const GraphView: React.FC<GraphViewProps> = ({
             </button>
           </div>
 
-          {/* Active Test Scope or Overview Scope */}
+          {/* Quick Unfold All / Fold All Segmented Control */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              backgroundColor: '#161e2e',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-default)',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            <button
+              onClick={onExpandAllFiles}
+              className={collapsedFiles.size === 0 ? 'btn-ghost' : 'btn-secondary'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                border: 'none',
+                borderRight: '1px solid var(--border-default)',
+                color: collapsedFiles.size > 0 ? '#38bdf8' : 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
+              }}
+              title="Unfold all files to reveal smaller function and class nodes"
+              aria-label="Unfold All Files"
+            >
+              <ChevronsDown size={11} />
+              <span>Unfold All</span>
+            </button>
+            <button
+              onClick={onCollapseAllFiles}
+              className={collapsedFiles.size === fileClusters.length ? 'btn-ghost' : 'btn-secondary'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                border: 'none',
+                color:
+                  collapsedFiles.size === fileClusters.length
+                    ? 'var(--text-primary)'
+                    : 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
+              }}
+              title="Fold all files into overview dots"
+              aria-label="Fold All Files"
+            >
+              <ChevronsUp size={11} />
+              <span>Fold to Files</span>
+            </button>
+          </div>
+
+          {/* Autonomous Agent Simulation Toggle or Gated Notice */}
+          {isRealImport ? (
+            <span
+              style={{
+                fontSize: '11px',
+                color: 'var(--text-muted)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: '1px dashed #334155',
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'not-allowed',
+                whiteSpace: 'nowrap',
+              }}
+              title="Autonomous agent repair is a sample demo feature and is not available on real imports"
+              aria-label="Agent Auto-Repair disabled on real imports"
+            >
+              <Bot size={12} style={{ color: 'var(--text-muted)' }} />
+              <span>Agent Auto-Repair (Demo only)</span>
+            </span>
+          ) : (
+            onToggleAgentMode && (
+              <button
+                onClick={onToggleAgentMode}
+                className={isAgentMode ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  cursor: 'pointer',
+                  backgroundColor: isAgentMode ? 'rgba(56, 189, 248, 0.2)' : undefined,
+                  color: isAgentMode ? '#38bdf8' : undefined,
+                  border: isAgentMode ? '1px solid rgba(56, 189, 248, 0.4)' : undefined,
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}
+                title="Simulate autonomous agent actively repairing code defects"
+                aria-label="Agent Auto-Repair"
+              >
+                <Bot size={12} style={{ color: isAgentMode ? '#38bdf8' : 'var(--text-secondary)' }} />
+                <span>{isAgentMode ? 'Agent Active' : 'Agent Auto-Repair'}</span>
+              </button>
+            )
+          )}
+        </div>
+
+        {/* Center: Active Scope / Context (minWidth: 0, flexShrink: 1, truncates with ellipsis) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexShrink: 1, overflow: 'hidden' }}>
           {activeTest ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
               <span
                 style={{
                   fontSize: '11px',
@@ -1117,10 +2214,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     activeTest.status === 'fail'
                       ? '1px solid rgba(239, 68, 68, 0.3)'
                       : '1px solid rgba(16, 185, 129, 0.3)',
-                  padding: '2px 8px',
+                  padding: '2px 6px',
                   borderRadius: 'var(--radius-sm)',
                   whiteSpace: 'nowrap',
-                  maxWidth: '280px',
+                  maxWidth: '220px',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   display: 'inline-block',
@@ -1132,7 +2229,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               <button
                 onClick={() => onSelectTest?.(null)}
                 className="btn-ghost btn-sm"
-                style={{ fontSize: '10px', padding: '1px 5px', color: 'var(--text-muted)' }}
+                style={{ fontSize: '10px', padding: '1px 5px', color: 'var(--text-muted)', flexShrink: 0 }}
                 title="Clear test tracing and return to whole project overview"
               >
                 ✕ Clear
@@ -1141,9 +2238,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
           ) : (
             <span
               style={{
-                fontSize: '12px',
+                fontSize: '11px',
                 fontWeight: 600,
-                color: 'var(--text-primary)',
+                color: 'var(--text-secondary)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -1155,7 +2252,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
           <span
             style={{
-              fontSize: '11px',
+              fontSize: '10px',
               color: 'var(--text-muted)',
               fontFamily: 'var(--font-mono)',
               whiteSpace: 'nowrap',
@@ -1168,8 +2265,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           {activeTest && !activeTest.callTracingAvailable && (
             <span
               style={{
-                fontSize: '10px',
-                padding: '1px 6px',
+                fontSize: '9px',
+                padding: '1px 5px',
                 borderRadius: 'var(--radius-sm)',
                 backgroundColor: 'rgba(210, 153, 34, 0.15)',
                 color: '#d29922',
@@ -1184,22 +2281,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
           )}
         </div>
 
-        {/* Right: Level Toggle, Static Context Toggle, Search, Zoom Controls */}
+        {/* Right: Static Context Toggle, Search, Zoom Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-          {/* Level Toggle Button */}
-          <button
-            onClick={handleToggleAllCollapse}
-            className="btn-ghost btn-sm"
-            style={{ fontSize: '11px', padding: '2px 7px' }}
-            title={
-              isAllCollapsed
-                ? 'Expand all files into function constellations'
-                : 'Collapse all files into overview dots'
-            }
-          >
-            {isAllCollapsed ? 'Expand All' : 'Collapse to Files'}
-          </button>
-
           <label
             style={{
               fontSize: '11px',
@@ -1297,16 +2380,167 @@ export const GraphView: React.FC<GraphViewProps> = ({
         </div>
       </div>
 
-      {/* Cytoscape Canvas */}
+      {/* Canvas Area Container - Relative Anchor for Cytoscape and its Overlays */}
       <div
-        ref={containerRef}
         style={{
           flex: 1,
           width: '100%',
           height: '100%',
-          backgroundColor: '#101114',
+          position: 'relative',
+          overflow: 'hidden',
         }}
-      />
+      >
+        {/* Cytoscape Canvas */}
+        <div
+          ref={containerRef}
+          style={{
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#101114',
+          }}
+        />
+
+        {/* Floating Glassmorphic Tag Card on Hover */}
+        {hoverTag && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${
+                hoverTag.x + 310 > (containerRef.current?.clientWidth || 800)
+                  ? Math.max(10, hoverTag.x - 300)
+                  : hoverTag.x + 14
+              }px`,
+              top: `${
+                hoverTag.y + 140 > (containerRef.current?.clientHeight || 600)
+                  ? Math.max(10, hoverTag.y - 120)
+                  : hoverTag.y + 14
+              }px`,
+              pointerEvents: 'none',
+              zIndex: 1000,
+              backgroundColor: 'rgba(15, 23, 42, 0.95)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 10px 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+              borderRadius: '6px',
+              padding: '8px 12px',
+              maxWidth: '320px',
+              backdropFilter: 'blur(10px)',
+              color: '#f8fafc',
+              fontFamily:
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              fontSize: '11px',
+              lineHeight: 1.4,
+              animation: 'fadeIn 0.1s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+              {hoverTag.badge && (
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    backgroundColor: hoverTag.badge.color,
+                    display: 'inline-block',
+                    flexShrink: 0,
+                  }}
+                />
+              )}
+              <span
+                style={{
+                  fontWeight: 600,
+                  color: '#ffffff',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {hoverTag.title}
+              </span>
+              {hoverTag.badge && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: hoverTag.badge.color,
+                    backgroundColor: hoverTag.badge.bg,
+                    border: `1px solid ${hoverTag.badge.color}40`,
+                    padding: '1px 5px',
+                    borderRadius: '3px',
+                    marginLeft: 'auto',
+                    flexShrink: 0,
+                  }}
+                >
+                  {hoverTag.badge.text}
+                </span>
+              )}
+            </div>
+            {hoverTag.subtitle && (
+              <div style={{ fontSize: '11px', color: '#93c5fd', marginBottom: '4px' }}>
+                {hoverTag.subtitle}
+              </div>
+            )}
+            {hoverTag.meta && hoverTag.meta.length > 0 && (
+              <div
+                style={{
+                  fontSize: '10px',
+                  color: '#94a3b8',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                  paddingTop: '4px',
+                  marginTop: '2px',
+                }}
+              >
+                {hoverTag.meta.map((m, i) => (
+                  <div key={i}>{m}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Expandable Step Explanation Popup (Docked above Replay Bar) */}
+        {isAgentMode && resolvedAgentStep && (
+          <StepExplanationPopup
+            currentStepIndex={agentStepIndex}
+            totalSteps={totalAgentSteps}
+            currentPhase={agentPhase || 'idle'}
+            phaseLabel={agentPhaseLabel || ''}
+            checkpointLabel={resolvedAgentStep.checkpointLabel || agentPhaseLabel || ''}
+            targetNodeId={resolvedAgentStep.targetNodeId}
+            explanation={resolvedAgentStep.explanation}
+            isExpanded={isExplanationExpanded}
+            onToggleExpand={toggleExplanationExpand}
+            isInspectorOpen={isInspectorOpen}
+            onSelectNode={(nodeId) => onSelectNode?.(nodeId)}
+          />
+        )}
+
+        {/* Minimalist Investigation Replay Bar (Docked at Bottom of Canvas) */}
+        {isAgentMode && onToggleAgentMode && (
+          <InvestigationReplayBar
+            currentStepIndex={agentStepIndex}
+            totalSteps={totalAgentSteps}
+            currentPhase={agentPhase || 'idle'}
+            checkpoints={agentCheckpoints}
+            isPlaying={isAgentPlaying}
+            onTogglePlay={onToggleAgentPlay || (() => {})}
+            onPrevStep={onPrevAgentStep || (() => {})}
+            onNextStep={onNextAgentStep || (() => {})}
+            onRestart={onRestartAgent || (() => {})}
+            onJumpToStep={onJumpAgentStep || (() => {})}
+            speed={agentSpeed}
+            onChangeSpeed={onChangeAgentSpeed || (() => {})}
+            isCameraTrackingPaused={isCameraTrackingPaused}
+            onResumeTracking={() => setIsCameraTrackingPaused(false)}
+            onClose={onToggleAgentMode}
+            isInspectorOpen={isInspectorOpen}
+          />
+        )}
+      </div>
     </div>
   );
 };

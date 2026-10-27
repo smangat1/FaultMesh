@@ -1,3 +1,5 @@
+import type { V2ReplayProvenance, V2RunOutcome } from '../import/types';
+
 /**
  * FaultMesh UI Types
  *
@@ -46,6 +48,17 @@ export interface TestItem {
   observedEdgeIds?: string[]; // Explicit observed runtime call edges
   unresolvedReferences?: string[];
   callTracingAvailable?: boolean;
+  failureFingerprint?: string | null;
+  failureText?: string | null;
+  phases?: Array<{
+    phase: string;
+    outcome: string;
+    durationMs: number;
+    failureText?: string | null;
+  }>;
+  staleCoverage?: boolean;
+  unmatchedCount?: number;
+  staleSymbols?: string[];
 }
 
 export interface CodeNode {
@@ -56,12 +69,23 @@ export interface CodeNode {
   lineStart: number;
   lineEnd: number;
   changeStatus: ChangeStatus;
-  sourceSnippet: string;
+  sourceSnippet?: string;
   gitDiff?: string;
   parentModule: string;
   description?: string; // Grounded plain-English role explanation (sample)
   isUnresolved?: boolean;
   complexity?: number;
+  signature?: string | null;
+  parameterNames?: string[];
+  decorators?: string[];
+  bases?: string[];
+  docstringFirstLine?: string | null;
+  contentHash?: string;
+  isGhost?: boolean;
+  revisionSide?: 'head' | 'base';
+  parentId?: string;
+  qualifiedName?: string;
+  isTest?: boolean;
 }
 
 export interface FileCluster {
@@ -73,6 +97,12 @@ export interface FileCluster {
   role?: string; // Architectural role (e.g. "Token Authority", "Core Coordinator")
   tier?: string; // Architectural tier (e.g. "Security Subsystem", "Service Core")
   description?: string; // Plain-English grounded summary of what this file does
+  isGhost?: boolean;
+  revisionSide?: 'head' | 'base';
+  contentHash?: string;
+  isTest?: boolean;
+  parseError?: string | null;
+  gitStatus?: string;
 }
 
 export interface PinnedSymbol {
@@ -92,6 +122,14 @@ export interface GraphEdge {
   provenance: string; // e.g., "pytest-trace: test_login_expired_token:L42" or "ast: import"
   observedCount?: number;
   testIds?: string[];
+  confidence?: 'resolved' | 'ambiguous' | 'unresolved';
+  kind?: 'imports' | 'possible_call' | 'defines' | 'contains';
+  callsiteLine?: number;
+  callsitePath?: string;
+  resolutionReason?: string;
+  isGhost?: boolean;
+  revisionSide?: 'head' | 'base';
+  externalModule?: string | null;
 }
 
 export interface UnresolvedReference {
@@ -143,6 +181,22 @@ export interface RunSummary {
   };
   limitations: string[];
   notes?: string[];
+  isRealImport?: boolean;
+  envelopeHeadSha?: string | null;
+  envelopeBaseSha?: string | null;
+  isWorktree?: boolean;
+  isDirty?: boolean | null;
+  contentSha256?: string;
+  unresolvedCount?: number;
+  parseErrorCount?: number;
+  skipCount?: number;
+  externalModuleCount?: number;
+  v2RunCount?: number;
+  replayProvenance?: V2ReplayProvenance;
+  harnessStatus?: string;
+  runOutcome?: V2RunOutcome;
+  exitCode?: number | null;
+  harnessError?: string | null;
 }
 
 export interface TestEvidence {
@@ -160,7 +214,16 @@ export interface SourceViewData {
   name: string;
   lineStart: number;
   lineEnd: number;
-  snippet: string;
+  snippet?: string;
   gitDiff?: string;
   changeStatus: ChangeStatus;
+  signature?: string | null;
+  parameterNames?: string[];
+  decorators?: string[];
+  bases?: string[];
+  docstringFirstLine?: string | null;
+  contentHash?: string;
+  hasSourceText?: boolean;
+  isGhost?: boolean;
+  revisionSide?: 'head' | 'base';
 }

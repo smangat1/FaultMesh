@@ -16,6 +16,7 @@ import {
   GitCommit,
   RotateCcw,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 
 interface TestDetailsPaneProps {
   test: TestItem | null;
@@ -138,7 +139,7 @@ export const TestDetailsPane: React.FC<TestDetailsPaneProps> = ({
                 gap: '4px',
               }}
             >
-              <Clock size={11} /> {test.durationMs}ms
+              <Clock size={11} /> {formatDurationMs(test.durationMs)}
             </span>
             <span
               style={{
@@ -346,7 +347,7 @@ export const TestDetailsPane: React.FC<TestDetailsPaneProps> = ({
                     )}
                   </div>
                   <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
-                    {rerun.durationMs}ms
+                    {formatDurationMs(rerun.durationMs)}
                   </span>
                 </div>
               ))}

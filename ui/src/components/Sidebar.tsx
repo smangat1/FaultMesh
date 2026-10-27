@@ -6,12 +6,15 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
+  ChevronsUpDown,
   Pin,
   PinOff,
   FileCode,
   Folder,
   X,
+  AlertTriangle,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
 
 export interface SidebarProps {
   tests: TestItem[];
@@ -22,6 +25,8 @@ export interface SidebarProps {
   onSelectFile?: (file: string | null) => void;
   collapsedFiles?: Set<string>;
   onToggleCollapseFile?: (file: string) => void;
+  onCollapseAllFiles?: () => void;
+  onExpandAllFiles?: () => void;
   nodes?: CodeNode[];
   pinnedSymbols?: PinnedSymbol[];
   onPinSymbol?: (symbol: PinnedSymbol) => void;
@@ -29,6 +34,8 @@ export interface SidebarProps {
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string | null) => void;
   viewMode?: 'structure' | 'changes' | 'tests' | 'investigation';
+  isRealImport?: boolean;
+  harnessError?: string | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -40,12 +47,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectFile,
   collapsedFiles = new Set(),
   onToggleCollapseFile,
+  onCollapseAllFiles,
+  onExpandAllFiles,
   nodes = [],
   pinnedSymbols = [],
   onUnpinSymbol,
   selectedNodeId,
   onSelectNode,
   viewMode = 'structure',
+  isRealImport = false,
+  harnessError = null,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -231,163 +242,220 @@ export const Sidebar: React.FC<SidebarProps> = ({
     );
   }
 
-  const renderTestsSection = () => (
-    <section style={{ borderBottom: '1px solid var(--border-default)' }}>
-      <div
-        style={{
-          padding: '8px 12px 6px 12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: '#131b28',
-        }}
-      >
-        <span
+  const renderTestsSection = () => {
+    const isHarnessFailed = Boolean(harnessError);
+
+    return (
+      <section style={{ borderBottom: '1px solid var(--border-default)' }}>
+        <div
           style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            color: 'var(--text-secondary)',
+            padding: '8px 12px 6px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: '#131b28',
           }}
         >
-          Tests ({tests.length})
-        </span>
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            Tests ({tests.length})
+          </span>
 
-        {selectedTestId && (
-          <button
-            onClick={() => onSelectTest(null)}
-            className="btn-ghost btn-sm"
-            style={{ fontSize: '10px', padding: '1px 6px', color: '#38bdf8' }}
-            title="Clear test highlight"
-            aria-label="Clear test highlight"
-          >
-            Clear
-          </button>
-        )}
-      </div>
+          {selectedTestId && (
+            <button
+              onClick={() => onSelectTest(null)}
+              className="btn-ghost btn-sm"
+              style={{ fontSize: '10px', padding: '1px 6px', color: '#38bdf8' }}
+              title="Clear test highlight"
+              aria-label="Clear test highlight"
+            >
+              Clear
+            </button>
+          )}
+        </div>
 
-      {/* Test Status Filter Pills */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '4px',
-          padding: '4px 12px 8px 12px',
-          backgroundColor: '#131b28',
-          overflowX: 'auto',
-        }}
-      >
-        <button
-          onClick={() => setStatusFilter('all')}
-          className={`pill-filter ${statusFilter === 'all' ? 'active' : ''}`}
-        >
-          All {testCounts.all}
-        </button>
-        {testCounts.fail > 0 && (
-          <button
-            onClick={() => setStatusFilter('fail')}
-            className={`pill-filter ${statusFilter === 'fail' ? 'active fail' : ''}`}
+        {/* Harness failed during collection */}
+        {isHarnessFailed ? (
+          <div style={{ padding: '14px 12px', textAlign: 'center' }}>
+            <div
+              style={{
+                color: '#ef4444',
+                fontWeight: 600,
+                fontSize: '11px',
+                marginBottom: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+              }}
+            >
+              <AlertTriangle size={13} color="#ef4444" />
+              <span>Test harness failed during collection</span>
+            </div>
+            <div
+              style={{
+                fontSize: '10.5px',
+                color: '#cbd5e1',
+                backgroundColor: '#0a0d14',
+                padding: '8px 10px',
+                borderRadius: '4px',
+                border: '1px solid #334155',
+                textAlign: 'left',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                maxHeight: '140px',
+                overflowY: 'auto',
+              }}
+            >
+              {harnessError}
+            </div>
+          </div>
+        ) : tests.length === 0 && isRealImport ? (
+          <div
+            style={{
+              padding: '16px 12px',
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              textAlign: 'center',
+              lineHeight: '1.5',
+            }}
           >
-            Failing {testCounts.fail}
-          </button>
-        )}
-        {testCounts.error > 0 && (
-          <button
-            onClick={() => setStatusFilter('error')}
-            className={`pill-filter ${statusFilter === 'error' ? 'active error' : ''}`}
-          >
-            Error {testCounts.error}
-          </button>
-        )}
-        {testCounts.pass > 0 && (
-          <button
-            onClick={() => setStatusFilter('pass')}
-            className={`pill-filter ${statusFilter === 'pass' ? 'active pass' : ''}`}
-          >
-            Passed {testCounts.pass}
-          </button>
-        )}
-      </div>
-
-      {/* Tests List */}
-      <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
-        {filteredTests.length === 0 ? (
-          <div style={{ padding: '12px', fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
-            No tests match filter.
+            No test runs imported - drop a V2 run JSON to view dynamic coverage and failures
           </div>
         ) : (
-          filteredTests.map((test) => {
-            const isSelected = test.id === selectedTestId;
-            return (
+          <>
+            {/* Test Status Filter Pills */}
+            <div
+              style={{
+                display: 'flex',
+                gap: '4px',
+                padding: '4px 12px 8px 12px',
+                backgroundColor: '#131b28',
+                overflowX: 'auto',
+              }}
+            >
               <button
-                key={test.id}
-                onClick={() => onSelectTest(isSelected ? null : test.id)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 12px',
-                  backgroundColor: isSelected ? '#1e293b' : 'transparent',
-                  border: 'none',
-                  borderLeft: isSelected ? '3px solid #38bdf8' : '3px solid transparent',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  gap: '8px',
-                  outline: 'none',
-                }}
-                title={test.id}
-                aria-label={`Test ${test.name}: ${test.status}`}
+                onClick={() => setStatusFilter('all')}
+                className={`pill-filter ${statusFilter === 'all' ? 'active' : ''}`}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  <span
-                    style={{
-                      width: '7px',
-                      height: '7px',
-                      borderRadius: '50%',
-                      flexShrink: 0,
-                      backgroundColor:
-                        test.status === 'fail'
-                          ? 'var(--status-fail)'
-                          : test.status === 'error'
-                          ? 'var(--status-error)'
-                          : test.status === 'pass'
-                          ? 'var(--status-pass)'
-                          : 'var(--status-skip)',
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: isSelected ? 600 : 400,
-                      color: isSelected ? '#f8fafc' : 'var(--text-primary)',
-                      fontFamily: 'var(--font-mono)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {test.name}
-                  </span>
-                </div>
-
-                <span
-                  style={{
-                    fontSize: '10px',
-                    color: 'var(--text-muted)',
-                    fontFamily: 'var(--font-mono)',
-                    flexShrink: 0,
-                  }}
-                >
-                  {test.durationMs}ms
-                </span>
+                All {testCounts.all}
               </button>
-            );
-          })
+              {testCounts.fail > 0 && (
+                <button
+                  onClick={() => setStatusFilter('fail')}
+                  className={`pill-filter ${statusFilter === 'fail' ? 'active fail' : ''}`}
+                >
+                  Failing {testCounts.fail}
+                </button>
+              )}
+              {testCounts.error > 0 && (
+                <button
+                  onClick={() => setStatusFilter('error')}
+                  className={`pill-filter ${statusFilter === 'error' ? 'active error' : ''}`}
+                >
+                  Error {testCounts.error}
+                </button>
+              )}
+              {testCounts.pass > 0 && (
+                <button
+                  onClick={() => setStatusFilter('pass')}
+                  className={`pill-filter ${statusFilter === 'pass' ? 'active pass' : ''}`}
+                >
+                  Passed {testCounts.pass}
+                </button>
+              )}
+            </div>
+
+            {/* Tests List */}
+            <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+              {filteredTests.length === 0 ? (
+                <div style={{ padding: '12px', fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                  No tests match filter.
+                </div>
+              ) : (
+                filteredTests.map((test) => {
+                  const isSelected = test.id === selectedTestId;
+                  return (
+                    <button
+                      key={test.id}
+                      onClick={() => onSelectTest(isSelected ? null : test.id)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 12px',
+                        backgroundColor: isSelected ? '#1e293b' : 'transparent',
+                        border: 'none',
+                        borderLeft: isSelected ? '3px solid #38bdf8' : '3px solid transparent',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        gap: '8px',
+                        outline: 'none',
+                      }}
+                      title={test.id}
+                      aria-label={`Test ${test.name}: ${test.status}`}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        <span
+                          style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            flexShrink: 0,
+                            backgroundColor:
+                              test.status === 'fail'
+                                ? 'var(--status-fail)'
+                                : test.status === 'error'
+                                ? 'var(--status-error)'
+                                : test.status === 'pass'
+                                ? 'var(--status-pass)'
+                                : 'var(--status-skip)',
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: isSelected ? 600 : 400,
+                            color: isSelected ? '#f8fafc' : 'var(--text-primary)',
+                            fontFamily: 'var(--font-mono)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {test.name}
+                        </span>
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          color: 'var(--text-muted)',
+                          fontFamily: 'var(--font-mono)',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {formatDurationMs(test.durationMs)}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </>
         )}
-      </div>
-    </section>
-  );
+      </section>
+    );
+  };
 
   const renderShortlistSection = () => (
     <section style={{ borderBottom: '1px solid var(--border-default)' }}>
@@ -541,6 +609,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Files ({fileClusters.length})
           </span>
         </div>
+
+        {onCollapseAllFiles && onExpandAllFiles && (
+          <button
+            onClick={() => {
+              if (collapsedFiles.size === 0) {
+                onCollapseAllFiles();
+              } else {
+                onExpandAllFiles();
+              }
+            }}
+            className="btn-ghost btn-sm"
+            style={{
+              fontSize: '10px',
+              padding: '1px 6px',
+              color: 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              cursor: 'pointer',
+            }}
+            title={
+              collapsedFiles.size === 0
+                ? 'Fold all files into overview dots'
+                : 'Unfold all files into symbols'
+            }
+          >
+            <ChevronsUpDown size={10} />
+            <span>{collapsedFiles.size === 0 ? 'Fold All' : 'Unfold All'}</span>
+          </button>
+        )}
       </div>
 
       <div style={{ overflowY: 'auto' }}>

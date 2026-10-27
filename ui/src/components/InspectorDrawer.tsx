@@ -21,7 +21,20 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Bot,
+  Sparkles,
+  FileCode,
+  ArrowRightLeft,
+  AlertTriangle,
 } from 'lucide-react';
+import { formatDurationMs } from '../utils/format';
+import type { AgentPhase, PhaseEvidenceItem } from '../agent/agentSimulation';
+import {
+  AGENT_EXPLANATION,
+  AGENT_ACTIVE_FILES,
+  AGENT_ORIGINAL_SNIPPET,
+  AGENT_PATCHED_SNIPPET,
+} from '../agent/agentSimulation';
 
 export interface InspectorDrawerProps {
   selectedNodeId: string | null;
@@ -40,6 +53,12 @@ export interface InspectorDrawerProps {
   onPinSymbol?: (symbol: PinnedSymbol) => void;
   onUnpinSymbol?: (symbolId: string) => void;
   onClose: () => void;
+  isAgentActive?: boolean;
+  agentPhase?: AgentPhase;
+  agentPhaseEvidence?: PhaseEvidenceItem | null;
+  agentPatchedSnippet?: string | null;
+  agentPatchedDiff?: string | null;
+  onReplayInvestigation?: () => void;
 }
 
 export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
@@ -59,6 +78,12 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   onPinSymbol,
   onUnpinSymbol,
   onClose,
+  isAgentActive = false,
+  agentPhase = 'idle',
+  agentPhaseEvidence,
+  agentPatchedSnippet,
+  agentPatchedDiff,
+  onReplayInvestigation,
 }) => {
   const [activeCodeTab, setActiveCodeTab] = useState<'source' | 'diff'>('source');
   const [isTracebackOpen, setIsTracebackOpen] = useState(true);
@@ -79,14 +104,14 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   const selectedTest = tests.find((t) => t.id === selectedTestId) || null;
   const currentFile = files.find((f) => f.file === selectedFile) || null;
 
-  // Sync active code tab when node changes
+  // Sync active code tab when node changes or candidate patch is active
   useEffect(() => {
-    if (selectedNode?.gitDiff) {
+    if (selectedNode?.gitDiff || (isAgentActive && agentPhase === 'patching') || agentPatchedDiff) {
       setActiveCodeTab('diff');
     } else {
       setActiveCodeTab('source');
     }
-  }, [selectedNode?.id, selectedNode?.gitDiff]);
+  }, [selectedNode?.id, selectedNode?.gitDiff, isAgentActive, agentPhase, agentPatchedDiff]);
 
   // If nothing is selected, do not render drawer
   if (!selectedNode && !selectedTest && !currentFile) {
@@ -115,20 +140,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   return (
     <aside
       aria-label="Inspector Drawer"
-      style={{
-        width: '400px',
-        maxWidth: '90vw',
-        height: '100%',
-        backgroundColor: '#111722',
-        borderLeft: '1px solid var(--border-default)',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        zIndex: 30,
-        boxShadow: '-4px 0 16px rgba(0,0,0,0.3)',
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}
+      className="inspector-drawer"
     >
       {/* ================= MODE 1: SYMBOL INSPECTOR ================= */}
       {selectedNode ? (
@@ -232,61 +244,468 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
           {/* Body Content */}
           <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
-            {/* 2. What it does (Role explanation) */}
-            <div
-              style={{
-                backgroundColor: '#131b28',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '10px 12px',
-              }}
-            >
+            {/* 2. What it does / Grounded Metadata */}
+            {selectedNode.description ? (
               <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '4px',
+                  backgroundColor: '#131b28',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 12px',
                 }}
               >
-                <span
+                <div
                   style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '4px',
                   }}
                 >
-                  What It Does
-                </span>
-                <span
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    What It Does
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      color: '#94a3b8',
+                      padding: '1px 4px',
+                      backgroundColor: '#1e293b',
+                      borderRadius: '2px',
+                    }}
+                  >
+                    Sample description
+                  </span>
+                </div>
+
+                <p
                   style={{
-                    fontSize: '9px',
-                    color: '#94a3b8',
-                    padding: '1px 4px',
-                    backgroundColor: '#1e293b',
-                    borderRadius: '2px',
+                    fontSize: '12px',
+                    lineHeight: '1.5',
+                    color: 'var(--text-primary)',
+                    margin: 0,
                   }}
                 >
-                  Sample description
-                </span>
+                  {selectedNode.description}
+                </p>
               </div>
-
-              <p
+            ) : (
+              <div
                 style={{
-                  fontSize: '12px',
-                  lineHeight: '1.5',
-                  color: selectedNode.description ? 'var(--text-primary)' : 'var(--text-muted)',
-                  margin: 0,
+                  backgroundColor: '#131b28',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
                 }}
               >
-                {selectedNode.description || 'Description unavailable in fixture sample.'}
-              </p>
-            </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: '#38bdf8',
+                    }}
+                  >
+                    Grounded Metadata (V3)
+                  </span>
+                  {selectedNode.isGhost && (
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        color: '#f87171',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        padding: '1px 5px',
+                        borderRadius: '2px',
+                      }}
+                    >
+                      Ghost (Base-side)
+                    </span>
+                  )}
+                </div>
 
-            {/* 3. Source Viewer & Diff */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '11px', lineHeight: 1.4 }}>
+                  {selectedNode.signature && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Signature: </span>
+                      <code style={{ color: '#e2e8f0', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.signature}
+                      </code>
+                    </div>
+                  )}
+
+                  <div>
+                    <span style={{ color: '#94a3b8', fontWeight: 600 }}>Docstring: </span>
+                    <span style={{ color: selectedNode.docstringFirstLine ? '#cbd5e1' : 'var(--text-muted)', fontStyle: selectedNode.docstringFirstLine ? 'italic' : 'normal' }}>
+                      {selectedNode.docstringFirstLine ? `"${selectedNode.docstringFirstLine}"` : 'None in export'}
+                    </span>
+                  </div>
+
+                  {selectedNode.parameterNames && selectedNode.parameterNames.length > 0 && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Parameters: </span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.parameterNames.join(', ')}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedNode.bases && selectedNode.bases.length > 0 && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Bases: </span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.bases.join(', ')}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedNode.decorators && selectedNode.decorators.length > 0 && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>Decorators: </span>
+                      <span style={{ color: '#cbd5e1', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                        {selectedNode.decorators.map((d) => `@${d}`).join(' ')}
+                      </span>
+                    </div>
+                  )}
+
+                  <div>
+                    <span style={{ color: '#94a3b8', fontWeight: 600 }}>Static Edges: </span>
+                    <span style={{ color: '#cbd5e1' }}>
+                      {edges.filter((e) => e.target === selectedNode.id && !e.id.startsWith('containment:')).length} incoming · {edges.filter((e) => e.source === selectedNode.id && !e.id.startsWith('containment:')).length} outgoing
+                    </span>
+                  </div>
+
+                  {selectedNode.contentHash && (
+                    <div>
+                      <span style={{ color: '#94a3b8', fontWeight: 600 }}>SHA-256: </span>
+                      <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
+                        {selectedNode.contentHash.slice(0, 16)}…
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Test coverage summary if tests are loaded */}
+                  {(() => {
+                    const executingTests = tests.filter((t) => t.exercisedNodeIds?.includes(selectedNode.id));
+                    return (
+                      <div>
+                        <span style={{ color: '#94a3b8', fontWeight: 600 }}>Test Coverage: </span>
+                        <span style={{ color: executingTests.length > 0 ? '#34d399' : 'var(--text-muted)' }}>
+                          {executingTests.length > 0
+                            ? `Executed by ${executingTests.length} test${executingTests.length > 1 ? 's' : ''}`
+                            : 'No executed coverage recorded'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Active Remediation Files & Real Engineering Explanation (Demo only) */}
+            {((isAgentActive) || (selectedNode.description && (selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'tests/test_auth.py::test_login_expired_token' || selectedNode.id === 'auth/service.py::login_with_token'))) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Honest Simulation Demarcation Notice */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '4px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    fontSize: '10px',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                    SAMPLE INVESTIGATION PLAYBACK
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '9px' }}>
+                    Simulated Replay
+                  </span>
+                </div>
+
+                {/* Active Files in Remediation Tab Switcher */}
+                <div
+                  style={{
+                    backgroundColor: '#111722',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#38bdf8' }}>
+                      <ArrowRightLeft size={12} />
+                      <span>Active Files in Remediation (Swap View)</span>
+                    </div>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      3 files linked
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '2px' }}>
+                    {AGENT_ACTIVE_FILES.map((af) => {
+                      const isCurrent = selectedNode.id === af.id;
+                      return (
+                        <button
+                          key={af.id}
+                          onClick={() => onSelectNode(af.id)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '11px',
+                            fontFamily: 'var(--font-mono)',
+                            backgroundColor: isCurrent ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                            color: isCurrent ? '#38bdf8' : 'var(--text-secondary)',
+                            border: isCurrent ? '1px solid rgba(56, 189, 248, 0.45)' : '1px solid rgba(255, 255, 255, 0.08)',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={`Inspect ${af.file} (${af.role})`}
+                        >
+                          <FileCode size={11} style={{ color: isCurrent ? '#38bdf8' : 'var(--text-muted)' }} />
+                          <span>{af.file}</span>
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              padding: '0 4px',
+                              borderRadius: '2px',
+                              backgroundColor:
+                                af.status === 'defect_site'
+                                  ? 'rgba(245, 158, 11, 0.2)'
+                                  : af.status === 'regression_test'
+                                  ? 'rgba(239, 68, 68, 0.2)'
+                                  : 'rgba(100, 116, 139, 0.2)',
+                              color:
+                                af.status === 'defect_site'
+                                  ? '#f59e0b'
+                                  : af.status === 'regression_test'
+                                  ? '#f87171'
+                                  : '#94a3b8',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {af.status === 'defect_site' ? 'PATCH' : af.status === 'regression_test' ? 'TEST' : 'CALLER'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Progressive Phase Evidence Item Card (Context-Aware for current step) */}
+                {agentPhaseEvidence && (
+                  <div
+                    style={{
+                      backgroundColor: '#121824',
+                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {agentPhaseEvidence.title}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          color: '#38bdf8',
+                          backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          fontFamily: 'var(--font-mono)',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {agentPhase}
+                      </span>
+                    </div>
+
+                    <p style={{ margin: 0, fontSize: '11px', lineHeight: 1.5, color: '#cbd5e1' }}>
+                      {agentPhaseEvidence.summary}
+                    </p>
+
+                    {agentPhaseEvidence.bullets && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                        {agentPhaseEvidence.bullets.map((b, idx) => (
+                          <div key={idx} style={{ fontSize: '11px', lineHeight: 1.4 }}>
+                            <span style={{ fontWeight: 600, color: b.color || '#38bdf8' }}>{b.label}: </span>
+                            <span style={{ color: '#94a3b8' }}>{b.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {agentPhaseEvidence.tracebackSnippet && (
+                      <pre
+                        style={{
+                          margin: '6px 0 0 0',
+                          padding: '8px',
+                          backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          color: '#f87171',
+                          overflowX: 'auto',
+                          fontFamily: 'var(--font-mono)',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {agentPhaseEvidence.tracebackSnippet}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
+                {/* Deep Real Engineering Explanation Card */}
+                <div
+                  style={{
+                    backgroundColor: '#121720',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Bot size={13} style={{ color: '#38bdf8' }} />
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Remediation Explanation & Analysis
+                      </span>
+                    </div>
+                    {agentPhase === 'resolved' && onReplayInvestigation && (
+                      <button
+                        onClick={onReplayInvestigation}
+                        className="btn-ghost btn-sm"
+                        style={{ fontSize: '10px', padding: '1px 5px', color: '#10b981' }}
+                        title="Replay entire investigation"
+                      >
+                        <RotateCcw size={10} style={{ marginRight: '3px' }} />
+                        Replay
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', lineHeight: 1.5 }}>
+                    <div>
+                      <span style={{ color: '#f87171', fontWeight: 600 }}>Defect Isolation: </span>
+                      <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.defectSummary}</span>
+                    </div>
+                    {(agentPhase === 'inspecting' || agentPhase === 'patching' || agentPhase === 'verifying' || agentPhase === 'resolved') && (
+                      <div>
+                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>Root Cause: </span>
+                        <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.rootCause}</span>
+                      </div>
+                    )}
+                    {(agentPhase === 'patching' || agentPhase === 'verifying' || agentPhase === 'resolved') && (
+                      <div>
+                        <span style={{ color: '#38bdf8', fontWeight: 600 }}>Fix Applied: </span>
+                        <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.remediation}</span>
+                      </div>
+                    )}
+                    {(agentPhase === 'verifying' || agentPhase === 'resolved') && (
+                      <div>
+                        <span style={{ color: '#34d399', fontWeight: 600 }}>Verification: </span>
+                        <span style={{ color: '#cbd5e1' }}>{AGENT_EXPLANATION.verification}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 4. Source Viewer & Diff */}
             <div>
+              {/* Active Agent Live Mutation Notice */}
+              {isAgentActive && selectedNode.id === 'auth/tokens.py::validate_token' && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor:
+                      agentPhase === 'patching'
+                        ? 'rgba(245, 158, 11, 0.15)'
+                        : agentPhase === 'resolved'
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : 'rgba(56, 189, 248, 0.12)',
+                    border: `1px solid ${
+                      agentPhase === 'patching'
+                        ? 'rgba(245, 158, 11, 0.35)'
+                        : agentPhase === 'resolved'
+                        ? 'rgba(16, 185, 129, 0.35)'
+                        : 'rgba(56, 189, 248, 0.3)'
+                    }`,
+                    borderRadius: 'var(--radius-sm)',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '11px',
+                  }}
+                >
+                  {agentPhase === 'resolved' ? (
+                    <Sparkles size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                  ) : (
+                    <Bot
+                      size={14}
+                      style={{
+                        color: agentPhase === 'patching' ? '#f59e0b' : '#38bdf8',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+                      {agentPhase === 'patching'
+                        ? '🤖 Agent actively mutating auth/tokens.py: applying numeric coercion patch...'
+                        : agentPhase === 'resolved'
+                        ? '✨ Agent Patch Verified: test_login_expired_token Passed'
+                        : '🤖 Agent inspecting code structure & AST relationships'}
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                      {agentPhase === 'patching'
+                        ? 'Converting string timestamps to float before range check to accept numeric strings.'
+                        : agentPhase === 'resolved'
+                        ? 'Replay trial #4 confirmed 0 regression failures. Verified green.'
+                        : 'Call graph traced from test_login_expired_token.'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div
                 style={{
                   display: 'flex',
@@ -296,7 +715,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', gap: '4px' }}>
-                  {selectedNode.gitDiff && (
+                  {(agentPatchedDiff || selectedNode.gitDiff) && (
                     <button
                       onClick={() => setActiveCodeTab('diff')}
                       className={`btn-ghost btn-sm ${activeCodeTab === 'diff' ? 'active' : ''}`}
@@ -324,16 +743,117 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                 </div>
               </div>
 
-              {activeCodeTab === 'diff' && selectedNode.gitDiff ? (
-                <DiffViewer diff={selectedNode.gitDiff} />
-              ) : selectedNode.sourceSnippet ? (
+              {activeCodeTab === 'diff' && (agentPatchedDiff || selectedNode.gitDiff) ? (
+                <div style={{ position: 'relative' }}>
+                  {isAgentActive && (agentPhase === 'patching' || agentPhase === 'verifying' || agentPhase === 'resolved') && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '6px',
+                        right: '8px',
+                        zIndex: 10,
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        backgroundColor: 'rgba(245, 158, 11, 0.25)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        padding: '1px 6px',
+                        borderRadius: '3px',
+                        animation: 'livePatchFlash 1.5s infinite',
+                        letterSpacing: '0.03em',
+                      }}
+                    >
+                      DEMONSTRATED CANDIDATE CHANGE
+                    </div>
+                  )}
+                  <DiffViewer
+                    diff={agentPatchedDiff || selectedNode.gitDiff || ''}
+                    originalSource={
+                      selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                        ? AGENT_ORIGINAL_SNIPPET
+                        : undefined
+                    }
+                    candidateSource={
+                      selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                        ? AGENT_PATCHED_SNIPPET
+                        : undefined
+                    }
+                    lineStart={selectedNode.lineStart}
+                    isCandidatePatch={isAgentActive && agentPhase === 'patching'}
+                  />
+                </div>
+              ) : selectedNode.sourceSnippet || agentPatchedSnippet ? (
                 <DiffViewer
-                  source={selectedNode.sourceSnippet}
+                  source={agentPatchedSnippet || selectedNode.sourceSnippet}
                   lineStart={selectedNode.lineStart}
+                  originalSource={
+                    selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                      ? AGENT_ORIGINAL_SNIPPET
+                      : undefined
+                  }
+                  candidateSource={
+                    selectedNode.id === 'auth/tokens.py::validate_token' || selectedNode.id === 'fn-validate-token'
+                      ? AGENT_PATCHED_SNIPPET
+                      : undefined
+                  }
+                  diff={agentPatchedDiff || selectedNode.gitDiff || undefined}
+                  isCandidatePatch={isAgentActive && agentPhase === 'patching'}
                 />
               ) : (
-                <div style={{ padding: '12px', fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                  Source snippet unavailable.
+                <div
+                  style={{
+                    padding: '12px',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    backgroundColor: '#0c1017',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 'var(--radius-sm)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.06)', paddingBottom: '6px' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8', fontWeight: 600 }}>
+                      {selectedNode.file}:{selectedNode.lineStart}–{selectedNode.lineEnd}
+                    </span>
+                    <span className={`badge-change ${selectedNode.changeStatus}`}>
+                      {selectedNode.changeStatus}
+                    </span>
+                  </div>
+
+                  {selectedNode.signature && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: '#e2e8f0', backgroundColor: '#131822', padding: '6px 8px', borderRadius: '3px' }}>
+                      {selectedNode.signature}
+                    </div>
+                  )}
+
+                  {selectedNode.docstringFirstLine && (
+                    <div style={{ fontStyle: 'italic', color: '#94a3b8', fontSize: '11px', padding: '2px 0' }}>
+                      "{selectedNode.docstringFirstLine}"
+                    </div>
+                  )}
+
+                  {selectedNode.contentHash && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      SHA-256: {selectedNode.contentHash}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: '#fbbf24',
+                      backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                      border: '1px solid rgba(245, 158, 11, 0.25)',
+                      borderRadius: '4px',
+                      padding: '8px 10px',
+                      lineHeight: '1.4',
+                      marginTop: '2px',
+                    }}
+                  >
+                    source text not included in this export
+                  </div>
                 </div>
               )}
             </div>
@@ -560,7 +1080,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                             </span>
                           </div>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                            {t.durationMs}ms
+                            {formatDurationMs(t.durationMs)}
                           </span>
                         </button>
                       );
@@ -609,7 +1129,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     gap: '4px',
                   }}
                 >
-                  <Clock size={11} /> {selectedTest.durationMs}ms
+                  <Clock size={11} /> {formatDurationMs(selectedTest.durationMs)}
                 </span>
               </div>
 
@@ -648,6 +1168,50 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
           {/* Test Body */}
           <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            {/* Stale Coverage Overlay Warning */}
+            {selectedTest.staleCoverage && (
+              <div
+                role="alert"
+                style={{
+                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 12px',
+                  fontSize: '11px',
+                  color: '#fbbf24',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                }}
+              >
+                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong>Stale coverage overlay:</strong> Source file hash or commit revision has changed since pytest was executed.
+                  {selectedTest.staleSymbols && selectedTest.staleSymbols.length > 0 && (
+                    <div style={{ marginTop: '4px', fontSize: '10px', color: '#fde68a' }}>
+                      Stale symbols: {selectedTest.staleSymbols.join(', ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Unmatched Symbols Notice */}
+            {selectedTest.unmatchedCount !== undefined && selectedTest.unmatchedCount > 0 && (
+              <div
+                style={{
+                  backgroundColor: 'rgba(100, 116, 139, 0.12)',
+                  border: '1px solid rgba(100, 116, 139, 0.3)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 12px',
+                  fontSize: '11px',
+                  color: '#94a3b8',
+                }}
+              >
+                <strong>Unmatched dynamic symbols:</strong> {selectedTest.unmatchedCount} symbol{selectedTest.unmatchedCount > 1 ? 's' : ''} executed during pytest could not be matched to static AST symbols.
+              </div>
+            )}
+
             {/* Failure Message & Traceback */}
             {selectedTest.failureMessage && (
               <div
@@ -720,6 +1284,80 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
               </div>
             )}
 
+            {/* Failure Fingerprint (SHA-256) */}
+            {selectedTest.failureFingerprint && (
+              <div
+                style={{
+                  backgroundColor: '#0d1117',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                <span style={{ color: 'var(--text-muted)' }}>Failure Fingerprint:</span>
+                <code style={{ color: '#38bdf8' }} title={selectedTest.failureFingerprint}>
+                  {selectedTest.failureFingerprint.slice(0, 16)}…
+                </code>
+              </div>
+            )}
+
+            {/* Pytest Execution Phases */}
+            {selectedTest.phases && selectedTest.phases.length > 0 && (
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 12px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '8px',
+                  }}
+                >
+                  Pytest Execution Phases ({selectedTest.phases.length})
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {selectedTest.phases.map((p, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#111620',
+                        borderRadius: 'var(--radius-sm)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '11px',
+                      }}
+                    >
+                      <span style={{ textTransform: 'capitalize', fontWeight: 500 }}>{p.phase}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className={`badge-status ${p.outcome === 'passed' ? 'pass' : p.outcome === 'failed' ? 'fail' : 'skipped'}`}>
+                          {p.outcome.toUpperCase()}
+                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                          {formatDurationMs(p.durationMs)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Recorded Replay Comparison */}
             {selectedTest.rerunHistory && selectedTest.rerunHistory.length > 0 && (
               <div
@@ -761,7 +1399,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     >
                       <span>Trial #{r.rerunIndex}: {r.status.toUpperCase()}</span>
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                        {r.failureFingerprint || `${r.durationMs}ms`}
+                        {r.failureFingerprint || formatDurationMs(r.durationMs)}
                       </span>
                     </div>
                   ))}
@@ -935,17 +1573,55 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
               >
                 Architectural Role & Summary
               </div>
-              <p
-                style={{
-                  fontSize: '12px',
-                  color: '#e2e8f0',
-                  lineHeight: '1.5',
-                  margin: 0,
-                }}
-              >
-                {currentFile.description ||
-                  `Source file defining ${currentFile.symbolCount} functions/classes within the ${currentFile.tier || 'application'} domain.`}
-              </p>
+              {currentFile.description ? (
+                <p
+                  style={{
+                    fontSize: '12px',
+                    color: '#e2e8f0',
+                    lineHeight: '1.5',
+                    margin: 0,
+                  }}
+                >
+                  {currentFile.description}
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '11px', color: '#94a3b8' }}>
+                  <div>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>File: </span>
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>{currentFile.file}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>Child Symbols: </span>
+                    <span>{currentFile.symbolCount}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>Line Count: </span>
+                    <span>{currentFile.lineCount}</span>
+                  </div>
+                  {currentFile.contentHash && (
+                    <div>
+                      <span style={{ color: '#cbd5e1', fontWeight: 600 }}>SHA-256: </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{currentFile.contentHash.slice(0, 16)}…</span>
+                    </div>
+                  )}
+                  {currentFile.gitStatus && (
+                    <div>
+                      <span style={{ color: '#cbd5e1', fontWeight: 600 }}>Git Status: </span>
+                      <span className={`badge-change ${currentFile.changeStatus}`}>{currentFile.gitStatus}</span>
+                    </div>
+                  )}
+                  {currentFile.isGhost && (
+                    <div style={{ color: '#f87171', fontSize: '11px' }}>
+                      Ghost file: removed in head worktree, present in base revision.
+                    </div>
+                  )}
+                  {currentFile.parseError && (
+                    <div style={{ color: '#f87171', fontSize: '11px' }}>
+                      Parse error: {currentFile.parseError}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Cluster Map Controls */}
               {onToggleCollapseFile && (

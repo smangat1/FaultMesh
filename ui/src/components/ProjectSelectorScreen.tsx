@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { RunSummary, TestItem } from '../types';
+import { formatDurationMs } from '../utils/format';
 import {
   Compass,
   GitBranch,
@@ -12,6 +13,11 @@ import {
   Terminal,
   Activity,
   RotateCcw,
+  Bot,
+  FolderGit2,
+  Play,
+  Check,
+  FolderOpen,
 } from 'lucide-react';
 
 interface ProjectSelectorScreenProps {
@@ -19,11 +25,13 @@ interface ProjectSelectorScreenProps {
   activeRun: RunSummary | null;
   tests: TestItem[];
   onSelectRun: (runId: string) => void;
-  onOpenWorkspace: (testId?: string) => void;
+  onOpenWorkspace: (testId?: string, startAgent?: boolean) => void;
   onOpenDiagnostics?: () => void;
   isLoading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  onOpenFiles?: (files: FileList | File[]) => void;
+  onResetToSample?: () => void;
 }
 
 export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
@@ -36,8 +44,59 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
   isLoading = false,
   error = null,
   onRetry,
+  onOpenFiles,
+  onResetToSample,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const failedTests = tests.filter((t) => t.status === 'fail');
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onOpenFiles?.(e.target.files);
+      e.target.value = '';
+    }
+  };
+
+  // Distinct projects discovered in workspace
+  const availableProjects = useMemo(() => {
+    const set = new Set(runs.map((r) => r.project));
+    return Array.from(set);
+  }, [runs]);
+
+  const [selectedProject, setSelectedProject] = useState<string>(() => {
+    return activeRun?.project || availableProjects[0] || 'auth-service';
+  });
+
+  useEffect(() => {
+    if (activeRun?.project && availableProjects.includes(activeRun.project)) {
+      setSelectedProject(activeRun.project);
+    } else if (availableProjects.length > 0 && !availableProjects.includes(selectedProject)) {
+      setSelectedProject(availableProjects[0]);
+    }
+  }, [activeRun?.project, availableProjects, selectedProject]);
+
+  const [executionMessage, setExecutionMessage] = useState<string | null>(null);
+
+  const handleSelectProject = (project: string) => {
+    setSelectedProject(project);
+    const matchingRun = runs.find((r) => r.project === project);
+    if (matchingRun) {
+      onSelectRun(matchingRun.id);
+    }
+  };
+
+  const handleLoadSampleRun = () => {
+    const matchingRun = runs.find((r) => r.project === selectedProject);
+    if (matchingRun) {
+      onSelectRun(matchingRun.id);
+      setExecutionMessage(
+        `✓ Loaded recorded sample run for ${selectedProject} (${matchingRun.stats.totalTests} tests, ${matchingRun.stats.failed} failed)`
+      );
+    } else {
+      setExecutionMessage(`✓ Loaded recorded sample run for ${selectedProject}`);
+    }
+    setTimeout(() => setExecutionMessage(null), 4000);
+  };
 
   return (
     <div
@@ -189,7 +248,77 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
           </div>
         </section>
 
-        {/* 3. Project & Recorded Run Selector ("The Project Thing") */}
+        {/* 3. Open Real Project Export Section */}
+        {onOpenFiles && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#111620',
+              border: '1px dashed rgba(56, 189, 248, 0.35)',
+              borderRadius: '8px',
+              padding: '16px 20px',
+              gap: '16px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#38bdf8',
+                }}
+              >
+                <FolderOpen size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                  Open Real Project Export (.json)
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Load a deterministic schema 3.0 structure JSON (optional: schema 2.0 V2 run evidence). Pure client-side safe parser.
+                </div>
+              </div>
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".json"
+              multiple
+              style={{ display: 'none' }}
+              aria-label="Open Real Project JSON file input"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="btn-primary"
+              style={{
+                fontSize: '12px',
+                padding: '8px 16px',
+                backgroundColor: '#0284c7',
+                borderColor: '#0369a1',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              aria-label="Open Project JSON Export"
+            >
+              <FolderOpen size={14} />
+              <span>Open Project JSON</span>
+            </button>
+          </div>
+        )}
+
+        {/* 4. Project Selection & Test Execution */}
         <section
           style={{
             display: 'flex',
@@ -197,47 +326,166 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
             gap: '16px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-            <div>
-              <h2 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: '#f8fafc' }}>
-                Select Recorded Run & Workspace
-              </h2>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                Choose an execution run to inspect in the interactive code graph.
-              </p>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              backgroundColor: '#14171d',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '8px',
+              padding: '14px 18px',
+            }}
+          >
+            {/* Left: Project Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94a3b8', fontSize: '12px' }}>
+                <FolderGit2 size={15} style={{ color: '#38bdf8' }} />
+                <span style={{ fontWeight: 600, color: '#f8fafc' }}>Target Project:</span>
+              </div>
+
+              {/* Project Selection Tabs */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: '#0c0d10',
+                  padding: '3px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+                role="radiogroup"
+                aria-label="Target Project"
+              >
+                {availableProjects.map((proj) => {
+                  const isSelected = selectedProject === proj;
+                  const matchingRun = runs.find((r) => r.project === proj);
+                  const isFixture = matchingRun ? Boolean(matchingRun.isFixture) : false;
+                  return (
+                    <button
+                      key={proj}
+                      onClick={() => handleSelectProject(proj)}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '11px',
+                        fontFamily: 'var(--font-mono)',
+                        fontWeight: isSelected ? 700 : 500,
+                        backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.16)' : 'transparent',
+                        color: isSelected ? '#38bdf8' : 'var(--text-secondary)',
+                        border: isSelected ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid transparent',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      role="radio"
+                      aria-checked={isSelected}
+                    >
+                      {proj} {isFixture ? '(Sample Demo)' : '(Imported)'}
+                    </button>
+                  );
+                })}
+                {activeRun?.isRealImport && onResetToSample && (
+                  <button
+                    onClick={onResetToSample}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 500,
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-secondary)',
+                      border: '1px dashed rgba(255, 255, 255, 0.15)',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    role="radio"
+                    aria-checked={false}
+                    title="Switch back to interactive sample demo project"
+                    aria-label="Switch to Sample Project Demo"
+                  >
+                    Sample Project (Demo)
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Accessible Run Selector Dropdown */}
+            {/* Right: Run Project Action */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <label htmlFor="run-selector" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Run:
-              </label>
-              <select
-                id="run-selector"
-                aria-label="Select Recorded Run"
-                value={activeRun?.id || ''}
-                onChange={(e) => onSelectRun(e.target.value)}
-                style={{
-                  backgroundColor: '#181c24',
-                  color: '#f8fafc',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '5px 10px',
-                  fontSize: '12px',
-                  fontFamily: 'var(--font-mono)',
-                  outline: 'none',
-                  minWidth: '220px',
-                  cursor: 'pointer',
-                }}
-              >
-                {runs.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.gitBranch} @ {r.gitRevision}
-                  </option>
-                ))}
-              </select>
+              {activeRun?.isRealImport ? (
+                <button
+                  onClick={() => onOpenWorkspace()}
+                  className="btn-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    padding: '6px 14px',
+                    backgroundColor: '#0284c7',
+                    borderColor: '#0369a1',
+                    color: '#ffffff',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                  }}
+                  title={`Explore ${selectedProject} static structure map`}
+                  aria-label={`Explore ${selectedProject}`}
+                >
+                  <ArrowRight size={13} />
+                  <span>Explore Project Map</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleLoadSampleRun}
+                  className="btn-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    padding: '6px 14px',
+                    backgroundColor: '#10b981',
+                    borderColor: '#059669',
+                    color: '#ffffff',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                  }}
+                  title={`Load recorded sample run for ${selectedProject}`}
+                  aria-label={`Load recorded sample run for ${selectedProject}`}
+                >
+                  <Play size={12} fill="currentColor" />
+                  <span>Load Recorded Sample Run</span>
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Execution feedback toast / banner */}
+          {executionMessage && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '6px',
+                fontSize: '12px',
+                color: '#34d399',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              <Check size={14} />
+              <span>{executionMessage}</span>
+            </div>
+          )}
 
           {/* Error State */}
           {error && (
@@ -324,47 +572,39 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                       boxShadow: isSelected ? '0 0 12px rgba(59, 130, 246, 0.2)' : 'none',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span
-                          style={{
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            fontFamily: 'var(--font-mono)',
-                            color: '#ffffff',
-                          }}
-                        >
-                          {r.project}
-                        </span>
-                        {r.isFixture && (
-                          <span
-                            style={{
-                              fontSize: '9px',
-                              padding: '1px 5px',
-                              borderRadius: 'var(--radius-sm)',
-                              backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                              color: 'var(--change-modified)',
-                              border: '1px solid rgba(245, 158, 11, 0.3)',
-                              fontWeight: 600,
-                            }}
-                          >
-                            SAMPLE DATA
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', minWidth: 0 }}>
+                      <span
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          fontFamily: 'var(--font-mono)',
+                          color: '#ffffff',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          minWidth: 0,
+                        }}
+                        title={r.project}
+                      >
+                        {r.project}
+                      </span>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        {r.isFixture && <span className="badge-status sample">SAMPLE DATA</span>}
+
+                        {/* Status badge: Identical geometry, font, padding, and border */}
+                        {r.status === 'failed' ? (
+                          <span className="badge-status error">HARNESS FAILED</span>
+                        ) : r.status === 'empty' ? (
+                          <span className="badge-status empty">EMPTY SCAN</span>
+                        ) : r.stats.failed > 0 ? (
+                          <span className="badge-status fail">
+                            {r.stats.failed} FAILED
                           </span>
+                        ) : (
+                          <span className="badge-status pass">ALL PASSED</span>
                         )}
                       </div>
-
-                      {/* Status badge */}
-                      {r.status === 'failed' ? (
-                        <span className="badge-status error">HARNESS FAILED</span>
-                      ) : r.status === 'empty' ? (
-                        <span className="badge-status">EMPTY SCAN</span>
-                      ) : r.stats.failed > 0 ? (
-                        <span className="badge-status fail">
-                          {r.stats.failed} FAILED
-                        </span>
-                      ) : (
-                        <span className="badge-status pass">ALL PASSED</span>
-                      )}
                     </div>
 
                     {/* Branch and Commit info */}
@@ -425,7 +665,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Clock size={11} />
-                        <span>{r.durationMs}ms</span>
+                        <span>{formatDurationMs(r.durationMs)}</span>
                       </div>
                     </div>
                   </div>
@@ -474,6 +714,29 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {failedTests.length > 0 && onOpenWorkspace && !activeRun?.isRealImport && (
+                    <button
+                      onClick={() => onOpenWorkspace(undefined, true)}
+                      className="btn-secondary"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '7px 14px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                        color: '#38bdf8',
+                        border: '1px solid rgba(56, 189, 248, 0.4)',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                      }}
+                      title="Watch an autonomous AI agent diagnose the failure, patch code live, and re-run pytest"
+                    >
+                      <Bot size={14} />
+                      Watch Agent Repair
+                    </button>
+                  )}
                   {onOpenDiagnostics && (activeRun.errorMessage || activeRun.status === 'failed') && (
                     <button onClick={onOpenDiagnostics} className="btn-secondary btn-sm">
                       <Activity size={13} />
@@ -557,7 +820,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                             </span>
                           </div>
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)', flexShrink: 0 }}>
-                            {test.durationMs}ms
+                            {formatDurationMs(test.durationMs)}
                           </span>
                         </button>
                       );
