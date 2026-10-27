@@ -29,6 +29,18 @@ export interface LiveTextFact {
   truncated?: boolean;
 }
 
+export interface LiveFileRecord {
+  path: string;
+  kind: 'created' | 'modified' | 'deleted' | 'renamed';
+  updatedAt: string;
+  timestamp: number;
+  sha256: string | null;
+  ranges: LineRange[];
+  parseError: string | null;
+  diff?: string | null;
+  source?: string | null;
+}
+
 export interface LiveSpectateState {
   status: LiveSessionStatus;
   initialized: boolean;
@@ -47,6 +59,7 @@ export interface LiveSpectateState {
   change: LiveFileChange | null;
   source: LiveTextFact | null;
   diff: LiveTextFact | null;
+  fileHistory: LiveFileRecord[];
   evidenceStalePaths: string[];
   stopReason: string | null;
 }
@@ -73,6 +86,7 @@ export const EMPTY_LIVE_SPECTATE_STATE: LiveSpectateState = {
   change: null,
   source: null,
   diff: null,
+  fileHistory: [],
   evidenceStalePaths: [],
   stopReason: null,
 };
@@ -111,6 +125,18 @@ export function reduceLiveSpectate(
   }
   if (action.event === 'file_changed' && action.path && action.kind) {
     const renamedFrom = action.kind === 'renamed' ? action.from_path : null;
+    const newRecord: LiveFileRecord = {
+      path: action.path,
+      kind: action.kind,
+      updatedAt: action.emitted_at,
+      timestamp: Date.now(),
+      sha256: action.new_sha256 ?? null,
+      ranges: action.changed_line_ranges ?? [],
+      parseError: action.parse_error ?? null,
+    };
+    const prevHistory = state.fileHistory.filter(
+      (item) => item.path !== action.path && (renamedFrom ? item.path !== renamedFrom : true)
+    );
     return {
       ...state,
       sequence: action.sequence,
@@ -132,32 +158,41 @@ export function reduceLiveSpectate(
         ]),
         updatedAt: action.emitted_at,
       },
+      fileHistory: [newRecord, ...prevHistory],
       source: null,
       diff: null,
     };
   }
-  if (action.event === 'source' && action.path && action.path === state.change?.path) {
+  if (action.event === 'source' && action.path) {
+    const updatedHistory = state.fileHistory.map((item) =>
+      item.path === action.path ? { ...item, source: action.text ?? null } : item
+    );
     return {
       ...state,
       sequence: action.sequence,
-      source: {
+      fileHistory: updatedHistory,
+      source: action.path === state.change?.path ? {
         path: action.path,
         sha256: action.sha256,
         text: action.text ?? null,
         skippedReason: action.skipped_reason ?? null,
-      },
+      } : state.source,
     };
   }
-  if (action.event === 'diff' && action.path && action.path === state.change?.path) {
+  if (action.event === 'diff' && action.path) {
+    const updatedHistory = state.fileHistory.map((item) =>
+      item.path === action.path ? { ...item, diff: action.text ?? null } : item
+    );
     return {
       ...state,
       sequence: action.sequence,
-      diff: {
+      fileHistory: updatedHistory,
+      diff: action.path === state.change?.path ? {
         path: action.path,
         text: action.text ?? null,
         skippedReason: action.skipped_reason ?? null,
         truncated: action.truncated,
-      },
+      } : state.diff,
     };
   }
   if (action.event === 'structure_update' && action.path) {
@@ -168,6 +203,11 @@ export function reduceLiveSpectate(
       ...(action.symbols ?? []),
     ];
     const changedNodeIds = unique(action.changed_node_ids ?? state.changedNodeIds);
+    const updatedHistory = state.fileHistory.map((item) =>
+      item.path === action.path
+        ? { ...item, parseError: action.parse_error ?? null }
+        : item
+    );
     return {
       ...state,
       sequence: action.sequence,
@@ -176,6 +216,7 @@ export function reduceLiveSpectate(
         a.path === b.path ? a.start_line - b.start_line || a.id.localeCompare(b.id) : a.path.localeCompare(b.path),
       ),
       changedNodeIds,
+      fileHistory: updatedHistory,
       change: state.change && state.change.path === action.path
         ? {
             ...state.change,
@@ -338,6 +379,10 @@ export class LiveSpectateAdapter implements FaultMeshAdapter {
 
   getSessionId(): string | null {
     return this.state.sessionId;
+  }
+
+  getState(): LiveSpectateState {
+    return this.state;
   }
 
   getV2Runs(): V2RunEvidenceExport[] {

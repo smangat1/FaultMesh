@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FaultMeshAdapter } from './adapter';
 import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter } from './adapter';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
-import { Header } from './components/Header';
+import { Header, type WorkspaceActiveView } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
@@ -11,6 +11,10 @@ import { ReplayComparisonView } from './components/ReplayComparisonView';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
 import { StartupScreen } from './components/StartupScreen';
 import { SpectateHook } from './components/SpectateHook';
+import { LiveToast } from './components/LiveToast';
+import { LiveFilesView } from './components/LiveFilesView';
+import { LiveChangesView } from './components/LiveChangesView';
+import { LiveMapDrawers } from './components/LiveMapDrawers';
 import { useLiveSpectate } from './spectate/useLiveSpectate';
 import { isDemoMode } from './utils/demo';
 import {
@@ -26,7 +30,8 @@ import {
   type V2RunEvidenceExport,
 } from './import';
 import { AlertTriangle } from 'lucide-react';
-import type { LiveSpectateState } from './spectate/liveState';
+import { EMPTY_LIVE_SPECTATE_STATE, type LiveSpectateState } from './spectate/liveState';
+import type { Core } from 'cytoscape';
 import './styles/theme.css';
 
 export interface AppProps {
@@ -48,7 +53,7 @@ export const App: React.FC<AppProps> = ({
 
   const [importError, setImportError] = useState<string | null>(null);
   const [currentScreen, setCurrentScreen] = useState<'selector' | 'workspace'>(initialScreen);
-  const [activeView, setActiveView] = useState<'map' | 'diagnostics' | 'replay'>('map');
+  const [activeView, setActiveView] = useState<WorkspaceActiveView>('map');
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [tests, setTests] = useState<TestItem[]>([]);
@@ -60,6 +65,12 @@ export const App: React.FC<AppProps> = ({
     files: [],
   });
   const [liveChangedNodeIds, setLiveChangedNodeIds] = useState<string[]>([]);
+  const [liveSpectateState, setLiveSpectateState] = useState<LiveSpectateState>(EMPTY_LIVE_SPECTATE_STATE);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [activeMapDrawer, setActiveMapDrawer] = useState<'none' | 'files' | 'diff'>('none');
+  const cyInstanceRef = useRef<Core | null>(null);
+  const lastChangeTimeRef = useRef<string | null>(null);
+  const burstCounterRef = useRef<{ count: number; windowStart: number }>({ count: 0, windowStart: 0 });
   const liveAdapterRef = useRef<LiveSpectateAdapter | null>(null);
   const liveRefreshSeq = useRef(0);
   const activeAdapterRef = useRef<FaultMeshAdapter>(activeAdapter);
@@ -391,6 +402,24 @@ export const App: React.FC<AppProps> = ({
 
   const handleLiveStateChange = useCallback((state: LiveSpectateState) => {
     if (!state.initialized || !state.sessionId) return;
+    setLiveSpectateState(state);
+
+    // Toast notification for observed saved changes on disk (quiet, auto-dismissing, static claims only)
+    if (state.change && state.change.updatedAt !== lastChangeTimeRef.current) {
+      lastChangeTimeRef.current = state.change.updatedAt;
+      const now = Date.now();
+      if (now - burstCounterRef.current.windowStart < 1500) {
+        burstCounterRef.current.count++;
+      } else {
+        burstCounterRef.current = { count: 1, windowStart: now };
+      }
+
+      if (burstCounterRef.current.count > 1) {
+        setToastMessage('Files actively changing on disk');
+      } else {
+        setToastMessage(`${state.change.path} changed on disk`);
+      }
+    }
 
     let liveAdapter = liveAdapterRef.current;
     const isNewDataset = liveAdapter?.getSessionId() !== state.sessionId;
@@ -447,6 +476,22 @@ export const App: React.FC<AppProps> = ({
   }, []);
 
   const spectate = useLiveSpectate({ onLiveStateChange: handleLiveStateChange });
+
+  const handleDrawerSelectFile = useCallback((file: string) => {
+    setSelectedFile(file);
+    setSelectedNodeId(null);
+    setSelectedTestId(null);
+    const cy = cyInstanceRef.current;
+    if (cy) {
+      const fileNode = cy.getElementById(`file:${file}`);
+      if (fileNode.length > 0) {
+        cy.animate({
+          center: { eles: fileNode },
+          duration: 250,
+        });
+      }
+    }
+  }, []);
 
   const handleCloseInspector = () => {
     setSelectedNodeId(null);
@@ -721,8 +766,44 @@ export const App: React.FC<AppProps> = ({
               </div>
             )}
 
-            {/* Diagnostics View */}
-            {activeView === 'diagnostics' ? (
+            {/* Files View (Live Watch 3-View Layout) */}
+            {activeView === 'files' ? (
+              <LiveFilesView
+                files={liveSpectateState.files}
+                fileHistory={liveSpectateState.fileHistory}
+                liveStatus={liveSpectateState.status}
+                stopReason={liveSpectateState.stopReason}
+                projectName={activeRun?.project}
+                onSelectFile={(f) => {
+                  setSelectedFile(f);
+                  setSelectedNodeId(null);
+                }}
+                onOpenMap={(f) => {
+                  setSelectedFile(f);
+                  setSelectedNodeId(null);
+                  setActiveView('map');
+                }}
+                onOpenChanges={(f) => {
+                  setSelectedFile(f);
+                  setSelectedNodeId(null);
+                  setActiveView('changes');
+                }}
+              />
+            ) : activeView === 'changes' ? (
+              /* Changes View (Live Watch 3-View Layout) */
+              <LiveChangesView
+                fileHistory={liveSpectateState.fileHistory}
+                liveStatus={liveSpectateState.status}
+                stopReason={liveSpectateState.stopReason}
+                selectedFilePath={selectedFile}
+                onSelectFilePath={(f) => setSelectedFile(f)}
+                onOpenMap={(f) => {
+                  setSelectedFile(f);
+                  setSelectedNodeId(null);
+                  setActiveView('map');
+                }}
+              />
+            ) : activeView === 'diagnostics' ? (
               <RunDiagnosticsPane activeRun={activeRun} graphData={graphData} />
             ) : activeView === 'replay' ? (
               <ReplayComparisonView
@@ -764,6 +845,7 @@ export const App: React.FC<AppProps> = ({
                   onSelectNode={handleSelectNode}
                   viewMode={viewMode}
                   isRealImport={activeRun?.isRealImport}
+                  isLive={activeRun?.isLive}
                   harnessError={activeRun?.harnessError}
                 />
 
@@ -799,6 +881,12 @@ export const App: React.FC<AppProps> = ({
                     runStatus={activeRun?.status}
                     errorMessage={activeRun?.errorMessage}
                     isRealImport={activeRun?.isRealImport}
+                    isLive={activeRun?.isLive}
+                    activeMapDrawer={activeMapDrawer}
+                    onToggleMapDrawer={setActiveMapDrawer}
+                    onCyReady={(cy) => {
+                      cyInstanceRef.current = cy;
+                    }}
                     isAgentMode={activeRun?.isRealImport || activeRun?.isLive ? false : isAgentActive}
                     onToggleAgentMode={
                       activeRun?.isRealImport || activeRun?.isLive
@@ -839,10 +927,31 @@ export const App: React.FC<AppProps> = ({
                     isExplanationExpanded={isExplanationExpanded}
                     onToggleExplanationExpand={() => setIsExplanationExpanded((prev) => !prev)}
                   />
+
+                  {/* Quiet Toast on Map View */}
+                  {activeRun?.isLive && (
+                    <LiveToast
+                      message={toastMessage}
+                      onDismiss={() => setToastMessage(null)}
+                    />
+                  )}
+
+                  {/* Unfoldable Drawers on Map View */}
+                  {activeRun?.isLive && (
+                    <LiveMapDrawers
+                      activeDrawer={activeMapDrawer}
+                      onClose={() => setActiveMapDrawer('none')}
+                      files={liveSpectateState.files}
+                      fileHistory={liveSpectateState.fileHistory}
+                      selectedFile={selectedFile}
+                      onSelectFile={handleDrawerSelectFile}
+                    />
+                  )}
                 </div>
 
                 {/* 3. Right: Contextual Slide-Out Inspector Drawer */}
-                <InspectorDrawer
+                {activeMapDrawer === 'none' && (
+                  <InspectorDrawer
                   selectedNodeId={selectedNodeId}
                   onSelectNode={handleSelectNode}
                   selectedTestId={selectedTestId}
@@ -866,13 +975,14 @@ export const App: React.FC<AppProps> = ({
                   agentPatchedDiff={currentAgentStep?.patchedDiff}
                   onReplayInvestigation={activeRun?.isRealImport || activeRun?.isLive ? undefined : startAgentSimulation}
                 />
-              </div>
+              )}
+            </div>
             )}
           </main>
         </>
       )}
       {currentScreen === 'workspace' && (
-        <SpectateHook controller={spectate} />
+        <SpectateHook controller={spectate} hideBanner={Boolean(activeRun?.isLive)} />
       )}
     </div>
   );
