@@ -286,6 +286,36 @@ def test_missing_root_and_permission_error_report_cleanly(
     assert event_records(records, "session_ended")[-1]["reason"] == "root_deleted"
 
 
+def test_renamed_root_is_distinguished_from_deletion(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "module.py").write_text("value = 1\n", encoding="utf-8")
+    records: list[dict[str, Any]] = []
+    engine = make_engine(root, records, ManualClock())
+    engine.start()
+    root.rename(tmp_path / "moved-project")
+
+    assert engine.poll_once() is False
+    assert event_records(records, "root_missing")[-1]["reason"] == "renamed"
+
+
+def test_file_limit_reserves_capacity_for_existing_files(tmp_path: Path) -> None:
+    existing = tmp_path / "z_existing.py"
+    existing.write_text("value = 1\n", encoding="utf-8")
+    records: list[dict[str, Any]] = []
+    engine = make_engine(tmp_path, records, ManualClock(), max_files=1)
+    engine.start()
+    (tmp_path / "a_new.py").write_text("new = True\n", encoding="utf-8")
+    existing.write_text("value = 2\n", encoding="utf-8")
+    engine.poll_once()
+
+    changes = event_records(records, "file_changed")
+    assert [(item["path"], item["kind"]) for item in changes] == [
+        ("z_existing.py", "modified")
+    ]
+    assert event_records(records, "watch_error")[-1]["reason"] == "max_files"
+
+
 def test_sequence_and_schema_are_valid_for_every_record(tmp_path: Path) -> None:
     source = tmp_path / "module.py"
     source.write_text("value = 1\n", encoding="utf-8")

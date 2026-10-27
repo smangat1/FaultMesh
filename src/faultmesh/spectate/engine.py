@@ -221,6 +221,8 @@ class SpectateEngine:
         if not resolved.is_dir():
             raise SpectateError(f"watch root is not a directory: {resolved}")
         self.root = resolved
+        root_details = self.root.stat()
+        self.root_identity = (root_details.st_dev, root_details.st_ino)
         self.limits = limits or default_limits()
         self.sink = sink or (lambda _record: None)
         self.evidence_hashes = {
@@ -235,6 +237,7 @@ class SpectateEngine:
         self.blocked: dict[str, StatKey | None] = {}
         self.started = False
         self.ended = False
+        self._last_omitted_count = 0
         self._event_times: deque[float] = deque()
 
     def _emit(self, event: str, **payload: object) -> bool:
@@ -298,12 +301,25 @@ class SpectateEngine:
         try:
             root_stat = self.root.stat()
         except FileNotFoundError:
-            raise SpectateError("root_missing:deleted") from None
+            reason = "deleted"
+            try:
+                for entry in os.scandir(self.root.parent):
+                    details = entry.stat(follow_symlinks=False)
+                    if (details.st_dev, details.st_ino) == self.root_identity:
+                        reason = "renamed"
+                        break
+            except OSError:
+                pass
+            raise SpectateError(f"root_missing:{reason}") from None
         except PermissionError:
             raise SpectateError("root_missing:permission_denied") from None
+        except OSError:
+            raise SpectateError("root_missing:unmounted") from None
         if not stat.S_ISDIR(root_stat.st_mode):
             raise SpectateError("root_missing:renamed")
         stack = [self.root]
+        new_capacity = max(0, self.limits.max_files - len(self.states))
+        new_files = 0
         while stack:
             current = stack.pop()
             try:
@@ -349,10 +365,13 @@ class SpectateEngine:
                     if file_relative is None or _is_secret(Path(file_relative).name):
                         continue
                     key = StatKey.from_stat(entry.stat(follow_symlinks=False))
-                    if len(result.files) >= self.limits.max_files:
+                    if file_relative in self.states:
+                        result.files[file_relative] = key
+                    elif new_files >= new_capacity:
                         result.omitted_count += 1
                     else:
                         result.files[file_relative] = key
+                        new_files += 1
                 except (FileNotFoundError, OSError):
                     continue
             stack.extend(reversed(directories))
@@ -459,6 +478,7 @@ class SpectateEngine:
                 "initial_scan",
                 skipped_count=scan.omitted_count,
             )
+        self._last_omitted_count = scan.omitted_count
         for relative in scan.files:
             try:
                 read = self._stable_read(relative)
@@ -736,8 +756,9 @@ class SpectateEngine:
                 path=issue.path,
                 recoverable=issue.recoverable,
             )
-        if scan.omitted_count:
+        if scan.omitted_count and scan.omitted_count != self._last_omitted_count:
             self._watch_error("max_files", "poll_scan", skipped_count=scan.omitted_count)
+        self._last_omitted_count = scan.omitted_count
 
         all_paths = set(self.states) | set(scan.files)
         changed: dict[str, StatKey | None] = {}

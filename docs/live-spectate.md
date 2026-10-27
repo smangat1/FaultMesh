@@ -95,6 +95,55 @@ path and cannot choose a command or arguments.
 - Native dialog and process lifecycle behavior must be checked per desktop platform. There is no
   automatic OS notification or OS-level popup.
 
+## Verified macOS demonstration
+
+On 2026-10-26 the real CLI watched a throwaway copy of `examples/buggy_python_project` outside the
+repository while `scripts/spectate_demo_editor.py` ran as a separate process. The editor process did
+an in-place save, an atomic temp-file rename-over save, function addition, function removal, syntax
+error, syntax recovery, file deletion, and new-file creation. The watcher produced 34 contiguous
+records and exited cleanly. Selected actual stdout records, reduced to the fields relevant to each
+assertion, were:
+
+```json
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":1,"event":"session_started"}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":3,"event":"file_changed","path":"src/buggy_python_project/bounds.py","kind":"modified","parse_ok":true,"changed_line_ranges":[{"start_line":6,"end_line":6}],"parse_error":null}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":14,"event":"structure_update","path":"src/buggy_python_project/bounds.py","parse_ok":true,"added_symbol_ids":["symbol:src/buggy_python_project/bounds.py:live_demo_added"],"removed_symbol_ids":[],"kept_last_good_symbols":false,"parse_error":null}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":19,"event":"file_changed","path":"src/buggy_python_project/bounds.py","kind":"modified","parse_ok":false,"changed_line_ranges":[{"start_line":1,"end_line":1}],"parse_error":"invalid syntax at line 1"}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":22,"event":"structure_update","path":"src/buggy_python_project/bounds.py","parse_ok":false,"added_symbol_ids":[],"removed_symbol_ids":[],"kept_last_good_symbols":true,"parse_error":"invalid syntax at line 1"}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":23,"event":"file_changed","path":"src/buggy_python_project/bounds.py","kind":"modified","parse_ok":true,"changed_line_ranges":[{"start_line":1,"end_line":1}],"parse_error":null}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":27,"event":"file_changed","path":"src/buggy_python_project/bounds.py","kind":"deleted","parse_ok":true,"changed_line_ranges":[{"start_line":1,"end_line":1}],"parse_error":null}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":30,"event":"file_changed","path":"src/buggy_python_project/live_created.py","kind":"created","parse_ok":true,"changed_line_ranges":[{"start_line":1,"end_line":2}],"parse_error":null}
+{"schema_version":"spectate-1.0","session_id":"911d4f03-6afd-4d07-bbaf-dd54b6ef7524","sequence":34,"event":"session_ended","reason":"stdin_closed_or_signal"}
+```
+
+The full records also contained exact source, unified hunks, old/new hashes, and symbol deltas. The
+atomic save appeared as one stable `modified` version. No transient partial version was emitted.
+Automated tests cover partial/truncate writes, CRLF, binary and invalid UTF-8 input, oversized and
+many-file bounds, symlink and traversal escape, secret names, root loss/rename/permission errors,
+and Electron framing, stdout, and child-lifecycle failures.
+
+The real Electron app was then launched on macOS. The native dialog selected the throwaway folder,
+the CLI child observed edits, and the rendered pixels were inspected for the
+[banner](screenshots/live_spectate_banner_macos.png),
+[source/diff panel](screenshots/live_spectate_source_diff_macos.png),
+[parse-error retention state](screenshots/live_spectate_parse_error_macos.png), and
+[stopped state](screenshots/live_spectate_stopped_macos.png). The app quit with no watcher child
+remaining. This verifies the macOS dialog and lifecycle only; Linux and Windows desktop flows were
+not run. The engine polls, so there is no platform-specific native file-event claim.
+
+To run the observer directly:
+
+```console
+faultmesh spectate /absolute/path/to/python-project
+```
+
+To repeat the editor sequence, run the following in another terminal against a throwaway example
+copy selected as the watch root:
+
+```console
+python scripts/spectate_demo_editor.py /absolute/path/to/throwaway-copy
+```
+
 ## Hand-off for Gemini
 
 Consume the ordered `spectate-1.0` stream and keep the existing map layout positions. Match
