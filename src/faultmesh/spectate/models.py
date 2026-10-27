@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -175,4 +175,6 @@ SpectateRecord = Annotated[
     Field(discriminator="event"),
 ]
 
-EVENT_ADAPTER: TypeAdapter[SpectateRecord] = TypeAdapter(SpectateRecord)  # type: ignore[arg-type]
+EVENT_ADAPTER = TypeAdapter[SpectateRecord](
+    cast(type[SpectateRecord], SpectateRecord)
+)

@@ -194,7 +194,7 @@ export const SpectateHook: React.FC = () => {
         <aside className="spectate-panel" aria-label="Live source and diff">
           <header className="spectate-panel-header">
             <div>
-              <div className="spectate-eyebrow">Previous stable snapshot</div>
+              <div className="spectate-eyebrow">Live source</div>
               <h2>{change?.path ?? 'Waiting for a stable Python change…'}</h2>
             </div>
             <button
@@ -225,14 +225,14 @@ export const SpectateHook: React.FC = () => {
           )}
 
           <section className="spectate-code-section">
-            <h3>Live source</h3>
+            <h3>Current stable source</h3>
             <pre>{source?.text ?? (source?.skippedReason
               ? `Source skipped: ${source.skippedReason}`
               : 'Waiting for source…')}</pre>
           </section>
 
           <section className="spectate-code-section">
-            <h3>Diff</h3>
+            <h3>Diff vs previous stable snapshot</h3>
             <pre>{diff?.text ?? (diff?.skippedReason
               ? `Diff skipped: ${diff.skippedReason}`
               : 'Waiting for diff…')}</pre>

@@ -93,6 +93,9 @@ describe('SpectateHook', () => {
     await waitFor(() => expect(screen.getByText(/Code changing in/i)).toBeDefined());
     fireEvent.click(screen.getByRole('button', { name: /Spectate/i }));
     expect(screen.getByText('src/demo.py')).toBeDefined();
+    expect(screen.getByText('Live source')).toBeDefined();
+    expect(screen.getByText('Current stable source')).toBeDefined();
+    expect(screen.getByText('Diff vs previous stable snapshot')).toBeDefined();
     expect(screen.getByText(/def value/)).toBeDefined();
     expect(screen.getByText(/return 1/)).toBeDefined();
     expect(screen.getByText('symbol:src/demo.py:value')).toBeDefined();
