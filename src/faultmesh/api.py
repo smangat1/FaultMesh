@@ -6,7 +6,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from faultmesh.agents import ScoutAgent
+from faultmesh.agents import ProposalConfiguration, ScoutAgent
 from faultmesh.analysis import ContextBuilder, ProjectAnalyzer
 from faultmesh.config import FaultMeshConfig
 from faultmesh.evidence import EvidenceStore
@@ -17,6 +17,7 @@ from faultmesh.inference import (
     LlamaCppCliBackend,
     LlamaCppServerBackend,
 )
+from faultmesh.proposal_quality import ProposalGenerator, canonical_property_key
 from faultmesh.reproduction import ArtifactWriter
 from faultmesh.sandbox import DockerSandbox, LocalSubprocessSandbox, SandboxRunner
 from faultmesh.schemas import (
@@ -26,17 +27,12 @@ from faultmesh.schemas import (
     Incident,
     InferenceMetadata,
     ProjectIndex,
+    ProposedHypothesis,
     ReplayManifest,
     VerificationManifest,
     VerificationStatus,
 )
 from faultmesh.telemetry import log_event
-from faultmesh.verification import (
-    PreconditionCompilationError,
-    PreconditionCompiler,
-    SpecificationError,
-    SpecificationValidator,
-)
 
 
 @dataclass(frozen=True)
@@ -50,6 +46,9 @@ class AnalysisOptions:
     model_path: Path | None = None
     artifact_directory: Path | None = None
     max_functions: int = 50
+    proposal_configuration: ProposalConfiguration = ProposalConfiguration.ABC
+    max_model_calls: int = 2
+    max_repair_attempts: int = 2
     inference_backend: InferenceBackend | None = None
 
 
@@ -118,11 +117,14 @@ def analyze_repository(
     )
     backend = _backend(config, options)
     scout = ScoutAgent(
-        InferenceClient(backend), ContextBuilder(max_characters=config.max_context_characters)
+        InferenceClient(backend, max_repair_attempts=options.max_repair_attempts),
+        ContextBuilder(max_characters=config.max_context_characters),
+    )
+    proposal_generator = ProposalGenerator(
+        scout,
+        max_model_calls=options.max_model_calls,
     )
     sandbox = _sandbox(config, options.allow_local_execution)
-    validator = SpecificationValidator()
-    precondition_compiler = PreconditionCompiler()
     hypotheses: list[str] = []
     incidents: list[Incident] = []
     inference_metadata: list[InferenceMetadata] = []
@@ -140,60 +142,59 @@ def analyze_repository(
             and not function.name.startswith("_")
         ][: options.max_functions]
         for function in functions:
-            inferred = scout.inspect(function)
+            proposal_outcome = proposal_generator.generate(
+                function,
+                index,
+                configuration=options.proposal_configuration,
+            )
+            assert proposal_outcome.metadata is not None
             log_event(
                 "inference.completed",
                 "function investigation completed",
                 function=function.qualified_name,
-                backend=inferred.metadata.backend,
-                latency_ms=inferred.metadata.latency_ms,
-                hypotheses=len(inferred.response.hypotheses),
+                backend=proposal_outcome.metadata.backend,
+                latency_ms=proposal_outcome.metadata.latency_ms,
+                hypotheses=len(proposal_outcome.accepted),
+                rejected=len(proposal_outcome.rejected),
+                abstained=proposal_outcome.abstained,
             )
-            inference_metadata.append(inferred.metadata)
+            inference_metadata.append(proposal_outcome.metadata)
             call_id = store.add_inference_call(
-                investigation_id, function.qualified_name, inferred.metadata
+                investigation_id, function.qualified_name, proposal_outcome.metadata
             )
-            for proposed in inferred.response.hypotheses:
-                proposed.property_spec.max_examples = config.max_examples
-                hypothesis = HypothesisRecord(
-                    investigation_id=investigation_id,
-                    description=proposed.description,
-                    source_references=proposed.source_references,
-                    preconditions=proposed.preconditions,
-                    expected_behavior=proposed.expected_behavior,
-                    violation_condition=proposed.violation_condition,
-                    originating_agent="code-scout",
-                    confidence=proposed.confidence,
-                    property_spec=proposed.property_spec,
+            persisted_rejections: set[tuple[str, str]] = set()
+            for rejection in proposal_outcome.rejected:
+                rejection_key = (
+                    canonical_property_key(rejection.proposal),
+                    rejection.reason,
                 )
-                precondition_error: PreconditionCompilationError | None = None
-                try:
-                    precondition_compiler.compile(
-                        hypothesis.preconditions, hypothesis.property_spec
-                    )
-                except PreconditionCompilationError as exc:
-                    precondition_error = exc
+                if rejection_key in persisted_rejections:
+                    continue
+                persisted_rejections.add(rejection_key)
+                hypothesis = _hypothesis_record(
+                    investigation_id,
+                    rejection.proposal,
+                    config.max_examples,
+                )
                 store.add_hypothesis(hypothesis)
                 store.add_edge(call_id, hypothesis.id, "PROPOSED")
                 hypotheses.append(hypothesis.id)
-                if precondition_error is not None:
-                    store.transition(
-                        hypothesis.id,
-                        VerificationStatus.UNSUPPORTED,
-                        actor="precondition-compiler",
-                        reason=str(precondition_error),
-                    )
-                    continue
-                try:
-                    validator.validate(hypothesis.property_spec, index)
-                except SpecificationError as exc:
-                    store.transition(
-                        hypothesis.id,
-                        VerificationStatus.UNSUPPORTED,
-                        actor="specification-validator",
-                        reason=str(exc),
-                    )
-                    continue
+                store.transition(
+                    hypothesis.id,
+                    VerificationStatus.UNSUPPORTED,
+                    actor="proposal-validator",
+                    reason=rejection.reason,
+                )
+            for proposed in proposal_outcome.accepted:
+                proposed.property_spec.max_examples = config.max_examples
+                hypothesis = _hypothesis_record(
+                    investigation_id,
+                    proposed,
+                    config.max_examples,
+                )
+                store.add_hypothesis(hypothesis)
+                store.add_edge(call_id, hypothesis.id, "PROPOSED")
+                hypotheses.append(hypothesis.id)
                 store.transition(
                     hypothesis.id,
                     VerificationStatus.TESTABLE,
@@ -292,6 +293,26 @@ def analyze_repository(
         incidents=len(summary.incidents),
     )
     return summary
+
+
+def _hypothesis_record(
+    investigation_id: str,
+    proposed: ProposedHypothesis,
+    max_examples: int,
+) -> HypothesisRecord:
+    specification = proposed.property_spec.model_copy(deep=True)
+    specification.max_examples = max_examples
+    return HypothesisRecord(
+        investigation_id=investigation_id,
+        description=proposed.description,
+        source_references=proposed.source_references,
+        preconditions=proposed.preconditions,
+        expected_behavior=proposed.expected_behavior,
+        violation_condition=proposed.violation_condition,
+        originating_agent="code-scout",
+        confidence=proposed.confidence,
+        property_spec=specification,
+    )
 
 
 def _incident(

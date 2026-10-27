@@ -307,13 +307,15 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
     captured_stdout = ""
     captured_stderr = ""
     diagnostic: tuple[bool, ExperimentOutcome, str, str] | None = None
+    evaluations = 0
     try:
         function, import_stdout, import_stderr = _load_function(repository, manifest.property_spec)
         captured_stdout += import_stdout
         captured_stderr += import_stderr
         if manifest.mode == "search":
             def violates(values: dict[str, Any]) -> bool:
-                nonlocal diagnostic
+                nonlocal diagnostic, evaluations
+                evaluations += 1
                 evaluated = _evaluate(function, manifest.property_spec, values)
                 if evaluated[1] == ExperimentOutcome.HARNESS_ERROR and diagnostic is None:
                     diagnostic = evaluated
@@ -337,6 +339,7 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
         violated, outcome, observed, trace = _evaluate(
             function, manifest.property_spec, candidate
         )
+        evaluations += 1
         captured_stderr += trace
         if outcome == ExperimentOutcome.HARNESS_ERROR:
             return ExperimentResult(
@@ -348,6 +351,7 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
                 stdout=captured_stdout,
                 stderr=captured_stderr,
                 duration_ms=(time.perf_counter() - started) * 1000,
+                evaluations=evaluations,
                 seed=manifest.property_spec.seed,
                 environment={
                     "python": platform.python_version(),
@@ -367,12 +371,14 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
                 stdout=captured_stdout,
                 stderr=captured_stderr,
                 duration_ms=(time.perf_counter() - started) * 1000,
+                evaluations=evaluations,
                 seed=manifest.property_spec.seed,
                 environment={"python": platform.python_version(), "platform": platform.platform()},
             )
         fingerprint = _fingerprint(outcome, observed, manifest.property_spec)
         confirming = 0
         for _ in range(manifest.confirmation_runs):
+            evaluations += 1
             repeated, repeated_outcome, repeated_observed, repeated_trace = _evaluate(
                 function, manifest.property_spec, candidate
             )
@@ -398,6 +404,7 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
             stdout=captured_stdout,
             stderr=captured_stderr,
             duration_ms=(time.perf_counter() - started) * 1000,
+            evaluations=evaluations,
             seed=manifest.property_spec.seed,
             environment={"python": platform.python_version(), "platform": platform.platform()},
         )
@@ -411,6 +418,7 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
                 stdout=captured_stdout,
                 stderr=captured_stderr + diagnostic[3],
                 duration_ms=(time.perf_counter() - started) * 1000,
+                evaluations=evaluations,
                 seed=manifest.property_spec.seed,
                 environment={
                     "python": platform.python_version(),
@@ -428,6 +436,7 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
             stdout=captured_stdout,
             stderr=captured_stderr,
             duration_ms=(time.perf_counter() - started) * 1000,
+            evaluations=evaluations,
             seed=manifest.property_spec.seed,
             environment={"python": platform.python_version(), "platform": platform.platform()},
         )
@@ -440,6 +449,7 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
             stdout=captured_stdout,
             stderr=captured_stderr + traceback.format_exc(),
             duration_ms=(time.perf_counter() - started) * 1000,
+            evaluations=evaluations,
             seed=manifest.property_spec.seed,
             environment={"python": platform.python_version(), "platform": platform.platform()},
         )
