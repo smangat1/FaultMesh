@@ -51,6 +51,7 @@ interface GraphViewProps {
   isExplanationExpanded?: boolean;
   onToggleExplanationExpand?: () => void;
   isRealImport?: boolean;
+  onCyReady?: (cy: Core) => void;
 }
 
 interface HoverTagInfo {
@@ -186,6 +187,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   isExplanationExpanded: propExplanationExpanded,
   onToggleExplanationExpand,
   isRealImport = false,
+  onCyReady,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
@@ -804,14 +806,41 @@ export const GraphView: React.FC<GraphViewProps> = ({
             selector: 'node.dimmed',
             style: {
               opacity: 0.15,
+              'text-opacity': 0,
             },
           },
           {
             selector: 'node.exercised',
             style: {
               opacity: 1.0,
-              'border-width': 1.2,
+              'border-width': 1.5,
               'border-color': '#38bdf8',
+              label: 'data(shortLabel)',
+              'text-opacity': 1,
+              'font-size': '10px',
+              'font-weight': 600,
+              color: '#38bdf8',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.2,
+              'text-outline-opacity': 0.95,
+              'z-index': 100,
+            },
+          },
+          {
+            selector: 'node.active-test-node',
+            style: {
+              opacity: 1.0,
+              'border-width': 2.0,
+              'border-color': '#ef4444',
+              label: 'data(shortLabel)',
+              'text-opacity': 1,
+              'font-size': '11px',
+              'font-weight': 700,
+              color: '#f87171',
+              'text-outline-color': '#101114',
+              'text-outline-width': 1.5,
+              'text-outline-opacity': 0.95,
+              'z-index': 110,
             },
           },
           {
@@ -1329,6 +1358,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       });
 
       cyRef.current = cy;
+      onCyReady?.(cy);
       return;
     }
 
@@ -1396,7 +1426,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     cy.batch(() => {
       // 1. Clear previous selection & connection focus classes
-      cy.nodes().removeClass('selected-node').removeClass('persistent-neighbor');
+      cy.nodes().removeClass('selected-node').removeClass('persistent-neighbor').removeClass('active-test-node');
       cy.edges().removeClass('persistent-connected-edge');
 
       // 2. Persistent Connection Highlight on Node/File Selection
@@ -1488,16 +1518,29 @@ export const GraphView: React.FC<GraphViewProps> = ({
         const exercisedSet = new Set(activeTest.exercisedNodeIds);
         exercisedSet.add(activeTest.id);
 
+        const exercisedFiles = new Set<string>();
+        exercisedSet.forEach((id) => {
+          const file = graphData.nodes.find((n) => n.id === id)?.file;
+          if (file) exercisedFiles.add(file);
+        });
+
         cy.nodes().forEach((n) => {
           if (n.data('isFileCluster')) {
-            n.removeClass('dimmed');
+            const file = n.data('file');
+            if (exercisedFiles.has(file)) {
+              n.removeClass('dimmed');
+            } else {
+              n.addClass('dimmed');
+            }
             return;
           }
-          if (exercisedSet.has(n.id())) {
+          if (n.id() === activeTest.id) {
+            n.addClass('active-test-node').removeClass('dimmed');
+          } else if (exercisedSet.has(n.id())) {
             n.addClass('exercised');
             n.removeClass('dimmed');
           } else {
-            n.removeClass('exercised');
+            n.removeClass('exercised').removeClass('active-test-node');
             n.addClass('dimmed');
           }
         });
@@ -1706,10 +1749,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
         const containerW = containerRef.current?.clientWidth || 800;
         const containerH = containerRef.current?.clientHeight || 600;
         const padding = 120; // generous padding keeps surrounding dimmed project map visible
-        const w = Math.max(bb.w, 80);
-        const h = Math.max(bb.h, 80);
+        const w = Math.max(bb.w, 120);
+        const h = Math.max(bb.h, 120);
         const fitZoom = Math.min((containerW - padding * 2) / w, (containerH - padding * 2) / h);
-        const targetZoom = Math.max(0.45, Math.min(1.35, fitZoom));
+        const targetZoom = Math.max(0.95, Math.min(1.4, fitZoom));
 
         const centerX = bb.x1 + bb.w / 2;
         const centerY = bb.y1 + bb.h / 2;
@@ -2123,7 +2166,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               aria-label="Agent Auto-Repair disabled on real imports"
             >
               <Bot size={12} style={{ color: 'var(--text-muted)' }} />
-              <span>Agent Auto-Repair (Sample demo feature - not available on real imports)</span>
+              <span>Agent Auto-Repair (Demo only)</span>
             </span>
           ) : (
             onToggleAgentMode && (

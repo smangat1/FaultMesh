@@ -151,19 +151,27 @@ export class ImportedAdapter implements FaultMeshAdapter {
         ? `Replay comparison (${v2.run.replay?.comparison || 'SAME_FAILURE'})`
         : (this.v3.envelope.dirty ? 'Worktree (dirty modifications)' : 'Recorded test evidence');
 
-      const harnessFailed =
+      const isHarnessError =
         v2.run.outcome === 'COLLECTION_ERROR' ||
+        v2.run.outcome === 'INFRASTRUCTURE_ERROR' ||
+        v2.run.outcome === 'MALFORMED_REPORT' ||
         (v2.run.exit_code !== null &&
           v2.run.exit_code !== undefined &&
           v2.run.exit_code !== 0 &&
-          v2.tests.length === 0) ||
+          v2.tests.length === 0);
+      const isTimeoutOrCancelled =
+        v2.run.outcome === 'TIMEOUT' ||
+        v2.run.outcome === 'CANCELLED' ||
         v2.run.termination === 'TIMEOUT';
+
       const harnessError =
         v2.run.error ||
-        (harnessFailed
-          ? v2.run.termination === 'TIMEOUT'
-            ? 'Test execution timed out.'
-            : `Harness collection error (exit code ${v2.run.exit_code ?? 1})`
+        (isHarnessError
+          ? `Test harness failed: ${v2.run.outcome}${v2.run.exit_code ? ` (exit code ${v2.run.exit_code})` : ''}`
+          : v2.run.outcome === 'TIMEOUT' || v2.run.termination === 'TIMEOUT'
+          ? 'Test execution timed out.'
+          : v2.run.outcome === 'CANCELLED'
+          ? 'Test execution was cancelled.'
           : undefined);
 
       summaries.push({
@@ -176,13 +184,18 @@ export class ImportedAdapter implements FaultMeshAdapter {
           'uncommitted',
         gitBranch: this.v3.envelope.head_is_worktree ? 'worktree' : 'HEAD',
         commitMessage: commitMsg,
-        status: harnessFailed ? 'failed' : (v2.tests.length === 0 ? 'empty' : 'completed'),
+        status: isHarnessError || isTimeoutOrCancelled
+          ? 'failed'
+          : v2.tests.length === 0 || v2.run.outcome === 'NO_TESTS'
+          ? 'empty'
+          : 'completed',
         startedAt: v2.run.started_at || new Date().toISOString(),
         durationMs: v2.run.duration_ms !== undefined ? Number(v2.run.duration_ms.toFixed(1)) : 0,
         isFixture: false,
         fixtureLabel: label,
         isRealImport: true,
         replayProvenance: v2.run.replay || undefined,
+        runOutcome: v2.run.outcome,
         harnessStatus: v2.run.outcome,
         exitCode: v2.run.exit_code,
         harnessError,

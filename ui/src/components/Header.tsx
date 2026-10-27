@@ -71,20 +71,24 @@ export const Header: React.FC<HeaderProps> = ({
           justifyContent: 'space-between',
           padding: '6px 14px',
           paddingLeft: isMacDesktop ? '78px' : '14px',
-          gap: '12px',
+          gap: '10px',
           minHeight: '40px',
-          flexWrap: 'nowrap',
-          minWidth: 0,
+          flexWrap: 'wrap',
+          rowGap: '6px',
+          columnGap: '10px',
+          width: '100%',
+          boxSizing: 'border-box',
         }}
       >
-        {/* Left: Project Return Button & Run Context (No FM logo, No FaultMesh title, No Run dropdown) */}
+        {/* Left: Project Return Button & Run Context */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
-            flexShrink: 1,
-            minWidth: 0,
+            gap: '8px',
+            flexShrink: 0,
+            flexWrap: 'wrap',
+            rowGap: '4px',
             // @ts-expect-error WebkitAppRegion
             WebkitAppRegion: 'no-drag',
           }}
@@ -152,7 +156,7 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
-          {/* Persistent Small Imported Label */}
+          {/* Persistent Compact Imported Label */}
           {activeRun?.isRealImport && (
             <span
               style={{
@@ -166,24 +170,18 @@ export const Header: React.FC<HeaderProps> = ({
                 border: '1px solid rgba(56, 189, 248, 0.25)',
                 padding: '2px 7px',
                 borderRadius: 'var(--radius-sm)',
-                maxWidth: '200px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
-                flexShrink: 1,
+                flexShrink: 0,
               }}
-              title={`V3 static structure export: ${activeRun.contentSha256 || activeRun.id}`}
+              title={`V3 static structure export: ${activeRun.contentSha256 || activeRun.id} • ${activeRun.project} @ ${activeRun.gitRevision.slice(0, 7)} - static structure${activeRun.v2RunCount ? ` / ${activeRun.v2RunCount} run${activeRun.v2RunCount > 1 ? 's' : ''}` : ''}`}
             >
-              Imported: {activeRun.project} @ {activeRun.gitRevision.slice(0, 7)} - static structure
-              {activeRun.v2RunCount && activeRun.v2RunCount > 0
-                ? ` / ${activeRun.v2RunCount} run${activeRun.v2RunCount > 1 ? 's' : ''}`
-                : ''}
+              Imported{activeRun.v2RunCount && activeRun.v2RunCount > 1 ? ` (${activeRun.v2RunCount} runs)` : ''}
             </span>
           )}
 
           {/* Multiple Runs Switcher */}
           {runs.length > 1 && onSelectRun && activeRun && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
               <select
                 value={activeRun.id}
                 onChange={(e) => onSelectRun(e.target.value)}
@@ -197,11 +195,8 @@ export const Header: React.FC<HeaderProps> = ({
                   padding: '2px 6px',
                   cursor: 'pointer',
                   outline: 'none',
-                  maxWidth: '140px',
-                  textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  flexShrink: 1,
+                  flexShrink: 0,
                 }}
                 aria-label="Switch active test run"
                 title="Switch active test run evidence"
@@ -215,40 +210,118 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Outcome Summary Pill: Never show green ALL PASSED when no tests ran or tests failed! */}
+          {/* Outcome Summary Pill: Derived explicitly from RunOutcome */}
           {activeRun && (() => {
+            const outcome = activeRun.runOutcome || (activeRun.harnessStatus as any);
+            const isStructureOnly = activeRun.isRealImport && (activeRun.v2RunCount === 0 || !outcome);
+
             const isHarnessFailed =
-              activeRun.harnessStatus === 'COLLECTION_ERROR' ||
-              Boolean(activeRun.harnessError && (activeRun.stats.totalTests === 0 || totalProblemTests === 0)) ||
-              (activeRun.status === 'failed' && (activeRun.stats.totalTests === 0 || totalProblemTests === 0));
+              outcome === 'COLLECTION_ERROR' ||
+              outcome === 'INFRASTRUCTURE_ERROR' ||
+              outcome === 'MALFORMED_REPORT' ||
+              (!outcome && activeRun.status === 'failed');
+
+            const isTimeout = outcome === 'TIMEOUT';
+            const isCancelled = outcome === 'CANCELLED';
+            const isNoTests = outcome === 'NO_TESTS';
 
             return (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                {isHarnessFailed ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  flexShrink: 0,
+                  flexWrap: 'nowrap',
+                }}
+              >
+                {/* 1. Structure only: when no V2 run was imported */}
+                {isStructureOnly ? (
+                  <span
+                    className="badge-status empty"
+                    title="Static structure export (no test runs imported)"
+                  >
+                    STRUCTURE ONLY
+                  </span>
+                ) : isNoTests ? (
+                  /* 2. NO_TESTS: when a test run occurred but collected 0 tests */
+                  <span
+                    className="badge-status empty"
+                    title="No tests collected during test run"
+                  >
+                    NO TESTS COLLECTED
+                  </span>
+                ) : isHarnessFailed ? (
+                  /* 3. Harness Failure: COLLECTION_ERROR, INFRASTRUCTURE_ERROR, MALFORMED_REPORT */
                   <span
                     className="badge-status error"
-                    title={activeRun.errorMessage || "Run harness aborted during collection"}
+                    title={activeRun.errorMessage || `Test harness failed: ${outcome || 'COLLECTION_ERROR'}`}
                   >
                     HARNESS FAILED
                   </span>
-                ) : activeRun.stats.totalTests === 0 ? (
-                  <span
-                    className="badge-status empty"
-                    title={activeRun.isRealImport ? "Static structure export (no test runs imported)" : "No tests discovered in run"}
-                  >
-                    {activeRun.isRealImport ? 'STRUCTURE ONLY' : 'EMPTY SCAN'}
-                  </span>
-                ) : totalProblemTests > 0 ? (
-                  <span
-                    className="badge-status fail"
-                    title={`${failedTestCount} failed, ${errorCount} error`}
-                  >
-                    {failedTestCount > 0 ? `${failedTestCount} FAILED` : ''}
-                    {failedTestCount > 0 && errorCount > 0 ? ' · ' : ''}
-                    {errorCount > 0 ? `${errorCount} ERROR` : ''}
-                  </span>
                 ) : (
-                  <span className="badge-status pass">ALL PASSED</span>
+                  /* 4. Runs that executed tests or timed out / cancelled */
+                  <>
+                    {/* Failed / Error tests count */}
+                    {totalProblemTests > 0 && (
+                      <span
+                        className="badge-status fail"
+                        title={`${failedTestCount} failed, ${errorCount} error`}
+                      >
+                        {failedTestCount > 0 ? `${failedTestCount} FAILED` : ''}
+                        {failedTestCount > 0 && errorCount > 0 ? ' · ' : ''}
+                        {errorCount > 0 ? `${errorCount} ERROR` : ''}
+                      </span>
+                    )}
+
+                    {/* Timeout Pill (may be shown alongside FAILED count; never hidden, never green) */}
+                    {isTimeout && (
+                      <span
+                        className="badge-status error"
+                        title={activeRun.errorMessage || "Test execution timed out"}
+                      >
+                        TIMED OUT
+                      </span>
+                    )}
+
+                    {/* Cancelled Pill (may be shown alongside FAILED count; never hidden, never green) */}
+                    {isCancelled && (
+                      <span
+                        className="badge-status error"
+                        title={activeRun.errorMessage || "Test execution was cancelled"}
+                      >
+                        CANCELLED
+                      </span>
+                    )}
+
+                    {/* Only show ALL PASSED when outcome is strictly PASSED and 0 failed/errored tests */}
+                    {outcome === 'PASSED' && totalProblemTests === 0 && activeRun.stats.totalTests > 0 && (
+                      <span className="badge-status pass" title="All tests passed">
+                        ALL PASSED
+                      </span>
+                    )}
+
+                    {/* Fallback if outcome === 'FAILED' but problem tests count is 0 */}
+                    {outcome === 'FAILED' && totalProblemTests === 0 && (
+                      <span className="badge-status fail" title="Run outcome: FAILED">
+                        FAILED
+                      </span>
+                    )}
+
+                    {/* Fixture empty scan fallback */}
+                    {!outcome && activeRun.stats.totalTests === 0 && (
+                      <span className="badge-status empty" title="No tests discovered in run">
+                        EMPTY SCAN
+                      </span>
+                    )}
+
+                    {/* Fixture all-passed fallback only when completed with tests and 0 problems and no outcome set */}
+                    {!outcome && activeRun.status === 'completed' && totalProblemTests === 0 && activeRun.stats.totalTests > 0 && (
+                      <span className="badge-status pass" title="All tests passed">
+                        ALL PASSED
+                      </span>
+                    )}
+                  </>
                 )}
 
                 <span
@@ -256,6 +329,7 @@ export const Header: React.FC<HeaderProps> = ({
                     fontSize: '11px',
                     color: 'var(--text-muted)',
                     fontFamily: 'var(--font-mono)',
+                    flexShrink: 0,
                   }}
                 >
                   {formatDurationMs(activeRun.durationMs)}
@@ -272,6 +346,8 @@ export const Header: React.FC<HeaderProps> = ({
             alignItems: 'center',
             gap: '8px',
             flexShrink: 0,
+            flexWrap: 'wrap',
+            rowGap: '4px',
             // @ts-expect-error WebkitAppRegion
             WebkitAppRegion: 'no-drag',
           }}

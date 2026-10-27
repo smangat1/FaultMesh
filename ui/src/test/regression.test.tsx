@@ -7,7 +7,9 @@ import { TestDetailsPane } from '../components/TestDetailsPane';
 import { GraphView, computeDeterministicPositions } from '../components/GraphView';
 import type { FaultMeshAdapter } from '../adapter';
 import { ImportedAdapter } from '../adapter/importedAdapter';
+import { Header } from '../components/Header';
 import { parseAndValidateV3, parseAndValidateV2 } from '../import';
+import type { V2RunOutcome } from '../import/types';
 import { formatDurationMs } from '../utils/format';
 import type { RunSummary, TestItem, GraphData, CodeNode } from '../types';
 import { FIXTURE_RUNS, FIXTURE_TESTS, FIXTURE_GRAPH } from '../fixtures';
@@ -548,7 +550,8 @@ describe('Phase 2 Regression: Real V3 Import, Strict Separation & Responsive Lay
     render(<App adapter={adapter} initialScreen="workspace" />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Imported: hpack-repo @ c2edbee - static structure/i)).toBeDefined();
+      expect(screen.getByText('Imported')).toBeDefined();
+      expect(screen.getByTitle(/hpack-repo @ c2edbee - static structure/i)).toBeDefined();
     });
 
     expect(screen.queryByText(/SAMPLE DATA/i)).toBeNull();
@@ -743,7 +746,7 @@ describe('Phase 4 Regression: Empty/Error States, Demo Gating & Verification', (
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Agent Auto-Repair \(Sample demo feature - not available on real imports\)/i)
+        screen.getByText(/Agent Auto-Repair \(Demo only\)/i)
       ).toBeDefined();
     });
 
@@ -836,5 +839,384 @@ describe('Phase 4 Regression: Empty/Error States, Demo Gating & Verification', (
     expect(formatDurationMs(420)).toBe('420ms');
     expect(formatDurationMs(undefined)).toBe('0ms');
     expect(formatDurationMs(null)).toBe('0ms');
+  });
+});
+
+describe('Phase 5 Regression: Explicit RunOutcome Derivation & Badges', () => {
+  const FIXTURES_DIR = path.resolve(__dirname, '../../../docs/fixtures');
+  const v3HpackJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v3-hpack-structure.json'), 'utf-8');
+
+  function makeV2Run(outcome: V2RunOutcome, tests: any[] = []): any {
+    return {
+      schema_version: '2.0',
+      run: {
+        id: `run-${outcome.toLowerCase()}-123`,
+        config_version: '2.0',
+        outcome,
+        exit_code: outcome === 'PASSED' ? 0 : 1,
+        started_at: '2026-10-26T12:00:00Z',
+        finished_at: '2026-10-26T12:00:01Z',
+        duration_ms: 125.4,
+        artifacts: { directory: '/tmp', run_record: 'r.json', config: 'c.json' },
+      },
+      tests,
+    };
+  }
+
+  it('shows CANCELLED badge and never green ALL PASSED when outcome is CANCELLED even if tests passed', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const passTest = { node_id: 'test_foo.py::test_ok', outcome: 'PASSED', duration_ms: 10 };
+    const cancelledV2 = makeV2Run('CANCELLED', [passTest]);
+
+    const adapter = new ImportedAdapter(v3Val.data!, [cancelledV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('CANCELLED')).toBeDefined();
+    });
+    expect(screen.queryByText('ALL PASSED')).toBeNull();
+  });
+
+  it('shows HARNESS FAILED (naming INFRASTRUCTURE_ERROR) and never ALL PASSED when outcome is INFRASTRUCTURE_ERROR', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const passTest = { node_id: 'test_foo.py::test_ok', outcome: 'PASSED', duration_ms: 10 };
+    const infraV2 = makeV2Run('INFRASTRUCTURE_ERROR', [passTest]);
+
+    const adapter = new ImportedAdapter(v3Val.data!, [infraV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      const badge = screen.getByText('HARNESS FAILED');
+      expect(badge).toBeDefined();
+      expect(badge.getAttribute('title')).toContain('INFRASTRUCTURE_ERROR');
+    });
+    expect(screen.queryByText('ALL PASSED')).toBeNull();
+  });
+
+  it('shows HARNESS FAILED (naming MALFORMED_REPORT) and never ALL PASSED when outcome is MALFORMED_REPORT', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const passTest = { node_id: 'test_foo.py::test_ok', outcome: 'PASSED', duration_ms: 10 };
+    const malformedV2 = makeV2Run('MALFORMED_REPORT', [passTest]);
+
+    const adapter = new ImportedAdapter(v3Val.data!, [malformedV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      const badge = screen.getByText('HARNESS FAILED');
+      expect(badge).toBeDefined();
+      expect(badge.getAttribute('title')).toContain('MALFORMED_REPORT');
+    });
+    expect(screen.queryByText('ALL PASSED')).toBeNull();
+  });
+
+  it('shows TIMED OUT alongside FAILED count and never green ALL PASSED when outcome is TIMEOUT with a failure', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const failTest = {
+      node_id: 'test_foo.py::test_broken',
+      outcome: 'FAILED',
+      duration_ms: 50,
+      failure_text: 'AssertionError: timeout reached',
+    };
+    const timeoutV2 = makeV2Run('TIMEOUT', [failTest]);
+
+    const adapter = new ImportedAdapter(v3Val.data!, [timeoutV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('1 FAILED')).toBeDefined();
+      expect(screen.getByText('TIMED OUT')).toBeDefined();
+    });
+    expect(screen.queryByText('ALL PASSED')).toBeNull();
+  });
+
+  it('shows TIMED OUT pill when outcome is TIMEOUT with no test failures', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const timeoutV2 = makeV2Run('TIMEOUT', []);
+
+    const adapter = new ImportedAdapter(v3Val.data!, [timeoutV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('TIMED OUT')).toBeDefined();
+    });
+    expect(screen.queryByText('ALL PASSED')).toBeNull();
+  });
+
+  it('shows NO TESTS COLLECTED and not STRUCTURE ONLY when imported V2 run has NO_TESTS outcome', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const noTestsV2 = makeV2Run('NO_TESTS', []);
+
+    const adapter = new ImportedAdapter(v3Val.data!, [noTestsV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('NO TESTS COLLECTED')).toBeDefined();
+    });
+    expect(screen.queryByText('STRUCTURE ONLY')).toBeNull();
+    expect(screen.queryByText('ALL PASSED')).toBeNull();
+  });
+
+  it('shows ALL PASSED only when outcome is PASSED and all tests pass', async () => {
+    const v3Val = parseAndValidateV3(v3HpackJson);
+    const passTest = { node_id: 'test_foo.py::test_pass', outcome: 'PASSED', duration_ms: 12 };
+    const passedV2 = makeV2Run('PASSED', [passTest]);
+
+    const adapter = new ImportedAdapter(v3Val.data!, [passedV2]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('ALL PASSED')).toBeDefined();
+    });
+  });
+});
+
+describe('Phase 5 Regression: Header Responsiveness at 1024x700 and 900px', () => {
+  it('renders all essential controls without clipping or overlapping at 1024 and 900px', () => {
+    const sampleRun: RunSummary = {
+      ...FIXTURE_RUNS[0],
+      isRealImport: true,
+      v2RunCount: 2,
+      runOutcome: 'FAILED',
+      stats: { ...FIXTURE_RUNS[0].stats, failed: 1, totalTests: 50 },
+    };
+
+    const { container } = render(
+      <div style={{ width: '1024px' }}>
+        <Header
+          runs={[sampleRun, { ...sampleRun, id: 'run-other' }]}
+          activeRun={sampleRun}
+          activeView="map"
+          onSelectView={vi.fn()}
+          onBackToSelector={vi.fn()}
+          onSelectRun={vi.fn()}
+          failedTestCount={1}
+          errorCount={0}
+          diagnosticsCount={0}
+        />
+      </div>
+    );
+
+    // Verify all key controls are visible in DOM
+    expect(screen.getByText('Projects')).toBeDefined();
+    expect(screen.getByText(sampleRun.project)).toBeDefined();
+    expect(screen.getByText('Imported (2 runs)')).toBeDefined();
+    expect(screen.getByLabelText('Switch active test run')).toBeDefined();
+    expect(screen.getByText('1 FAILED')).toBeDefined();
+    expect(screen.getByText('Project Map')).toBeDefined();
+    expect(screen.getByText('Run Diagnostics')).toBeDefined();
+
+    // Verify header does not force child collision
+    const navBar = container.querySelector('header > div');
+    expect(navBar).toBeDefined();
+    const style = (navBar as HTMLElement).style;
+    expect(style.flexWrap).toBe('wrap');
+  });
+});
+
+describe('Phase 5 Regression: Camera Behavior, Dataset Refit & Selection Readability', () => {
+  const mockNodes: CodeNode[] = [
+    {
+      id: 'file:hpack/hpack.py',
+      name: 'hpack/hpack.py',
+      kind: 'module',
+      file: 'hpack/hpack.py',
+      parentModule: 'hpack',
+      lineStart: 1,
+      lineEnd: 200,
+      changeStatus: 'unchanged',
+    },
+    {
+      id: 'symbol:hpack/hpack.py:Decoder',
+      name: 'Decoder',
+      kind: 'class',
+      file: 'hpack/hpack.py',
+      parentModule: 'hpack',
+      lineStart: 20,
+      lineEnd: 150,
+      changeStatus: 'unchanged',
+    },
+    {
+      id: 'symbol:hpack/hpack.py:decode',
+      name: 'decode',
+      kind: 'function',
+      file: 'hpack/hpack.py',
+      parentModule: 'hpack',
+      lineStart: 50,
+      lineEnd: 90,
+      changeStatus: 'unchanged',
+    },
+    {
+      id: 'file:test_hpack.py',
+      name: 'test_hpack.py',
+      kind: 'module',
+      file: 'test_hpack.py',
+      parentModule: 'test_hpack',
+      lineStart: 1,
+      lineEnd: 100,
+      changeStatus: 'unchanged',
+    },
+    {
+      id: 'test:test_hpack.py::test_decode',
+      name: 'test_decode',
+      kind: 'function',
+      file: 'test_hpack.py',
+      parentModule: 'test_hpack',
+      lineStart: 10,
+      lineEnd: 30,
+      changeStatus: 'unchanged',
+    },
+  ];
+
+  const mockGraphData: GraphData = {
+    nodes: mockNodes,
+    edges: [
+      {
+        id: 'edge:containment:1',
+        source: 'file:hpack/hpack.py',
+        target: 'symbol:hpack/hpack.py:decode',
+        category: 'containment' as any,
+        provenance: 'ast: containment',
+      },
+      {
+        id: 'edge:containment:2',
+        source: 'file:test_hpack.py',
+        target: 'test:test_hpack.py::test_decode',
+        category: 'containment' as any,
+        provenance: 'ast: containment',
+      },
+    ],
+    unresolvedReferences: [],
+    parseErrors: [],
+  };
+
+  const mockTests: TestItem[] = [
+    {
+      id: 'test:test_hpack.py::test_decode',
+      name: 'test_decode',
+      file: 'test_hpack.py',
+      status: 'fail',
+      durationMs: 42,
+      exercisedNodeIds: ['symbol:hpack/hpack.py:decode'],
+      callTracingAvailable: false,
+      rerunHistory: [],
+    },
+  ];
+
+  it('fits all elements on dataset change and retains camera on same-dataset mutations', async () => {
+    let capturedCy: any = null;
+
+    const { rerender } = render(
+      <div style={{ width: '800px', height: '600px' }}>
+        <GraphView
+          graphData={mockGraphData}
+          tests={mockTests}
+          datasetKey="run-1:sha256-aaa"
+          selectedTestId={null}
+          onCyReady={(cy) => {
+            capturedCy = cy;
+          }}
+        />
+      </div>
+    );
+
+    expect(capturedCy).toBeDefined();
+    const fitSpy = vi.spyOn(capturedCy, 'fit');
+    const viewportSpy = vi.spyOn(capturedCy, 'viewport');
+
+    // 1. Same-dataset mutation (e.g. collapse a file cluster): must retain camera, NOT fit
+    rerender(
+      <div style={{ width: '800px', height: '600px' }}>
+        <GraphView
+          graphData={mockGraphData}
+          tests={mockTests}
+          datasetKey="run-1:sha256-aaa"
+          selectedTestId={null}
+          collapsedFiles={new Set(['hpack/hpack.py'])}
+        />
+      </div>
+    );
+
+    expect(viewportSpy).toHaveBeenCalled();
+    expect(fitSpy).not.toHaveBeenCalled();
+
+    // 2. Different dataset identity (datasetKey changes): MUST call fit(cy.elements(), 50)
+    fitSpy.mockClear();
+    rerender(
+      <div style={{ width: '800px', height: '600px' }}>
+        <GraphView
+          graphData={mockGraphData}
+          tests={mockTests}
+          datasetKey="run-2:sha256-bbb"
+          selectedTestId={null}
+        />
+      </div>
+    );
+
+    expect(fitSpy).toHaveBeenCalled();
+  });
+
+  it('centers camera on test and exercised symbols without removing other nodes, and refits on clear', async () => {
+    let capturedCy: any = null;
+
+    const { rerender } = render(
+      <div style={{ width: '800px', height: '600px' }}>
+        <GraphView
+          graphData={mockGraphData}
+          tests={mockTests}
+          datasetKey="run-1:sha256-aaa"
+          selectedTestId={null}
+          onCyReady={(cy) => {
+            capturedCy = cy;
+          }}
+        />
+      </div>
+    );
+
+    expect(capturedCy).toBeDefined();
+    const animateSpy = vi.spyOn(capturedCy, 'animate');
+
+    // Select test
+    rerender(
+      <div style={{ width: '800px', height: '600px' }}>
+        <GraphView
+          graphData={mockGraphData}
+          tests={mockTests}
+          datasetKey="run-1:sha256-aaa"
+          selectedTestId="test:test_hpack.py::test_decode"
+        />
+      </div>
+    );
+
+    // Verify animation triggered with minimum readable zoom (>= 0.95)
+    expect(animateSpy).toHaveBeenCalled();
+    const animateCallArgs: any = animateSpy.mock.calls[0][0];
+    expect(animateCallArgs.zoom).toBeGreaterThanOrEqual(0.95);
+
+    // Verify all graph nodes remain present in Cytoscape (none removed)
+    const allNodeIds = capturedCy.nodes().map((n: any) => n.id());
+    expect(allNodeIds).toContain('test:test_hpack.py::test_decode');
+    expect(allNodeIds).toContain('symbol:hpack/hpack.py:decode');
+    expect(allNodeIds).toContain('symbol:hpack/hpack.py:Decoder'); // unexercised node stays present!
+
+    // Verify unexercised node has dimmed class (labels suppressed)
+    const unexercisedNode = capturedCy.getElementById('symbol:hpack/hpack.py:Decoder');
+    expect(unexercisedNode.hasClass('dimmed')).toBe(true);
+
+    // Clear test selection: must refit graph
+    animateSpy.mockClear();
+    rerender(
+      <div style={{ width: '800px', height: '600px' }}>
+        <GraphView
+          graphData={mockGraphData}
+          tests={mockTests}
+          datasetKey="run-1:sha256-aaa"
+          selectedTestId={null}
+        />
+      </div>
+    );
+
+    expect(animateSpy).toHaveBeenCalled();
+    const clearCallArgs: any = animateSpy.mock.calls[0][0];
+    expect(clearCallArgs.fit).toBeDefined();
   });
 });

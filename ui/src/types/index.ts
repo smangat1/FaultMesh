@@ -1,4 +1,4 @@
-import type { V2ReplayProvenance } from '../import/types';
+import type { V2ReplayProvenance, V2RunOutcome } from '../import/types';
 
 /**
  * FaultMesh UI Types
@@ -194,6 +194,7 @@ export interface RunSummary {
   v2RunCount?: number;
   replayProvenance?: V2ReplayProvenance;
   harnessStatus?: string;
+  runOutcome?: V2RunOutcome;
   exitCode?: number | null;
   harnessError?: string | null;
 }

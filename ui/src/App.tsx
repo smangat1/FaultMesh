@@ -669,7 +669,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
                   <GraphView
                     graphData={graphData}
                     tests={tests}
-                    datasetKey={activeRun?.id}
+                    datasetKey={`${activeRun?.id || 'none'}:${activeRun?.contentSha256 || activeRun?.envelopeHeadSha || 'none'}`}
                     selectedTestId={selectedTestId}
                     onSelectTest={handleSelectTest}
                     selectedNodeId={selectedNodeId}
