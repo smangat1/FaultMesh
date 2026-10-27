@@ -1,0 +1,18 @@
+{
+  "schema_version": "phase2-adjudication-1.0",
+  "context_isolation_canary": "EVALUATOR_ONLY_CANARY_7f04c95b",
+  "cases": {
+    "dev-int-upper": {"expected_oracles": ["result_le_arg"], "adjudication": "pending_independent_review"},
+    "dev-text-length": {"expected_oracles": ["result_length_le_arg"], "adjudication": "pending_independent_review"},
+    "dev-list-multiset": {"expected_oracles": ["result_list_preserves_multiset"], "adjudication": "pending_independent_review"},
+    "dev-list-order": {"expected_oracles": ["result_list_nondecreasing"], "adjudication": "pending_independent_review"},
+    "held-roman-empty": {"expected_oracles": ["no_exception"], "adjudication": "confirmed_source_fix"},
+    "held-merge-sort": {"expected_oracles": ["result_list_nondecreasing"], "adjudication": "confirmed_source_fix"},
+    "held-heap-sort": {"expected_oracles": ["result_list_nondecreasing"], "adjudication": "confirmed_source_fix"},
+    "held-comb-sort": {"expected_oracles": ["result_list_nondecreasing"], "adjudication": "confirmed_source_fix"},
+    "held-text-equal": {"expected_oracles": ["result_length_eq_arg"], "adjudication": "pending_independent_review"},
+    "held-text-at-most": {"expected_oracles": ["result_length_le_arg"], "adjudication": "pending_independent_review"},
+    "held-int-floor": {"expected_oracles": ["result_ge_arg"], "adjudication": "pending_independent_review"},
+    "held-int-between": {"expected_oracles": ["result_between_args"], "adjudication": "pending_independent_review"}
+  }
+}
