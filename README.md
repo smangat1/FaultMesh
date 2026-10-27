@@ -220,6 +220,19 @@ The schema 3.0 structure contract, static-evidence limits, Git comparison behavi
 real-project V3 acceptance are documented in
 [docs/v3-static-structure.md](docs/v3-static-structure.md).
 
+## Try it manually
+
+1. **Terminal 1:** Run `python scripts/spectate_demo_editor.py`. It prints a copy folder path and waits for Enter. Leave it waiting and do not press Enter yet.
+2. Watch that printed copy folder, either way:
+   - **Desktop app:** Run `./run-desktop.sh`, choose the printed copy folder, and start watching.
+   - **Command line:** Open a second terminal (Terminal 1 must stay open and waiting) and run `faultmesh spectate <the printed copy path>`.
+3. Go back to Terminal 1 and press Enter. The edits happen on the copy and events appear in the watcher.
+
+To edit by hand instead, open the same printed copy folder in VS Code (not the repository's `examples/vscode_playground`) while the watcher runs on it.
+
+> [!NOTE]
+> Today on `main`, live spectate streams stable fact records (`spectate-1.0`) such as file changes, diffs, and parse-error retention. Live map binding and code/diff view wiring are not completed until PR #8 lands.
+
 ## Safety
 
 Scanning is non-executing. Verification is a separate phase. Docker is the product default and
