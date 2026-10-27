@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from faultmesh.inference.backends import BackendResult, InferenceBackend
-from faultmesh.schemas import InferenceMetadata, ScoutResponse
+from faultmesh.schemas import InferenceMetadata, ScoutResponse, scout_response_json_schema
 
 
 class InferenceValidationError(RuntimeError):
@@ -44,7 +44,7 @@ class InferenceClient:
         self.max_repair_attempts = max_repair_attempts
 
     def scout(self, prompt: str) -> ValidatedInference:
-        schema: dict[str, Any] = ScoutResponse.model_json_schema()
+        schema: dict[str, Any] = scout_response_json_schema()
         total_latency = 0.0
         latest: BackendResult | None = None
         current_prompt = prompt
@@ -60,6 +60,8 @@ class InferenceClient:
                     break
                 current_prompt = (
                     "Return only corrected JSON conforming to the supplied schema. "
+                    "Preserve every required semantic version field. In particular, typed "
+                    "strategies and typed oracles require property_spec.schema_version \"1.1\". "
                     f"The previous response failed validation: {str(exc)[:1500]}\n"
                     f"Previous response:\n{latest.text[:6000]}"
                 )

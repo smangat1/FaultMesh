@@ -11,11 +11,13 @@ import contextlib
 import hashlib
 import importlib.util
 import io
+import json
 import platform
 import random
 import sys
 import time
 import traceback
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -25,9 +27,20 @@ from hypothesis import strategies as st
 from hypothesis.errors import NoSuchExample, Unsatisfiable
 
 from faultmesh.schemas import (
+    MAX_INTEGER_LIST_LENGTH,
+    MAX_SERIALIZED_INPUT_BYTES,
+    MAX_TEXT_LENGTH,
     ExperimentOutcome,
     ExperimentResult,
+    IntegerListStrategy,
+    IntegerStrategy,
     PropertySpec,
+    ResultBetweenOracle,
+    ResultBoundOracle,
+    ResultLengthOracle,
+    ResultListNondecreasingOracle,
+    ResultListPreservesMultisetOracle,
+    TextStrategy,
     VerificationManifest,
 )
 
@@ -100,16 +113,78 @@ def _preconditions(specification: PropertySpec, arguments: dict[str, Any]) -> bo
     )
 
 
+def _serialized_size(arguments: dict[str, Any]) -> int:
+    return len(
+        json.dumps(arguments, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    )
+
+
+def _value_in_strategy(value: Any, strategy: object) -> bool:
+    if isinstance(strategy, IntegerStrategy):
+        return type(value) is int and strategy.minimum <= value <= strategy.maximum
+    if isinstance(strategy, TextStrategy):
+        return (
+            type(value) is str
+            and strategy.minimum_length <= len(value) <= strategy.maximum_length
+            and all(character in strategy.alphabet for character in value)
+        )
+    if isinstance(strategy, IntegerListStrategy):
+        return (
+            type(value) is list
+            and strategy.minimum_length <= len(value) <= strategy.maximum_length
+            and all(
+                type(item) is int
+                and strategy.element_minimum <= item <= strategy.element_maximum
+                for item in value
+            )
+        )
+    return False
+
+
 def _in_domain(specification: PropertySpec, arguments: dict[str, Any]) -> bool:
     if set(arguments) != {argument.name for argument in specification.arguments}:
         return False
+    if _serialized_size(arguments) > MAX_SERIALIZED_INPUT_BYTES:
+        return False
     for argument in specification.arguments:
-        value = arguments[argument.name]
-        if type(value) is not int:  # bool is an int subclass but not an accepted generated value
-            return False
-        if not argument.strategy.minimum <= value <= argument.strategy.maximum:
+        if not _value_in_strategy(arguments[argument.name], argument.strategy):
             return False
     return _preconditions(specification, arguments)
+
+
+def _bounded_repr(value: Any, *, limit: int = 2_000) -> str:
+    rendered = repr(value)
+    return rendered if len(rendered) <= limit else rendered[:limit] + "…"
+
+
+def _supported_integer_list(value: Any) -> bool:
+    return (
+        type(value) is list
+        and len(value) <= MAX_INTEGER_LIST_LENGTH
+        and all(type(item) is int for item in value)
+        and len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+        <= MAX_SERIALIZED_INPUT_BYTES
+    )
+
+
+def _supported_general_result(value: Any) -> bool:
+    if value is None or type(value) is int:
+        return True
+    if type(value) is str:
+        return len(value) <= MAX_TEXT_LENGTH
+    return _supported_integer_list(value)
+
+
+def _harness_diagnostic(
+    result: Any, expected_type: str
+) -> tuple[bool, ExperimentOutcome, str, str]:
+    return (
+        False,
+        ExperimentOutcome.HARNESS_ERROR,
+        f"unsupported oracle/return-type combination: expected {expected_type}, got "
+        f"{type(result).__name__}",
+        "",
+    )
 
 
 def _evaluate(
@@ -125,15 +200,22 @@ def _evaluate(
         return True, ExperimentOutcome.TARGET_EXCEPTION, observed, trace
     oracle = specification.oracle
     if oracle.kind == "no_exception":
+        if not _supported_general_result(result):
+            return _harness_diagnostic(result, "None, int, bounded str, or bounded list[int]")
         violated = False
         expected = "call completes without an exception"
-    elif oracle.kind == "result_le_arg":
-        violated = not (result <= arguments[oracle.argument])
-        expected = f"result <= {oracle.argument} ({arguments[oracle.argument]!r})"
-    elif oracle.kind == "result_ge_arg":
-        violated = not (result >= arguments[oracle.argument])
-        expected = f"result >= {oracle.argument} ({arguments[oracle.argument]!r})"
-    else:
+    elif isinstance(oracle, ResultBoundOracle):
+        if type(result) is not int:
+            return _harness_diagnostic(result, "int")
+        if oracle.kind == "result_le_arg":
+            violated = not (result <= arguments[oracle.argument])
+            expected = f"result <= {oracle.argument} ({arguments[oracle.argument]!r})"
+        else:
+            violated = not (result >= arguments[oracle.argument])
+            expected = f"result >= {oracle.argument} ({arguments[oracle.argument]!r})"
+    elif isinstance(oracle, ResultBetweenOracle):
+        if type(result) is not int:
+            return _harness_diagnostic(result, "int")
         lower = arguments[oracle.lower_argument]
         upper = arguments[oracle.upper_argument]
         if oracle.inclusive:
@@ -142,7 +224,37 @@ def _evaluate(
         else:
             violated = not (lower < result < upper)
             expected = f"{lower!r} < result < {upper!r}"
-    observed = f"returned {result!r}; expected {expected}"
+    elif isinstance(oracle, ResultLengthOracle):
+        argument = arguments[oracle.argument]
+        if type(argument) is str:
+            if type(result) is not str or len(result) > MAX_TEXT_LENGTH:
+                return _harness_diagnostic(result, "bounded str matching the input strategy")
+        elif type(argument) is list:
+            if not _supported_integer_list(result):
+                return _harness_diagnostic(
+                    result, "bounded list[int] matching the input strategy"
+                )
+        else:  # the schema prevents this; retain a worker-side guard
+            return _harness_diagnostic(result, "length-compatible result")
+        if oracle.kind == "result_length_le_arg":
+            violated = not (len(result) <= len(argument))
+            expected = f"len(result) <= len({oracle.argument}) ({len(argument)!r})"
+        else:
+            violated = len(result) != len(argument)
+            expected = f"len(result) == len({oracle.argument}) ({len(argument)!r})"
+    elif isinstance(oracle, ResultListNondecreasingOracle):
+        if not _supported_integer_list(result):
+            return _harness_diagnostic(result, "bounded list[int]")
+        violated = any(left > right for left, right in zip(result, result[1:], strict=False))
+        expected = "result list is nondecreasing"
+    elif isinstance(oracle, ResultListPreservesMultisetOracle):
+        if not _supported_integer_list(result):
+            return _harness_diagnostic(result, "bounded list[int]")
+        violated = Counter(result) != Counter(arguments[oracle.argument])
+        expected = f"result preserves the multiset of {oracle.argument}, including duplicates"
+    else:  # pragma: no cover - Pydantic's discriminated union is exhaustive
+        return _harness_diagnostic(result, "supported oracle result")
+    observed = f"returned {_bounded_repr(result)}; expected {expected}"
     trace = errors.getvalue() + output.getvalue()
     return violated, ExperimentOutcome.PROPERTY_VIOLATION, observed, trace
 
@@ -159,15 +271,34 @@ def _fingerprint(outcome: ExperimentOutcome, observed: str, specification: Prope
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
 
 
+def _argument_strategy(argument: Any) -> st.SearchStrategy[Any]:
+    strategy = argument.strategy
+    if isinstance(strategy, IntegerStrategy):
+        return st.integers(min_value=strategy.minimum, max_value=strategy.maximum)
+    if isinstance(strategy, TextStrategy):
+        return st.text(
+            alphabet=list(strategy.alphabet),
+            min_size=strategy.minimum_length,
+            max_size=strategy.maximum_length,
+        )
+    if isinstance(strategy, IntegerListStrategy):
+        return st.lists(
+            st.integers(
+                min_value=strategy.element_minimum,
+                max_value=strategy.element_maximum,
+            ),
+            min_size=strategy.minimum_length,
+            max_size=strategy.maximum_length,
+        )
+    raise TypeError(f"unsupported strategy: {type(strategy).__name__}")
+
+
 def _strategy(specification: PropertySpec) -> st.SearchStrategy[dict[str, Any]]:
     fields = {
-        argument.name: st.integers(
-            min_value=argument.strategy.minimum, max_value=argument.strategy.maximum
-        )
-        for argument in specification.arguments
+        argument.name: _argument_strategy(argument) for argument in specification.arguments
     }
     return st.fixed_dictionaries(fields).filter(
-        lambda values: _preconditions(specification, values)
+        lambda values: _in_domain(specification, values)
     )
 
 
@@ -175,14 +306,22 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
     started = time.perf_counter()
     captured_stdout = ""
     captured_stderr = ""
+    diagnostic: tuple[bool, ExperimentOutcome, str, str] | None = None
     try:
         function, import_stdout, import_stderr = _load_function(repository, manifest.property_spec)
         captured_stdout += import_stdout
         captured_stderr += import_stderr
         if manifest.mode == "search":
+            def violates(values: dict[str, Any]) -> bool:
+                nonlocal diagnostic
+                evaluated = _evaluate(function, manifest.property_spec, values)
+                if evaluated[1] == ExperimentOutcome.HARNESS_ERROR and diagnostic is None:
+                    diagnostic = evaluated
+                return evaluated[0]
+
             candidate = find(
                 _strategy(manifest.property_spec),
-                lambda values: _evaluate(function, manifest.property_spec, values)[0],
+                violates,
                 settings=settings(
                     max_examples=manifest.property_spec.max_examples,
                     database=None,
@@ -199,6 +338,22 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
             function, manifest.property_spec, candidate
         )
         captured_stderr += trace
+        if outcome == ExperimentOutcome.HARNESS_ERROR:
+            return ExperimentResult(
+                hypothesis_id=manifest.hypothesis_id,
+                outcome=ExperimentOutcome.HARNESS_ERROR,
+                counterexample=None,
+                observed=observed,
+                expected=manifest.property_spec.oracle_explanation,
+                stdout=captured_stdout,
+                stderr=captured_stderr,
+                duration_ms=(time.perf_counter() - started) * 1000,
+                seed=manifest.property_spec.seed,
+                environment={
+                    "python": platform.python_version(),
+                    "platform": platform.platform(),
+                },
+            )
         if not violated:
             return ExperimentResult(
                 hypothesis_id=manifest.hypothesis_id,
@@ -247,6 +402,21 @@ def execute(repository: Path, manifest: VerificationManifest) -> ExperimentResul
             environment={"python": platform.python_version(), "platform": platform.platform()},
         )
     except (NoSuchExample, Unsatisfiable):
+        if diagnostic is not None:
+            return ExperimentResult(
+                hypothesis_id=manifest.hypothesis_id,
+                outcome=ExperimentOutcome.HARNESS_ERROR,
+                observed=diagnostic[2],
+                expected=manifest.property_spec.oracle_explanation,
+                stdout=captured_stdout,
+                stderr=captured_stderr + diagnostic[3],
+                duration_ms=(time.perf_counter() - started) * 1000,
+                seed=manifest.property_spec.seed,
+                environment={
+                    "python": platform.python_version(),
+                    "platform": platform.platform(),
+                },
+            )
         return ExperimentResult(
             hypothesis_id=manifest.hypothesis_id,
             outcome=ExperimentOutcome.NO_VIOLATION,

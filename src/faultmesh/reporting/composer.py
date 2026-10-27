@@ -46,6 +46,8 @@ FaultMesh observed a stable violation of an explicit property for
 
 Oracle: {hypothesis.property_spec.oracle_explanation}
 
+Contract citation: {hypothesis.property_spec.contract_citation or '(legacy schema 1.0 property)'}
+
 ## Observed behavior
 
 {incident.observed_behavior}

@@ -50,6 +50,7 @@ class AnalysisOptions:
     model_path: Path | None = None
     artifact_directory: Path | None = None
     max_functions: int = 50
+    inference_backend: InferenceBackend | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,8 @@ class AnalysisSummary:
 
 
 def _backend(config: FaultMeshConfig, options: AnalysisOptions) -> InferenceBackend:
+    if options.inference_backend is not None:
+        return options.inference_backend
     model = options.model or config.model
     if model == "heuristic":
         return HeuristicBackend()
@@ -133,6 +136,7 @@ def analyze_repository(
             for function in index.functions
             if not function.is_method
             and not function.is_async
+            and not function.is_generator
             and not function.name.startswith("_")
         ][: options.max_functions]
         for function in functions:
@@ -306,7 +310,7 @@ def _incident(
     incident = Incident(
         investigation_id=hypothesis.investigation_id,
         hypothesis_id=hypothesis.id,
-        title=f"{hypothesis.property_spec.qualified_name} violates its documented boundary",
+        title=f"{hypothesis.property_spec.qualified_name} violates its documented property",
         affected_references=hypothesis.source_references,
         affected_function=hypothesis.property_spec.qualified_name,
         observed_behavior=result.observed,
@@ -327,9 +331,8 @@ def _incident(
         failure_fingerprint=result.failure_fingerprint,
         stack_trace=result.stderr,
         suspected_cause=(
-            f"A boundary comparison or update near {hypothesis.property_spec.target.path}:"
-            f"{hypothesis.property_spec.target.start_line} likely permits a value outside the "
-            "documented bound."
+            f"Behavior near {hypothesis.property_spec.target.path}:"
+            f"{hypothesis.property_spec.target.start_line} may conflict with the cited contract."
         ),
         unresolved_assumptions=[
             "The function docstring is the intended public contract.",

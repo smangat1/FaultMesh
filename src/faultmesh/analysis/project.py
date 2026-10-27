@@ -131,6 +131,9 @@ class _FunctionCollector(ast.NodeVisitor):
                 assertions=assertions,
                 is_method=any(kind == "class" for _, kind in self.scope),
                 is_async=is_async,
+                is_generator=any(
+                    isinstance(child, (ast.Yield, ast.YieldFrom)) for child in ast.walk(node)
+                ),
             )
         )
         self.scope.append((node.name, "function"))
