@@ -25,6 +25,7 @@ import {
   Sparkles,
   FileCode,
   ArrowRightLeft,
+  AlertTriangle,
 } from 'lucide-react';
 import type { AgentPhase, PhaseEvidenceItem } from '../agent/agentSimulation';
 import {
@@ -1166,6 +1167,50 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
 
           {/* Test Body */}
           <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            {/* Stale Coverage Overlay Warning */}
+            {selectedTest.staleCoverage && (
+              <div
+                role="alert"
+                style={{
+                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 12px',
+                  fontSize: '11px',
+                  color: '#fbbf24',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                }}
+              >
+                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong>Stale coverage overlay:</strong> Source file hash or commit revision has changed since pytest was executed.
+                  {selectedTest.staleSymbols && selectedTest.staleSymbols.length > 0 && (
+                    <div style={{ marginTop: '4px', fontSize: '10px', color: '#fde68a' }}>
+                      Stale symbols: {selectedTest.staleSymbols.join(', ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Unmatched Symbols Notice */}
+            {selectedTest.unmatchedCount !== undefined && selectedTest.unmatchedCount > 0 && (
+              <div
+                style={{
+                  backgroundColor: 'rgba(100, 116, 139, 0.12)',
+                  border: '1px solid rgba(100, 116, 139, 0.3)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 12px',
+                  fontSize: '11px',
+                  color: '#94a3b8',
+                }}
+              >
+                <strong>Unmatched dynamic symbols:</strong> {selectedTest.unmatchedCount} symbol{selectedTest.unmatchedCount > 1 ? 's' : ''} executed during pytest could not be matched to static AST symbols.
+              </div>
+            )}
+
             {/* Failure Message & Traceback */}
             {selectedTest.failureMessage && (
               <div
@@ -1235,6 +1280,80 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Failure Fingerprint (SHA-256) */}
+            {selectedTest.failureFingerprint && (
+              <div
+                style={{
+                  backgroundColor: '#0d1117',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                <span style={{ color: 'var(--text-muted)' }}>Failure Fingerprint:</span>
+                <code style={{ color: '#38bdf8' }} title={selectedTest.failureFingerprint}>
+                  {selectedTest.failureFingerprint.slice(0, 16)}…
+                </code>
+              </div>
+            )}
+
+            {/* Pytest Execution Phases */}
+            {selectedTest.phases && selectedTest.phases.length > 0 && (
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 12px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '8px',
+                  }}
+                >
+                  Pytest Execution Phases ({selectedTest.phases.length})
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {selectedTest.phases.map((p, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#111620',
+                        borderRadius: 'var(--radius-sm)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '11px',
+                      }}
+                    >
+                      <span style={{ textTransform: 'capitalize', fontWeight: 500 }}>{p.phase}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className={`badge-status ${p.outcome === 'passed' ? 'pass' : p.outcome === 'failed' ? 'fail' : 'skipped'}`}>
+                          {p.outcome.toUpperCase()}
+                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                          {p.durationMs}ms
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

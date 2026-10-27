@@ -1,3 +1,5 @@
+import type { V2ReplayProvenance } from '../import/types';
+
 /**
  * FaultMesh UI Types
  *
@@ -190,6 +192,7 @@ export interface RunSummary {
   skipCount?: number;
   externalModuleCount?: number;
   v2RunCount?: number;
+  replayProvenance?: V2ReplayProvenance;
 }
 
 export interface TestEvidence {

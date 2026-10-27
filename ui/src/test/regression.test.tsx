@@ -7,7 +7,7 @@ import { TestDetailsPane } from '../components/TestDetailsPane';
 import { GraphView, computeDeterministicPositions } from '../components/GraphView';
 import type { FaultMeshAdapter } from '../adapter';
 import { ImportedAdapter } from '../adapter/importedAdapter';
-import { parseAndValidateV3 } from '../import';
+import { parseAndValidateV3, parseAndValidateV2 } from '../import';
 import type { RunSummary, TestItem, GraphData, CodeNode } from '../types';
 import { FIXTURE_RUNS, FIXTURE_TESTS, FIXTURE_GRAPH } from '../fixtures';
 
@@ -539,7 +539,7 @@ describe('Phase 2 Regression: Real V3 Import, Strict Separation & Responsive Lay
     for (const edge of graph.edges) {
       expect(edge.category).not.toBe('runtime_observed');
       expect(edge.category === 'static_call' || edge.category === 'static_import').toBe(true);
-      expect(edge.stepLabel).toBeUndefined();
+      expect((edge as any).stepLabel).toBeUndefined();
       expect(edge.testIds).toBeUndefined();
     }
 
@@ -577,6 +577,91 @@ describe('Phase 2 Regression: Real V3 Import, Strict Separation & Responsive Lay
 
     await waitFor(() => {
       expect(screen.getAllByText(/hpack-repo/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it('selects a V2 test to highlight executed symbols with no call arrows, and renders phases and failure fingerprint in inspector', async () => {
+    const v2ParentJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-parent.json'), 'utf-8');
+    const v3Res = parseAndValidateV3(v3HpackJson);
+    const v2Res = parseAndValidateV2(v2ParentJson);
+
+    const adapter = new ImportedAdapter(v3Res.data!, [v2Res.data!]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    // Wait for the workspace to load with test items in the sidebar
+    const failedTestItem = await screen.findByTitle('tests/test_faultmesh_injected_failure.py::test_faultmesh_injected_wrong_integer_encoding');
+    expect(failedTestItem).toBeDefined();
+
+    // Select the failed test
+    fireEvent.click(failedTestItem);
+
+    // Verify Inspector opens with test details
+    await waitFor(() => {
+      expect(screen.getByText(/Failure Message/i)).toBeDefined();
+      expect(screen.getByText(/Failure Fingerprint:/i)).toBeDefined();
+      expect(screen.getByText(/Pytest Execution Phases/i)).toBeDefined();
+      expect(screen.getByText(/Coverage only/i)).toBeDefined();
+    });
+
+    // Verify raw failure output text contains assertion mismatch
+    expect(screen.getAllByText(/AssertionError: assert bytearray/i).length).toBeGreaterThan(0);
+
+    // Verify NO runtime call arrows or step badges are in the DOM
+    expect(screen.queryByText(/\[1\]/i)).toBeNull();
+  });
+
+  it('renders Replay Comparison View comparing parent run and replay run side-by-side', async () => {
+    const v2ParentJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-parent.json'), 'utf-8');
+    const v2ReplayJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-replay.json'), 'utf-8');
+
+    const v3Res = parseAndValidateV3(v3HpackJson);
+    const v2ParentRes = parseAndValidateV2(v2ParentJson);
+    const v2ReplayRes = parseAndValidateV2(v2ReplayJson);
+
+    const adapter = new ImportedAdapter(v3Res.data!, [v2ParentRes.data!, v2ReplayRes.data!]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    // Switch to Replay Comparison tab
+    const replayTab = await screen.findByRole('button', { name: /replay comparison/i });
+    expect(replayTab).toBeDefined();
+    fireEvent.click(replayTab);
+
+    // Verify Replay Comparison View is displayed
+    await waitFor(() => {
+      expect(screen.getByText(/Recorded Replay Run Comparison/i)).toBeDefined();
+      expect(screen.getAllByText(/SAME_FAILURE/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Identical Fingerprint Recurred/i)).toBeDefined();
+      expect(screen.getByText(/Raw Bounded Failure Text Output Side-by-Side/i)).toBeDefined();
+      expect(screen.getByText(/Executed in Both Runs/i)).toBeDefined();
+    });
+
+    // Verify Rule 3: strictly no 'diagnosed', 'fixed', or 'verified'
+    expect(screen.queryByText(/diagnosed/i)).toBeNull();
+    expect(screen.queryByText(/verified candidate fix/i)).toBeNull();
+  });
+
+  it('supports run switching via header dropdown and clears stale selection', async () => {
+    const v2ParentJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-parent.json'), 'utf-8');
+    const v2ReplayJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-replay.json'), 'utf-8');
+
+    const v3Res = parseAndValidateV3(v3HpackJson);
+    const v2ParentRes = parseAndValidateV2(v2ParentJson);
+    const v2ReplayRes = parseAndValidateV2(v2ReplayJson);
+
+    const adapter = new ImportedAdapter(v3Res.data!, [v2ParentRes.data!, v2ReplayRes.data!]);
+    render(<App adapter={adapter} initialScreen="workspace" />);
+
+    // Find run switcher select
+    const runSelect = await screen.findByLabelText(/switch active test run/i);
+    expect(runSelect).toBeDefined();
+
+    // Switch to replay run
+    fireEvent.change(runSelect, { target: { value: 'run-9de6b4cb5a58' } });
+
+    // Verify active run switched to replay run
+    await waitFor(() => {
+      expect((runSelect as HTMLSelectElement).value).toBe('run-9de6b4cb5a58');
+      expect(screen.getByText(/Recorded Replay Run/i)).toBeDefined();
     });
   });
 });

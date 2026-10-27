@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { FixtureAdapter } from '../adapter/fixtureAdapter';
 import { HttpAdapter } from '../adapter/httpAdapter';
 import { ImportedAdapter } from '../adapter/importedAdapter';
-import { parseAndValidateV3 } from '../import';
+import { parseAndValidateV3, parseAndValidateV2 } from '../import';
 
 describe('FixtureAdapter', () => {
   const adapter = new FixtureAdapter(0);
@@ -264,5 +264,60 @@ describe('Phase 2: ImportedAdapter (V3 Static Structure Graph)', () => {
     const removedGhostNode = graph.nodes.find((n) => n.isGhost && n.changeStatus === 'removed');
     expect(removedGhostNode).toBeDefined();
     expect(removedGhostNode?.revisionSide).toBe('base');
+  });
+
+  it('supports V2 test evidence, test-coverage mapping, and multiple run switching', async () => {
+    const v2ParentJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-parent.json'), 'utf-8');
+    const v2ReplayJson = fs.readFileSync(path.join(FIXTURES_DIR, 'v2-run-evidence-hpack-replay.json'), 'utf-8');
+
+    const v3Res = parseAndValidateV3(v3HpackJson);
+    const v2ParentRes = parseAndValidateV2(v2ParentJson);
+    const v2ReplayRes = parseAndValidateV2(v2ReplayJson);
+
+    expect(v3Res.success).toBe(true);
+    expect(v2ParentRes.success).toBe(true);
+    expect(v2ReplayRes.success).toBe(true);
+
+    const adapter = new ImportedAdapter(v3Res.data!, [v2ParentRes.data!, v2ReplayRes.data!]);
+    const runs = await adapter.getRuns();
+
+    // Verify 2 runs loaded
+    expect(runs).toHaveLength(2);
+    const parentRun = runs.find((r) => r.id === 'run-1c31adf64626');
+    const replayRun = runs.find((r) => r.id === 'run-9de6b4cb5a58');
+
+    expect(parentRun).toBeDefined();
+    expect(replayRun).toBeDefined();
+
+    // Verify replay provenance on replay run
+    expect(replayRun?.replayProvenance).toBeDefined();
+    expect(replayRun?.replayProvenance?.parent_run_id).toBe('run-1c31adf64626');
+    expect(replayRun?.replayProvenance?.comparison).toBe('SAME_FAILURE');
+    expect(replayRun?.fixtureLabel).toBe('Recorded Replay Run');
+
+    // Tests in parent run
+    const parentTests = await adapter.getTests(parentRun!.id);
+    expect(parentTests).toHaveLength(3);
+    const failedTest = parentTests.find((t) => t.status === 'fail');
+    expect(failedTest).toBeDefined();
+    expect(failedTest?.failureFingerprint).toBe('903afcd3b317b31e4efe2707558e22cb70890c1b774fc9affb093485808eb38e');
+    expect(failedTest?.phases?.length).toBeGreaterThan(0);
+    expect(failedTest?.exercisedNodeIds.length).toBeGreaterThan(0);
+    // Crucial rule: no runtime call edges
+    expect(failedTest?.observedEdgeIds).toHaveLength(0);
+    expect(failedTest?.callTracingAvailable).toBe(false);
+
+    // Tests in replay run
+    const replayTests = await adapter.getTests(replayRun!.id);
+    expect(replayTests).toHaveLength(1);
+    expect(replayTests[0].failureFingerprint).toBe(failedTest?.failureFingerprint);
+
+    // getTestEvidence adheres strictly to Rule 1: executedEdges is EMPTY (no arrows)
+    const evidence = await adapter.getTestEvidence(parentRun!.id, failedTest!.id);
+    expect(evidence).not.toBeNull();
+    expect(evidence?.coveredNodes.length).toBeGreaterThan(0);
+    expect(evidence?.executedEdges).toHaveLength(0);
+    expect(evidence?.callTracingAvailable).toBe(false);
+    expect(evidence?.observationNote).toContain('Static edges remain possibilities, not confirmed calls');
   });
 });

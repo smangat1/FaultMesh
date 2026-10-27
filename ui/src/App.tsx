@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar';
 import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
+import { ReplayComparisonView } from './components/ReplayComparisonView';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
 import {
   AGENT_SIMULATION_STEPS,
@@ -34,7 +35,7 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
   const [activeAdapter, setActiveAdapter] = useState<FaultMeshAdapter>(adapter);
   const [importError, setImportError] = useState<string | null>(null);
   const [currentScreen, setCurrentScreen] = useState<'selector' | 'workspace'>(initialScreen);
-  const [activeView, setActiveView] = useState<'map' | 'diagnostics'>('map');
+  const [activeView, setActiveView] = useState<'map' | 'diagnostics' | 'replay'>('map');
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [tests, setTests] = useState<TestItem[]>([]);
@@ -241,6 +242,17 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
         }
       }
     }
+  };
+
+  const handleSelectRun = (runId: string) => {
+    setActiveRunId(runId);
+    if (activeAdapter instanceof ImportedAdapter) {
+      activeAdapter.setActiveV2Run(runId);
+    }
+    setPinnedSymbols([]);
+    setSelectedNodeId(null);
+    setSelectedFile(null);
+    setSelectedTestId(null);
   };
 
   // File import handler for local V3 and V2 JSON exports
@@ -544,7 +556,9 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
       ) : (
         <>
           <Header
+            runs={runs}
             activeRun={activeRun}
+            onSelectRun={handleSelectRun}
             onBackToSelector={() => setCurrentScreen('selector')}
             activeView={activeView}
             onSelectView={setActiveView}
@@ -587,6 +601,14 @@ export const App: React.FC<AppProps> = ({ adapter = DEFAULT_ADAPTER, initialScre
             {/* Diagnostics View */}
             {activeView === 'diagnostics' ? (
               <RunDiagnosticsPane activeRun={activeRun} graphData={graphData} />
+            ) : activeView === 'replay' ? (
+              <ReplayComparisonView
+                activeRun={activeRun}
+                runs={runs}
+                adapter={activeAdapter}
+                onSelectRun={handleSelectRun}
+                onSelectTest={handleSelectTest}
+              />
             ) : (
               /* Holistic Map Workspace */
               <div

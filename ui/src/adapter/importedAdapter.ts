@@ -79,67 +79,122 @@ export class ImportedAdapter implements FaultMeshAdapter {
     }
   }
 
+  public getV2Run(runId: string): V2RunEvidenceExport | null {
+    return this.v2Runs.get(runId) || null;
+  }
+
   async getRuns(): Promise<RunSummary[]> {
-    const runId = this.v3.envelope.content_sha256.slice(0, 16);
     const gitSymbols = this.v3.git?.symbols || [];
     const modifiedSymbols = gitSymbols.filter((s) => s.status === 'modified').length;
     const addedSymbols = gitSymbols.filter((s) => s.status === 'added').length;
 
-    let totalTests = 0;
-    let passed = 0;
-    let failed = 0;
-    let errored = 0;
-    let skipped = 0;
+    // If no V2 runs imported, provide pure static structure summary
+    if (this.v2Runs.size === 0) {
+      const runId = this.v3.envelope.content_sha256.slice(0, 16);
+      const summary: RunSummary = {
+        id: runId,
+        project: this.v3.envelope.project_name,
+        gitRevision: this.v3.envelope.head_sha || 'uncommitted',
+        gitBranch: this.v3.envelope.head_is_worktree ? 'worktree' : 'HEAD',
+        commitMessage: this.v3.envelope.dirty ? 'Worktree (dirty modifications)' : 'Static structure scan',
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+        durationMs: 0,
+        isFixture: false,
+        fixtureLabel: 'Real V3 Static Structure',
+        isRealImport: true,
+        envelopeHeadSha: this.v3.envelope.head_sha,
+        envelopeBaseSha: this.v3.envelope.base_sha,
+        isWorktree: this.v3.envelope.head_is_worktree,
+        isDirty: this.v3.envelope.dirty,
+        contentSha256: this.v3.envelope.content_sha256,
+        unresolvedCount: this.v3.unresolved.length,
+        parseErrorCount: this.v3.parse_errors.length,
+        skipCount: this.v3.skips.length,
+        externalModuleCount: this.v3.external_modules.length,
+        v2RunCount: 0,
+        stats: {
+          totalTests: 0,
+          passed: 0,
+          failed: 0,
+          errored: 0,
+          skipped: 0,
+          totalNodes: this.v3.files.length + this.v3.symbols.length,
+          codeNodes: this.v3.symbols.length,
+          modifiedNodes: modifiedSymbols,
+          addedNodes: addedSymbols,
+          totalChangedNodes: modifiedSymbols + addedSymbols,
+        },
+        limitations: this.v3.limitations || [],
+      };
+      return [summary];
+    }
 
-    const activeV2 = this.getActiveV2Run();
-    if (activeV2) {
-      totalTests = activeV2.tests.length;
-      for (const t of activeV2.tests) {
+    // Generate a RunSummary for EACH imported V2 run
+    const summaries: RunSummary[] = [];
+    for (const v2 of this.v2Runs.values()) {
+      let passed = 0;
+      let failed = 0;
+      let errored = 0;
+      let skipped = 0;
+
+      for (const t of v2.tests) {
         if (t.outcome === 'PASSED') passed++;
         else if (t.outcome === 'FAILED') failed++;
         else if (t.outcome === 'ERROR') errored++;
         else if (t.outcome === 'SKIPPED') skipped++;
       }
+
+      const isReplay = Boolean(v2.run.replay);
+      const label = isReplay ? 'Recorded Replay Run' : 'Recorded Pytest Run';
+      const commitMsg = isReplay
+        ? `Replay comparison (${v2.run.replay?.comparison || 'SAME_FAILURE'})`
+        : (this.v3.envelope.dirty ? 'Worktree (dirty modifications)' : 'Recorded test evidence');
+
+      summaries.push({
+        id: v2.run.id,
+        project: this.v3.envelope.project_name,
+        gitRevision:
+          v2.source_snapshot?.revision ||
+          v2.run.target?.revision ||
+          this.v3.envelope.head_sha ||
+          'uncommitted',
+        gitBranch: this.v3.envelope.head_is_worktree ? 'worktree' : 'HEAD',
+        commitMessage: commitMsg,
+        status: failed > 0 || errored > 0 ? 'failed' : 'completed',
+        startedAt: v2.run.started_at || new Date().toISOString(),
+        durationMs: v2.run.duration_ms || 0,
+        isFixture: false,
+        fixtureLabel: label,
+        isRealImport: true,
+        replayProvenance: v2.run.replay || undefined,
+        envelopeHeadSha: this.v3.envelope.head_sha,
+        envelopeBaseSha: this.v3.envelope.base_sha,
+        isWorktree: this.v3.envelope.head_is_worktree,
+        isDirty: this.v3.envelope.dirty,
+        contentSha256: this.v3.envelope.content_sha256,
+        unresolvedCount: this.v3.unresolved.length,
+        parseErrorCount: this.v3.parse_errors.length,
+        skipCount: this.v3.skips.length,
+        externalModuleCount: this.v3.external_modules.length,
+        v2RunCount: this.v2Runs.size,
+        stats: {
+          totalTests: v2.tests.length,
+          passed,
+          failed,
+          errored,
+          skipped,
+          totalNodes: this.v3.files.length + this.v3.symbols.length,
+          codeNodes: this.v3.symbols.length,
+          modifiedNodes: modifiedSymbols,
+          addedNodes: addedSymbols,
+          totalChangedNodes: modifiedSymbols + addedSymbols,
+        },
+        limitations: this.v3.limitations || [],
+      });
     }
 
-    const summary: RunSummary = {
-      id: runId,
-      project: this.v3.envelope.project_name,
-      gitRevision: this.v3.envelope.head_sha || 'uncommitted',
-      gitBranch: this.v3.envelope.head_is_worktree ? 'worktree' : 'HEAD',
-      commitMessage: this.v3.envelope.dirty ? 'Worktree (dirty modifications)' : 'Static structure scan',
-      status: failed > 0 || errored > 0 ? 'failed' : 'completed',
-      startedAt: new Date().toISOString(),
-      durationMs: activeV2?.run?.duration_ms || 0,
-      isFixture: false,
-      fixtureLabel: 'Real V3 Static Structure',
-      isRealImport: true,
-      envelopeHeadSha: this.v3.envelope.head_sha,
-      envelopeBaseSha: this.v3.envelope.base_sha,
-      isWorktree: this.v3.envelope.head_is_worktree,
-      isDirty: this.v3.envelope.dirty,
-      contentSha256: this.v3.envelope.content_sha256,
-      unresolvedCount: this.v3.unresolved.length,
-      parseErrorCount: this.v3.parse_errors.length,
-      skipCount: this.v3.skips.length,
-      externalModuleCount: this.v3.external_modules.length,
-      v2RunCount: this.v2Runs.size,
-      stats: {
-        totalTests,
-        passed,
-        failed,
-        errored,
-        skipped,
-        totalNodes: this.v3.files.length + this.v3.symbols.length,
-        codeNodes: this.v3.symbols.length,
-        modifiedNodes: modifiedSymbols,
-        addedNodes: addedSymbols,
-        totalChangedNodes: modifiedSymbols + addedSymbols,
-      },
-      limitations: this.v3.limitations || [],
-    };
-
-    return [summary];
+    return summaries;
   }
 
   async getRun(runId: string): Promise<RunSummary | null> {
@@ -147,14 +202,20 @@ export class ImportedAdapter implements FaultMeshAdapter {
     return runs.find((r) => r.id === runId) || null;
   }
 
-  async getTests(_runId: string): Promise<TestItem[]> {
-    const activeV2 = this.getActiveV2Run();
-    if (!activeV2) return [];
+  async getTests(runId?: string): Promise<TestItem[]> {
+    let targetV2 = this.getActiveV2Run();
+    if (runId && this.v2Runs.has(runId)) {
+      targetV2 = this.v2Runs.get(runId)!;
+    }
+    if (!targetV2) return [];
 
-    const overlay = this.coverageOverlay;
+    const overlay =
+      this.coverageOverlay && this.activeV2RunId === targetV2.run.id
+        ? this.coverageOverlay
+        : joinV2CoverageToV3(this.v3, targetV2);
     const testItems: TestItem[] = [];
 
-    for (const testCase of activeV2.tests) {
+    for (const testCase of targetV2.tests) {
       // Find all structure symbol IDs exercised by this test in the overlay
       const matchingEntries = overlay
         ? overlay.entries.filter((e) => e.test_id === testCase.node_id)
@@ -173,7 +234,7 @@ export class ImportedAdapter implements FaultMeshAdapter {
       else if (testCase.outcome === 'ERROR') status = 'error';
       else if (testCase.outcome === 'SKIPPED') status = 'skipped';
 
-      const phases = (testCase.phases || []).map((p) => ({
+      const phases = (testCase.phases || []).map((p: any) => ({
         phase: p.phase,
         outcome: p.outcome,
         durationMs: p.duration_ms,

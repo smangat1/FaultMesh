@@ -7,6 +7,7 @@ import {
   Layers,
   GitBranch,
   FolderOpen,
+  RotateCcw,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -14,8 +15,8 @@ interface HeaderProps {
   activeRun: RunSummary | null;
   onSelectRun?: (runId: string) => void;
   onBackToSelector?: () => void;
-  activeView: 'map' | 'diagnostics';
-  onSelectView: (view: 'map' | 'diagnostics') => void;
+  activeView: 'map' | 'diagnostics' | 'replay';
+  onSelectView: (view: 'map' | 'diagnostics' | 'replay') => void;
   failedTestCount?: number;
   errorCount?: number;
   diagnosticsCount?: number;
@@ -23,7 +24,9 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  runs = [],
   activeRun,
+  onSelectRun,
   onBackToSelector,
   activeView,
   onSelectView,
@@ -172,6 +175,35 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
+          {/* Multiple Runs Switcher */}
+          {runs.length > 1 && onSelectRun && activeRun && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <select
+                value={activeRun.id}
+                onChange={(e) => onSelectRun(e.target.value)}
+                style={{
+                  backgroundColor: '#0f172a',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  color: '#38bdf8',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '2px 6px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+                aria-label="Switch active test run"
+                title="Switch active test run evidence"
+              >
+                {runs.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.id.slice(0, 14)} ({r.fixtureLabel || r.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Outcome Summary Pill: Never show green COMPLETED when tests failed! */}
           {activeRun && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
@@ -311,6 +343,23 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               )}
             </button>
+
+            {(activeRun?.replayProvenance || runs.some((r) => r.replayProvenance)) && (
+              <button
+                onClick={() => onSelectView('replay')}
+                className={activeView === 'replay' ? 'btn-secondary' : 'btn-ghost'}
+                style={{
+                  padding: '3px 10px',
+                  fontSize: '11px',
+                  fontWeight: activeView === 'replay' ? 600 : 400,
+                  backgroundColor: activeView === 'replay' ? 'var(--bg-active)' : 'transparent',
+                }}
+                aria-current={activeView === 'replay' ? 'page' : undefined}
+              >
+                <RotateCcw size={12} />
+                Replay Comparison
+              </button>
+            )}
           </nav>
         </div>
       </div>
