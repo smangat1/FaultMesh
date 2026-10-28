@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { formatDurationMs } from '../utils/format';
+import { disambiguateFileNames, getFileFolder } from '../utils/nestedPaths';
 
 export interface SidebarProps {
   tests: TestItem[];
@@ -35,6 +36,7 @@ export interface SidebarProps {
   onSelectNode?: (nodeId: string | null) => void;
   viewMode?: 'structure' | 'changes' | 'tests' | 'investigation';
   isRealImport?: boolean;
+  isLive?: boolean;
   harnessError?: string | null;
 }
 
@@ -56,6 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectNode,
   viewMode = 'structure',
   isRealImport = false,
+  isLive = false,
   harnessError = null,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -72,6 +75,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Compute file clusters if not explicitly passed
   const fileClusters = useMemo(() => {
     if (files.length > 0) return files;
+    const filePaths = Array.from(new Set(nodes.map((n) => n.file)));
+    const disambiguated = disambiguateFileNames(filePaths);
     const map = new Map<string, { count: number; changeStatus: CodeNode['changeStatus'] }>();
     nodes.forEach((n) => {
       const existing = map.get(n.file) || { count: 0, changeStatus: 'unchanged' };
@@ -84,7 +89,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     });
     return Array.from(map.entries()).map(([file, info]) => ({
       file,
-      name: file.split('/').pop() || file,
+      name: disambiguated.get(file) || file.split('/').pop() || file,
+      folder: getFileFolder(file),
       symbolCount: info.count,
       changeStatus: info.changeStatus,
       lineCount: 100,
@@ -243,6 +249,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }
 
   const renderTestsSection = () => {
+    if (isLive && tests.length === 0) return null;
     const isHarnessFailed = Boolean(harnessError);
 
     return (
@@ -457,8 +464,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     );
   };
 
-  const renderShortlistSection = () => (
-    <section style={{ borderBottom: '1px solid var(--border-default)' }}>
+  const renderShortlistSection = () => {
+    if (isLive && pinnedSymbols.length === 0) return null;
+
+    return (
+      <section style={{ borderBottom: '1px solid var(--border-default)' }}>
       <div
         style={{
           padding: '8px 12px',
@@ -582,7 +592,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
     </section>
-  );
+    );
+  };
 
   const renderFilesSection = () => (
     <section style={{ flex: 1 }}>

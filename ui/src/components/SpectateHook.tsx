@@ -7,11 +7,12 @@ import '../styles/spectate.css';
 export interface SpectateHookProps {
   onLiveStateChange?: (state: LiveSpectateState) => void;
   controller?: SpectateController;
+  hideBanner?: boolean;
 }
 
 const shortHash = (value: string | null): string => (value ? value.slice(0, 10) : 'deleted');
 
-export const SpectateHook: React.FC<SpectateHookProps> = ({ onLiveStateChange, controller }) => {
+export const SpectateHook: React.FC<SpectateHookProps> = ({ onLiveStateChange, controller, hideBanner = false }) => {
   const localController = useLiveSpectate({ onLiveStateChange });
   const active = controller ?? localController;
   const {
@@ -63,7 +64,7 @@ export const SpectateHook: React.FC<SpectateHookProps> = ({ onLiveStateChange, c
 
       {statusNote && <div className="spectate-status-note">{statusNote}</div>}
 
-      {bannerPath && (
+      {!hideBanner && bannerPath && (
         <div className="spectate-banner" role="status">
           <span>Code changing in <strong>{bannerPath}</strong></span>
           <button
