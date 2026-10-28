@@ -27,6 +27,7 @@ interface HeaderProps {
   errorCount?: number;
   diagnosticsCount?: number;
   onOpenFiles?: (files: FileList | File[]) => void;
+  liveWatchingStatus?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -41,6 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   errorCount = 0,
   diagnosticsCount = 0,
   onOpenFiles,
+  liveWatchingStatus,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMacDesktop =
@@ -183,7 +185,7 @@ export const Header: React.FC<HeaderProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
+                gap: '8px',
                 fontSize: '12px',
                 fontFamily: 'var(--font-mono)',
                 color: '#f8fafc',
@@ -191,6 +193,21 @@ export const Header: React.FC<HeaderProps> = ({
               }}
             >
               <span style={{ fontWeight: 600 }}>{activeRun.project}</span>
+              {liveWatchingStatus && (
+                <span
+                  data-testid="header-watching-status"
+                  style={{
+                    fontSize: '11px',
+                    color: '#94a3b8',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '4px',
+                    padding: '1px 6px',
+                  }}
+                >
+                  {liveWatchingStatus}
+                </span>
+              )}
             </div>
           )}
 

@@ -18,6 +18,7 @@ import { LiveChangesView } from './components/LiveChangesView';
 import { LiveMapDrawers } from './components/LiveMapDrawers';
 import { useLiveSpectate } from './spectate/useLiveSpectate';
 import { isDemoMode } from './utils/demo';
+import { formatWatchingStatus } from './utils/nestedPaths';
 import {
   AGENT_SIMULATION_STEPS,
   AGENT_ORIGINAL_SNIPPET,
@@ -770,6 +771,7 @@ export const App: React.FC<AppProps> = ({
             errorCount={errorCount}
             diagnosticsCount={diagnosticsCount}
             onOpenFiles={handleImportFiles}
+            liveWatchingStatus={activeRun?.isLive ? formatWatchingStatus(liveSpectateState.files) : undefined}
           />
 
           <main
