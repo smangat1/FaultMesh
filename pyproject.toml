@@ -30,6 +30,13 @@ faultmesh = "faultmesh.cli.app:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/faultmesh"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"benchmarks/replay/freeze-lock-v1.json" = "faultmesh/replay/evaluation_assets/freeze-lock-v1.json"
+"benchmarks/replay/label-rubric-v1.json" = "faultmesh/replay/evaluation_assets/label-rubric-v1.json"
+"benchmarks/replay/metrics-v1.py" = "faultmesh/replay/evaluation_assets/metrics-v1.py"
+"benchmarks/replay/protocol-v1.json" = "faultmesh/replay/evaluation_assets/protocol-v1.json"
+"benchmarks/replay/split-manifest-v1.json" = "faultmesh/replay/evaluation_assets/split-manifest-v1.json"
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]

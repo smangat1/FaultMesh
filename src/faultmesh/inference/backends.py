@@ -40,11 +40,13 @@ class LlamaCppServerBackend:
         model: str = "local-model",
         *,
         timeout_seconds: int = 120,
+        max_output_tokens: int = 2_048,
         allow_remote_endpoint: bool = False,
     ) -> None:
         self.endpoint = endpoint
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.max_output_tokens = max_output_tokens
         if not allow_remote_endpoint and not any(
             endpoint.startswith(prefix)
             for prefix in ("http://127.0.0.1:", "http://localhost:", "http://[::1]:")
@@ -56,6 +58,7 @@ class LlamaCppServerBackend:
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
+            "max_tokens": self.max_output_tokens,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "scout_response", "schema": json_schema},
@@ -100,11 +103,13 @@ class LlamaCppCliBackend:
         *,
         timeout_seconds: int = 120,
         context_size: int = 8192,
+        max_output_tokens: int = 2_048,
     ) -> None:
         self.executable = executable
         self.model_path = model_path.resolve()
         self.timeout_seconds = timeout_seconds
         self.context_size = context_size
+        self.max_output_tokens = max_output_tokens
 
     def generate(self, prompt: str, json_schema: dict[str, Any]) -> BackendResult:
         if not self.model_path.is_file():
@@ -116,7 +121,7 @@ class LlamaCppCliBackend:
             "--prompt",
             prompt,
             "--n-predict",
-            "2048",
+            str(self.max_output_tokens),
             "--ctx-size",
             str(self.context_size),
             "--temp",

@@ -1,0 +1,29 @@
+{
+  "schema_version": "replay-label-rubric-1.0",
+  "claim_truth": ["true", "false", "unknowable"],
+  "claim_fields": [
+    "canonical_predicate",
+    "canonical_arguments",
+    "truth",
+    "relevant",
+    "evidence_refs",
+    "reviewer_id",
+    "review_notes"
+  ],
+  "reason_fields": [
+    "quote_exists_exactly",
+    "quote_relevant",
+    "inference_plausible",
+    "uncertainty",
+    "reviewer_id"
+  ],
+  "chapter_fields": [
+    "boundary_after_sequence",
+    "title_faithful",
+    "title_useful",
+    "reviewer_id"
+  ],
+  "independence": "Labels are made from complete captured source evidence, without checker verdicts or model grades.",
+  "contradiction_policy": "False requires complete applicable contrary evidence; otherwise use unknowable.",
+  "review_policy": "Sam reviews a manageable frozen set; a second reviewer subset is reported separately when available."
+}

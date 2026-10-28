@@ -1,0 +1,49 @@
+{
+  "schema_version": "replay-narration-examples-1.0",
+  "sanitized": true,
+  "examples": [
+    {
+      "kind": "checked_claim",
+      "claim_id": "claim-valid-file-change",
+      "claim": "value.py changed from hash-a to hash-b",
+      "verdict": "supported",
+      "reason_code": "exact_file_fact",
+      "final_source": "first",
+      "final_claim_persisted": true
+    },
+    {
+      "kind": "checked_claim",
+      "claim": "missing.py changed",
+      "verdict": "contradicted",
+      "reason_code": "complete_path_absence"
+    },
+    {
+      "kind": "checked_claim",
+      "claim": "pytest reported 10 passing tests",
+      "verdict": "unsupported_or_unknown",
+      "reason_code": "structured_test_report_unavailable"
+    },
+    {
+      "kind": "likely_reason",
+      "label": "likely reason (model inference)",
+      "citation_status": "valid",
+      "entailment_status": "not_deterministically_assessed",
+      "verified_intent": false
+    },
+    {
+      "kind": "model_failure",
+      "error": "timeout",
+      "fallback": "deterministic templates",
+      "final_source": "deterministic_fallback",
+      "final_claim_batch_persisted": true,
+      "recording_blocked": false
+    },
+    {
+      "kind": "summary_mapping",
+      "text": "Everything is secure and all tests passed.",
+      "canonical_mapping_valid": false,
+      "atomic_boundary_valid": true,
+      "display_status": "not_supported_by_this_recording"
+    }
+  ]
+}
