@@ -1,0 +1,12 @@
+{
+  "schema_version": "phase2-invalidation-1.0",
+  "run": "development-run-1",
+  "status": "invalidated_before_heldout",
+  "preserved_raw": "development-run-1-invalidated.ndjson.gz",
+  "reasons": [
+    "The specialized JSON schema bounded argument array length but did not require the discriminating strategy kind, allowing schema-constrained output that the runtime validator rejected syntactically.",
+    "Physical reuse was recorded, but the aggregate did not yet include separate logically charged property/evaluation counts for fair per-configuration comparison."
+  ],
+  "fix_commit": "0035a87",
+  "heldout_exposure": "No held-out target was indexed, prompted, inferred, or verified before this invalidation."
+}

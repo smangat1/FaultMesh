@@ -1,0 +1,43 @@
+{
+  "schema_version": "phase2-prompt-lock-1.0",
+  "frozen_after_development_run": "phase-2-development",
+  "faultmesh_commit": "0035a87",
+  "files": {
+    "src/faultmesh/agents/scout.py": "9ac13c9610e173689d0cc0c605d3e4db7e1cadc1065b3f5fd22335c428cebf2b",
+    "src/faultmesh/agents/examples.py": "4138424dded1feee64a6a0d3c4df63fac2791dc1487919759ff17b7591c655f3",
+    "src/faultmesh/schemas.py": "e1e9629940fce8a06b8699bd0387f1201e2544f53c6b34b848a8c55cf6ae6279",
+    "src/faultmesh/proposal_quality.py": "2fa9c251ffd0e2c1f6c1b838f3922251eee0003dba6d941507670f743d42ead7"
+  },
+  "development_artifacts": {
+    "phase-2-development.ndjson": "09715b0ba9be31118a1e984af8912d4a8afa8acd943120980a6748d0e4406755",
+    "phase-2-development.summary.json": "8bc87b56ad4fde603a547dac3e66f486b445f1c18780d602527c03d05dc36144"
+  },
+  "budget_rule": "max_model_calls=2 is shared by initial generation, JSON repair, and semantic retry; max_repairs=2 is subordinate and cannot create a third call",
+  "development_prompt_sha256": {
+    "dev-int-upper": {
+      "current-main": ["59f784452c844336913f314c73d2b06ea5e9d5dae79cd9dcfa09177cc1da0d1f"],
+      "a": ["a48d0e960a6e26b43a3bf0f6c65fb652da459dc183f3406822269b1ef4b56dd3"],
+      "ab": ["fbb69835ed3b847fccc5557f860e2346caca5b0d065990bcb0309d3d912579da"],
+      "abc": ["fbb69835ed3b847fccc5557f860e2346caca5b0d065990bcb0309d3d912579da", "3a78407af957bde36658aa7e4609812520a97c1d19a592f4fd67aca5bc7aea1e"]
+    },
+    "dev-text-length": {
+      "current-main": ["f481bbab9772480f7dc4a659b796af6ed18b7ca9c1fc1fb2093ffbdb2b46b03a"],
+      "a": ["2b06fbfececc7559c2219fecbbe2b6efe58f546ec3bf41848181f5d756025b1e"],
+      "ab": ["5c30055e1671eb404269ee424e1594a94683b5c69e93f628c135d88774e56fb0"],
+      "abc": ["5c30055e1671eb404269ee424e1594a94683b5c69e93f628c135d88774e56fb0"]
+    },
+    "dev-list-multiset": {
+      "current-main": ["423ab279d50ba423ac9ba0bedabde914d381c5a7d8a7b8df571b749b6ea02e62"],
+      "a": ["cce3ab5d9209113a58526f4fc309fb3c18660abef01fe983ece3738f0343b731"],
+      "ab": ["d40404438276a3628b135904f1b6b33fc95a19cddc9915714d2b7adb4ae1d38a"],
+      "abc": ["d40404438276a3628b135904f1b6b33fc95a19cddc9915714d2b7adb4ae1d38a", "7a12ff336af8bc51834070e0aedd965f2990793430cb0149c6550a388ca10f50"]
+    },
+    "dev-list-order": {
+      "current-main": ["2ae4bb69d005563c8390c9785ba4576df15553e28dbd5a128e82d8df2c69afa3"],
+      "a": ["6ca22af4b703ee6a2045ab08d770173383dd7e14f147b12ab790a5331b285dcf"],
+      "ab": ["10b6ff9035b3f99444a2524f4b8e2ec008dbe8523299c70f05c8eb2340177c3c"],
+      "abc": ["10b6ff9035b3f99444a2524f4b8e2ec008dbe8523299c70f05c8eb2340177c3c"]
+    }
+  },
+  "note": "Held-out prompts include target-specific evidence and therefore have different hashes. This lock freezes their generating code and settings before the one held-out run."
+}

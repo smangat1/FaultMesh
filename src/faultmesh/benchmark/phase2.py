@@ -196,6 +196,8 @@ class _VerificationCacheEntry:
 def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
     lock, cases, budgets = _load_and_validate_lock(options)
     repository = options.manifest.resolve().parents[1]
+    if options.split in {"heldout", "all"}:
+        _validate_prompt_lock(repository)
     raw_out = options.raw_out.resolve()
     raw_out.parent.mkdir(parents=True, exist_ok=True)
     model_path = _resolve_model(options, repository, lock)
@@ -917,6 +919,17 @@ def _verify_hash(path: Path, expected: str) -> None:
     actual = hashlib.sha256(path.read_bytes()).hexdigest()
     if actual != expected:
         raise ValueError(f"content hash mismatch for {path}: {actual} != {expected}")
+
+
+def _validate_prompt_lock(repository: Path) -> None:
+    path = repository / "benchmarks/phase2-prompt-lock.json"
+    if not path.is_file():
+        raise FileNotFoundError("held-out execution requires benchmarks/phase2-prompt-lock.json")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "phase2-prompt-lock-1.0":
+        raise ValueError("unsupported phase-2 prompt lock")
+    for relative, expected in payload["files"].items():
+        _verify_hash(repository / relative, expected)
 
 
 def _variant_literal(value: str) -> Variant:
