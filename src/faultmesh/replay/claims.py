@@ -8,7 +8,7 @@ import json
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from faultmesh.inference.backends import BackendResult, InferenceBackend
 from faultmesh.replay.models import ReplayExport, TestCounts
@@ -160,6 +160,13 @@ class ClaimBatch(StrictModel):
     schema_version: Literal["replay-claims-1.0"] = "replay-claims-1.0"
     claims: list[TypedClaim]
 
+    @model_validator(mode="after")
+    def unique_claim_ids(self) -> ClaimBatch:
+        ids = [claim.id for claim in self.claims]
+        if len(ids) != len(set(ids)):
+            raise ValueError("claim IDs must be unique within one batch")
+        return self
+
 
 class ClaimVerdict(StrictModel):
     claim_id: str
@@ -181,12 +188,77 @@ class ClaimRunRecord(StrictModel):
     raw_repaired_output: str | None = None
     parsed_repaired_claims: ClaimBatch | None = None
     repair_error: str | None = None
+    final_claims: ClaimBatch
+    final_source: Literal["first", "repaired", "deterministic_fallback"]
     verdicts: list[ClaimVerdict]
     fallback_used: bool
     repair_attempts: int = Field(default=0, ge=0, le=1)
     backend: str | None = None
     model: str | None = None
     latency_ms: float = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def one_to_one_final_claim_verdicts(self) -> ClaimRunRecord:
+        claim_ids = [claim.id for claim in self.final_claims.claims]
+        verdict_ids = [verdict.claim_id for verdict in self.verdicts]
+        if len(verdict_ids) != len(set(verdict_ids)):
+            raise ValueError("verdict claim IDs must be unique")
+        if set(claim_ids) != set(verdict_ids) or len(claim_ids) != len(verdict_ids):
+            raise ValueError("final claims and verdicts must have a one-to-one ID mapping")
+        if self.final_source == "first" and self.parsed_first_claims != self.final_claims:
+            raise ValueError("first final source must preserve the parsed first ClaimBatch")
+        if self.final_source == "repaired" and self.parsed_repaired_claims != self.final_claims:
+            raise ValueError("repaired final source must preserve the parsed repaired ClaimBatch")
+        if self.final_source == "deterministic_fallback" and not self.fallback_used:
+            raise ValueError("deterministic fallback source requires fallback_used")
+        return self
+
+
+class RenderedCheckedClaim(StrictModel):
+    claim_id: str
+    canonical_text: str
+    claim: TypedClaim
+    verdict: ClaimVerdict
+
+
+def render_atomic_assertion(assertion: AtomicAssertion) -> str:
+    """Render one typed assertion canonically; free-form claim text is never used."""
+    if isinstance(assertion, FileChangedAssertion):
+        before = assertion.before_sha256 or "<missing>"
+        after = assertion.after_sha256 or "<missing>"
+        return (
+            f"File {assertion.path} changed from {before} to {after} "
+            f"({assertion.change})."
+        )
+    if isinstance(assertion, FunctionAddedAssertion):
+        return (
+            f"Python function {assertion.qualified_name} was added in {assertion.path}."
+        )
+    if isinstance(assertion, FunctionRemovedAssertion):
+        return (
+            f"Python function {assertion.qualified_name} was removed from {assertion.path}."
+        )
+    if isinstance(assertion, CommandExitAssertion):
+        return f"Command record {assertion.record_id} exited with code {assertion.exit_code}."
+    return (
+        f"Structured pytest report {assertion.test_evidence_id}: "
+        f"passed={assertion.passed}, failed={assertion.failed}, "
+        f"errors={assertion.errors}, skipped={assertion.skipped}."
+    )
+
+
+def render_final_claims(record: ClaimRunRecord) -> list[RenderedCheckedClaim]:
+    """Render an exported run without reconstructing packets or backend facts."""
+    verdict_by_id = {verdict.claim_id: verdict for verdict in record.verdicts}
+    return [
+        RenderedCheckedClaim(
+            claim_id=claim.id,
+            canonical_text=render_atomic_assertion(claim.assertion),
+            claim=claim,
+            verdict=verdict_by_id[claim.id],
+        )
+        for claim in record.final_claims.claims
+    ]
 
 
 def _canonical_hash(value: object) -> str:
@@ -784,6 +856,8 @@ class ClaimNarrator:
                 cache_key=cache_key,
                 evidence_hash=packet.evidence_hash,
                 model_config_id=self.model_config_id,
+                final_claims=selected,
+                final_source="deterministic_fallback",
                 verdicts=[checker.check(packet, claim) for claim in selected.claims],
                 fallback_used=True,
             )
@@ -816,6 +890,13 @@ class ClaimNarrator:
             except (RuntimeError, OSError, ValueError, ValidationError) as exc:
                 repair_error = str(exc)[:2_000]
         selected = parsed_first or parsed_repaired or baseline_claims(packet)
+        final_source: Literal["first", "repaired", "deterministic_fallback"]
+        if parsed_first is not None:
+            final_source = "first"
+        elif parsed_repaired is not None:
+            final_source = "repaired"
+        else:
+            final_source = "deterministic_fallback"
         latency = sum(
             result.latency_ms for result in (first, repaired) if result is not None
         )
@@ -830,6 +911,8 @@ class ClaimNarrator:
             raw_repaired_output=repaired.text if repaired is not None else None,
             parsed_repaired_claims=parsed_repaired,
             repair_error=repair_error,
+            final_claims=selected,
+            final_source=final_source,
             verdicts=[checker.check(packet, claim) for claim in selected.claims],
             fallback_used=parsed_first is None and parsed_repaired is None,
             repair_attempts=1 if repaired is not None else 0,

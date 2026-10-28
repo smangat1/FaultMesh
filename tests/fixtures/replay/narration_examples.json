@@ -4,9 +4,12 @@
   "examples": [
     {
       "kind": "checked_claim",
+      "claim_id": "claim-valid-file-change",
       "claim": "value.py changed from hash-a to hash-b",
       "verdict": "supported",
-      "reason_code": "exact_file_fact"
+      "reason_code": "exact_file_fact",
+      "final_source": "first",
+      "final_claim_persisted": true
     },
     {
       "kind": "checked_claim",
@@ -31,7 +34,16 @@
       "kind": "model_failure",
       "error": "timeout",
       "fallback": "deterministic templates",
+      "final_source": "deterministic_fallback",
+      "final_claim_batch_persisted": true,
       "recording_blocked": false
+    },
+    {
+      "kind": "summary_mapping",
+      "text": "Everything is secure and all tests passed.",
+      "canonical_mapping_valid": false,
+      "atomic_boundary_valid": true,
+      "display_status": "not_supported_by_this_recording"
     }
   ]
 }

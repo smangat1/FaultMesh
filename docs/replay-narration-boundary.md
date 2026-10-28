@@ -25,7 +25,10 @@ wrote X.” It does not reveal hidden reasoning or prove genuine intent, causali
 ## Agent-summary audit
 
 The summary auditor accepts only an exact statement span paired with one of the narrow typed
-predicates checked against the same immutable packet. It renders supported atomic facts,
+predicates checked against the same immutable packet. The span must equal the canonical rendering
+of that atomic predicate; exact substring matching or proximity alone is not a semantic mapping.
+The canonical span must occupy a standalone summary line, so an embedded canonical-looking clause
+inside a compound sentence remains unverified. It renders supported atomic facts,
 contradictions backed by complete contrary evidence, and “not supported by this recording.”
 
 Free text never inherits a supported badge from a nearby filename. Unmapped prose and broad claims

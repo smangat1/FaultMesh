@@ -3,11 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from faultmesh.inference.backends import BackendResult
 from faultmesh.replay.claims import (
     ClaimChecker,
     ClaimNarrator,
     ClaimPredicate,
+    ClaimRunRecord,
     ClaimVerdictName,
     CommandExitAssertion,
     CommandExitFact,
@@ -22,6 +26,7 @@ from faultmesh.replay.claims import (
     StructuredPytestCountsAssertion,
     TypedClaim,
     packet_hash,
+    render_final_claims,
 )
 from faultmesh.replay.models import TestCounts as ReplayTestCounts
 
@@ -348,7 +353,74 @@ def test_invalid_and_adversarial_model_output_is_preserved_then_falls_back() -> 
     assert result.first_error is not None
     assert result.raw_repaired_output is not None
     assert result.fallback_used is True
+    assert result.final_source == "deterministic_fallback"
+    assert result.final_claims.claims
     assert result.repair_attempts == 1
     assert backend.calls == 2
     assert cached == result
     assert all(item.verdict == ClaimVerdictName.SUPPORTED for item in result.verdicts)
+    rendered = render_final_claims(result)
+    assert [item.claim_id for item in rendered] == [
+        claim.id for claim in result.final_claims.claims
+    ]
+    assert all(item.canonical_text for item in rendered)
+
+    broken = result.model_dump(mode="json")
+    broken["verdicts"][0]["claim_id"] = "unlinked-verdict"
+    with pytest.raises(ValidationError, match="one-to-one ID mapping"):
+        ClaimRunRecord.model_validate(broken)
+
+
+@dataclass
+class UnavailableBackend:
+    def generate(self, prompt: str, json_schema: dict[str, Any]) -> BackendResult:
+        del prompt, json_schema
+        raise RuntimeError("local model unavailable")
+
+
+def test_backend_failure_still_persists_renderable_final_claim_batch() -> None:
+    result = ClaimNarrator(UnavailableBackend(), model_config_id="missing").run(_packet())
+    assert result.raw_first_output is None
+    assert result.first_error == "local model unavailable"
+    assert result.parsed_first_claims is None
+    assert result.parsed_repaired_claims is None
+    assert result.final_source == "deterministic_fallback"
+    assert result.fallback_used is True
+    assert len(render_final_claims(result)) == len(result.final_claims.claims)
+
+
+@dataclass
+class RepairingBackend:
+    calls: int = 0
+
+    def generate(self, prompt: str, json_schema: dict[str, Any]) -> BackendResult:
+        del prompt, json_schema
+        self.calls += 1
+        if self.calls == 1:
+            text = "invalid first output"
+        else:
+            text = (
+                '{"schema_version":"replay-claims-1.0","claims":[{'
+                '"id":"repaired-file","assertion":{"predicate":"file_changed",'
+                '"path":"module.py","before_sha256":"'
+                + BEFORE
+                + '","after_sha256":"'
+                + AFTER
+                + '","change":"modified"},"evidence_refs":["file:module.py:after:'
+                + AFTER
+                + '"]}]}'
+            )
+        return BackendResult(text, "test", "repair", "test", 1)
+
+
+def test_successful_repair_is_the_persisted_final_batch() -> None:
+    backend = RepairingBackend()
+    result = ClaimNarrator(backend, model_config_id="repair").run(_packet())
+    assert result.raw_first_output == "invalid first output"
+    assert result.parsed_first_claims is None
+    assert result.raw_repaired_output is not None
+    assert result.parsed_repaired_claims is not None
+    assert result.final_source == "repaired"
+    assert result.final_claims == result.parsed_repaired_claims
+    assert result.fallback_used is False
+    assert render_final_claims(result)[0].verdict.verdict == ClaimVerdictName.SUPPORTED

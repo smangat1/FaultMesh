@@ -298,3 +298,39 @@ Final acceptance on 2026-10-28:
   201 passed, 5 container tests deselected, total coverage 85%.
 - UI files and UI contract types were not changed; UI tests/build were not required.
 - No integration environment beyond the existing non-container suite was required.
+
+## PR #19 review fixes
+
+Status: complete on 2026-10-28; narration remains experimental/default-off.
+
+Fixed:
+
+- summary badges now require both an exact span and exact deterministic canonical rendering of the
+  paired atomic predicate. Security, test-success, intent, performance, completeness, compound and
+  unrelated prose cannot inherit supported or contradicted status from a nearby typed assertion;
+- every `ClaimRunRecord` now persists `final_claims` plus `final_source` for first, repaired or
+  deterministic fallback selection. Unique IDs and one-to-one final-claim/verdict linkage are
+  schema invariants, and independent export consumers can render canonical final claims directly;
+- no-model, unavailable backend, invalid first/failed repair and successful repair paths preserve
+  their actual final batch while keeping raw/parsed first and repair attempts separate;
+- built wheels force-include the exact frozen protocol, lock, rubric, split and metric assets.
+  Installed `replay-evaluate` resolves package resources rather than a source-checkout path.
+
+Frozen evaluation inputs were not altered. The verified lock SHA-256 remains
+`076618f74f93fc190976484588914e774988227612d4817162266af7e6f7eb50`.
+
+Acceptance:
+
+- targeted checker/citation/chapter/evaluation regressions: 26 passed;
+- `ruff check .`: passed;
+- `mypy`: passed for 58 source files;
+- `python -m pytest -m 'not container' --cov=faultmesh --cov-report=term-missing`:
+  205 passed, 5 container tests deselected, total coverage 85%;
+- wheel `faultmesh-0.1.0-py3-none-any.whl` built and installed into an isolated target;
+- from an unrelated working directory, the installed wheel loaded
+  `faultmesh/replay/evaluation_assets`, verified the frozen lock, and produced a schema-valid
+  three-run `PRELIMINARY/UNVALIDATED` report with decision
+  `NO-GO: experimental/default-off`.
+
+Still pending: real held-out recordings, independent human labels, local model comparisons and M2
+8GB latency/memory/load measurements. No UI work was started.

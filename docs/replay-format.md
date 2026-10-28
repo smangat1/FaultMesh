@@ -17,7 +17,15 @@ evidence-linked likely-reason records, summary audits, deterministic baseline ch
 chapters. Print its schema with `faultmesh replay-schema narration-export`. V1 documents remain
 loadable and never require narration.
 
+Every claim run persists the actual selected `final_claims` batch and whether it came from the first
+output, repaired output or deterministic fallback. Claim IDs and verdict IDs must form a one-to-one
+mapping. An offline v2 consumer can render the canonical atomic claims and verdicts without a model,
+packet reconstruction or access to backend facts.
+
 Model-selected facts are checked atomically. A supported predicate does not certify adjacent prose.
+Summary prose receives a fact status only when its exact span equals the deterministic canonical
+rendering of that typed predicate and occupies a standalone summary line. Nearby, embedded,
+compound or unrelated prose remains unverified even when paired with a true or false assertion.
 Likely reasons are always model inferences, and model chapter titles are always interpretations.
 The sanitized UI contract examples are in `tests/fixtures/replay/narration_examples.json`.
 

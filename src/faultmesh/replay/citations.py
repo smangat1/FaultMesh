@@ -15,6 +15,7 @@ from faultmesh.replay.claims import (
     ClaimVerdictName,
     EvidencePacket,
     TypedClaim,
+    render_atomic_assertion,
 )
 from faultmesh.replay.models import ReplayExport
 
@@ -90,6 +91,8 @@ class SummaryStatement(StrictModel):
 class SummaryStatementAudit(StrictModel):
     statement: SummaryStatement
     span_valid: bool
+    canonical_mapping_valid: bool
+    atomic_boundary_valid: bool
     claim_verdict: ClaimVerdict | None = None
     display_status: Literal[
         "supported_recorded_fact",
@@ -109,6 +112,10 @@ class AgentSummaryAudit(StrictModel):
     limitations: list[str] = Field(
         default_factory=lambda: [
             "Only exact statement spans with supported typed predicates are accepted as facts.",
+            "A statement must equal the deterministic canonical rendering of its typed predicate; "
+            "substring proximity cannot establish semantic correspondence.",
+            "A canonical statement must occupy a standalone summary line; embedded clauses in "
+            "compound prose remain unverified.",
             "Unmapped prose and claims about intent, security, performance or completeness "
             "remain unverified.",
         ]
@@ -273,6 +280,26 @@ def audit_agent_summary(
                 SummaryStatementAudit(
                     statement=statement,
                     span_valid=False,
+                    canonical_mapping_valid=False,
+                    atomic_boundary_valid=False,
+                    display_status="not_supported_by_this_recording",
+                )
+            )
+            continue
+        canonical_mapping_valid = (
+            statement.exact_text == render_atomic_assertion(statement.claim.assertion)
+        )
+        atomic_boundary_valid = (
+            (statement.start == 0 or summary_text[statement.start - 1] == "\n")
+            and (statement.end == len(summary_text) or summary_text[statement.end] == "\n")
+        )
+        if not canonical_mapping_valid or not atomic_boundary_valid:
+            audited.append(
+                SummaryStatementAudit(
+                    statement=statement,
+                    span_valid=True,
+                    canonical_mapping_valid=canonical_mapping_valid,
+                    atomic_boundary_valid=atomic_boundary_valid,
                     display_status="not_supported_by_this_recording",
                 )
             )
@@ -293,6 +320,8 @@ def audit_agent_summary(
             SummaryStatementAudit(
                 statement=statement,
                 span_valid=True,
+                canonical_mapping_valid=True,
+                atomic_boundary_valid=True,
                 claim_verdict=verdict,
                 display_status=display,
             )

@@ -6,6 +6,8 @@ import hashlib
 import json
 import math
 from collections import Counter
+from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
@@ -174,12 +176,23 @@ class EvaluationReport(StrictModel):
     limitations: list[str]
 
 
-def verify_protocol_lock(directory: Path) -> str:
-    lock_path = directory / "freeze-lock-v1.json"
+def protocol_asset_root() -> Traversable:
+    """Use wheel resources when installed and the source freeze only during development."""
+    packaged = files("faultmesh.replay").joinpath("evaluation_assets")
+    if packaged.is_dir():
+        return packaged
+    source = Path(__file__).parents[3] / "benchmarks" / "replay"
+    if source.is_dir():
+        return source
+    raise FileNotFoundError("bundled replay evaluation assets are unavailable")
+
+
+def verify_protocol_lock(directory: Traversable) -> str:
+    lock_path = directory.joinpath("freeze-lock-v1.json")
     raw = lock_path.read_bytes()
     lock = json.loads(raw)
     for name, expected in lock["files"].items():
-        actual = hashlib.sha256((directory / name).read_bytes()).hexdigest()
+        actual = hashlib.sha256(directory.joinpath(name).read_bytes()).hexdigest()
         if actual != expected:
             raise ValueError(f"frozen evaluation file hash mismatch: {name}")
     return hashlib.sha256(raw).hexdigest()
@@ -380,8 +393,7 @@ def evaluate(data: EvaluationInput) -> EvaluationReport:
 
 def evaluate_file(input_path: Path, output_path: Path) -> EvaluationReport:
     data = EvaluationInput.model_validate_json(input_path.read_text(encoding="utf-8"))
-    protocol_directory = Path(__file__).parents[3] / "benchmarks" / "replay"
-    actual_lock = verify_protocol_lock(protocol_directory)
+    actual_lock = verify_protocol_lock(protocol_asset_root())
     if data.protocol_lock_sha256 != actual_lock:
         raise ValueError("evaluation input does not reference the current frozen protocol lock")
     report = evaluate(data)

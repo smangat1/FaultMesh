@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from faultmesh.replay.evaluation import (
     EvaluationInput,
     EvaluationReport,
     evaluate,
+    protocol_asset_root,
     verify_protocol_lock,
 )
 
@@ -25,6 +27,7 @@ def test_frozen_protocol_hashes_and_preliminary_synthetic_metrics() -> None:
     root, input_path = _paths()
     data = EvaluationInput.model_validate_json(input_path.read_text(encoding="utf-8"))
     assert data.protocol_lock_sha256 == verify_protocol_lock(root / "benchmarks" / "replay")
+    assert data.protocol_lock_sha256 == verify_protocol_lock(protocol_asset_root())
     report = evaluate(data)
     by_id = {item.run_id: item for item in report.run_metrics}
     assert by_id["synthetic-raw-slm"].false_claims_accepted == 2
@@ -34,6 +37,24 @@ def test_frozen_protocol_hashes_and_preliminary_synthetic_metrics() -> None:
     assert report.status == "PRELIMINARY/UNVALIDATED"
     assert report.decision == "NO-GO: experimental/default-off"
     assert all(item.status == "pending" for item in report.gates)
+
+
+def test_wheel_force_includes_every_locked_asset_without_changing_source_hashes() -> None:
+    root, _input_path = _paths()
+    config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    included = config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    lock = json.loads(
+        (root / "benchmarks" / "replay" / "freeze-lock-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    expected_sources = {f"benchmarks/replay/{name}" for name in lock["files"]}
+    expected_sources.add("benchmarks/replay/freeze-lock-v1.json")
+    assert set(included) == expected_sources
+    assert set(included.values()) == {
+        f"faultmesh/replay/evaluation_assets/{Path(source).name}"
+        for source in expected_sources
+    }
 
 
 def test_zero_accepted_precision_is_undefined_not_perfect() -> None:

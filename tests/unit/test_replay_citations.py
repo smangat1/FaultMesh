@@ -18,6 +18,7 @@ from faultmesh.replay.claims import (
     FileState,
     TypedClaim,
     packet_hash,
+    render_atomic_assertion,
 )
 
 BEFORE = "a" * 64
@@ -190,31 +191,86 @@ def _file_claim(path: str, ref: str, claim_id: str) -> TypedClaim:
 def test_summary_audit_accepts_only_exact_spans_with_supported_predicates() -> None:
     packet = _packet()
     ref = f"file:module.py:after:{AFTER}"
-    summary = "module.py changed. Everything is secure."
+    true_claim = _file_claim("module.py", ref, "true")
+    false_claim = _file_claim("invented.py", ref, "false-atomic")
+    canonical_true = render_atomic_assertion(true_claim.assertion)
+    canonical_false = render_atomic_assertion(false_claim.assertion)
+    security = "Everything is secure and all tests passed."
+    intent_performance = "The agent intended a complete performance improvement."
+    mixed = f"Everything is secure and all tests passed; {canonical_true}"
+    unrelated = "This prose is unrelated to the recorded file change."
+    parts = [
+        canonical_true,
+        security,
+        intent_performance,
+        mixed,
+        unrelated,
+        canonical_false,
+    ]
+    summary = "\n".join(parts)
+
+    def statement(text: str, claim: TypedClaim) -> SummaryStatement:
+        start = summary.index(text)
+        return SummaryStatement(
+            start=start,
+            end=start + len(text),
+            exact_text=text,
+            claim=claim,
+        )
+
     statements = [
+        statement(canonical_true, true_claim),
+        statement(security, true_claim.model_copy(update={"id": "security"})),
+        statement(
+            intent_performance,
+            false_claim.model_copy(update={"id": "intent-performance"}),
+        ),
+        statement(mixed, true_claim.model_copy(update={"id": "mixed-compound"})),
+        SummaryStatement(
+            start=summary.index(mixed) + mixed.index(canonical_true),
+            end=summary.index(mixed) + mixed.index(canonical_true) + len(canonical_true),
+            exact_text=canonical_true,
+            claim=true_claim.model_copy(update={"id": "embedded-canonical-clause"}),
+        ),
+        statement(unrelated, false_claim.model_copy(update={"id": "unrelated"})),
+        statement(canonical_false, false_claim),
         SummaryStatement(
             start=0,
-            end=18,
-            exact_text="module.py changed.",
-            claim=_file_claim("module.py", ref, "true"),
-        ),
-        SummaryStatement(
-            start=19,
-            end=len(summary),
-            exact_text="Everything is secure.",
-            claim=_file_claim("invented.py", ref, "false-positive"),
-        ),
-        SummaryStatement(
-            start=0,
-            end=18,
+            end=len(canonical_true),
             exact_text="altered span text",
-            claim=_file_claim("module.py", ref, "altered-span"),
+            claim=true_claim.model_copy(update={"id": "altered-span"}),
         ),
     ]
     audit = audit_agent_summary(summary, statements, packet)
     assert [item.display_status for item in audit.statements] == [
         "supported_recorded_fact",
+        "not_supported_by_this_recording",
+        "not_supported_by_this_recording",
+        "not_supported_by_this_recording",
+        "not_supported_by_this_recording",
+        "not_supported_by_this_recording",
         "contradicted_by_complete_recording",
         "not_supported_by_this_recording",
     ]
     assert [claim.id for claim in audit.supported_claims] == ["true"]
+    assert [item.canonical_mapping_valid for item in audit.statements] == [
+        True,
+        False,
+        False,
+        False,
+        True,
+        False,
+        True,
+        False,
+    ]
+    assert [item.atomic_boundary_valid for item in audit.statements] == [
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        True,
+        False,
+    ]
+    assert all(item.claim_verdict is None for item in audit.statements[1:6])

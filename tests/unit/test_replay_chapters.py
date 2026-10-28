@@ -15,15 +15,23 @@ from faultmesh.inference.backends import BackendResult
 from faultmesh.replay.chapters import (
     ChapterProposal,
     ChapterProposalBatch,
+    ChapterRunRecord,
     baseline_chapters,
     propose_chapters,
     validate_chapter_proposals,
+)
+from faultmesh.replay.claims import (
+    ClaimNarrator,
+    build_evidence_packet,
+    render_final_claims,
 )
 from faultmesh.replay.models import ReplayExport
 from faultmesh.replay.narration import (
     LocalNarrationWorker,
     ReplayNarrationExport,
     StaleNarrationRequest,
+    StepNarration,
+    build_narration_export,
     build_no_model_narration,
     inventory_local_models,
     load_replay_document,
@@ -133,6 +141,50 @@ def test_no_model_enriched_export_round_trip_and_old_export_compatibility(
     assert loaded_new.schema_version == "replay-export-2.0"
     assert loaded_new.chapter_run.fallback_used is True
     assert all(step.claims.fallback_used for step in loaded_new.narration)
+    assert all(
+        step.claims.final_source == "deterministic_fallback"
+        for step in loaded_new.narration
+    )
+    assert all(
+        len(render_final_claims(step.claims)) == len(step.claims.final_claims.claims)
+        for step in loaded_new.narration
+    )
+
+
+@dataclass
+class FailedModelBackend:
+    def generate(self, prompt: str, json_schema: dict[str, Any]) -> BackendResult:
+        del prompt, json_schema
+        raise RuntimeError("synthetic model failure")
+
+
+def test_error_fallback_final_claims_survive_export_for_independent_consumer(
+    tmp_path: Path,
+) -> None:
+    exported = _export(tmp_path)
+    packet = build_evidence_packet(exported, exported.records[0].sequence)
+    claim_run = ClaimNarrator(FailedModelBackend(), model_config_id="failed").run(packet)
+    enriched = build_narration_export(
+        exported,
+        steps=[
+            StepNarration(
+                sequence=packet.sequence,
+                packet=packet,
+                claims=claim_run,
+            )
+        ],
+        chapter_run=ChapterRunRecord(
+            chapters=baseline_chapters(exported), fallback_used=True
+        ),
+    )
+    output = tmp_path / "fallback.json"
+    output.write_text(enriched.model_dump_json(indent=2), encoding="utf-8")
+    loaded = load_replay_document(output)
+    assert isinstance(loaded, ReplayNarrationExport)
+    exported_run = loaded.narration[0].claims
+    assert exported_run.first_error == "synthetic model failure"
+    assert exported_run.final_source == "deterministic_fallback"
+    assert render_final_claims(exported_run)
 
 
 def test_single_worker_discards_stale_result_and_runs_one_at_a_time() -> None:

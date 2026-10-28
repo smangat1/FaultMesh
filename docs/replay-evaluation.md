@@ -10,6 +10,10 @@ tuned. The frozen inputs are under `benchmarks/replay/`:
 - `split-manifest-v1.json`: whole-run split and reserved held-out run IDs;
 - `metrics-v1.py`: canonical deduplication, one-to-one coverage and undefined-zero precision.
 
+These exact frozen files and their lock are also embedded under
+`faultmesh/replay/evaluation_assets/` in built wheels. `replay-evaluate` resolves package resources
+when installed, so it does not depend on a source checkout or current working directory.
+
 Only the two existing sanitized capture fixtures are development data. The held-out reservations
 contain no recordings or labels. They must not be silently populated from development failures or
 reassigned after tuning.
