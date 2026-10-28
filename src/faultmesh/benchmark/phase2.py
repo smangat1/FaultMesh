@@ -67,6 +67,10 @@ class ActualUse(StrictModel):
     unused_properties: Annotated[int, Field(ge=0)] = 0
     unused_examples: Annotated[int, Field(ge=0)] = 0
     unused_model_calls: Annotated[int, Field(ge=0)] = 0
+    charged_properties: Annotated[int, Field(ge=0)] = 0
+    charged_evaluations: Annotated[int, Field(ge=0)] = 0
+    charged_model_calls: Annotated[int, Field(ge=0)] = 0
+    charged_repairs: Annotated[int, Field(ge=0)] = 0
 
 
 class Timing(StrictModel):
@@ -334,9 +338,21 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
                                 actual.unused_model_calls = max(
                                     0, options.max_model_calls - actual.model_calls
                                 )
+                            actual.charged_properties = cached.actual.properties
+                            actual.charged_evaluations = cached.actual.evaluations
+                            if (
+                                uses_slm
+                                and seed == options.seeds[0]
+                                and variant == "buggy"
+                            ):
+                                actual.charged_model_calls = len(slm_attempts)
+                                actual.charged_repairs = sum(
+                                    attempt.phase == "json_repair"
+                                    for attempt in slm_attempts
+                                )
                             classification = (
                                 "model_error"
-                                if arm in {"slm-only", "combined"} and model_error
+                                if arm == "slm-only" and model_error
                                 else cached.classification
                             )
                             record = Phase2Record(
@@ -817,6 +833,15 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
                 "actual_model_calls": sum(item.actual.model_calls for item in members),
                 "actual_properties": sum(item.actual.properties for item in members),
                 "actual_evaluations": sum(item.actual.evaluations for item in members),
+                "charged_model_calls": sum(
+                    item.actual.charged_model_calls for item in members
+                ),
+                "charged_properties": sum(
+                    item.actual.charged_properties for item in members
+                ),
+                "charged_evaluations": sum(
+                    item.actual.charged_evaluations for item in members
+                ),
                 "latency_ms": {
                     "median": statistics.median(latencies) if latencies else None,
                     "minimum": min(latencies) if latencies else None,
@@ -853,7 +878,7 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
         "",
         f"Split executed: `{options.split}`. This bounded pilot does not measure arbitrary Python.",
         "",
-        "| Budget view | Split | Configuration | Arm | Proposal valid | UNSUPPORTED | Unique adjudicated bugs | False controls | Replay | Calls | Evaluations |",
+        "| Budget view | Split | Configuration | Arm | Proposal valid | UNSUPPORTED | Unique adjudicated bugs | False controls | Replay | Calls physical/charged | Evaluations physical/charged |",
         "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in aggregate["rows"]:
@@ -862,8 +887,8 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
             f"{row['proposal_valid_numerator']}/{row['proposal_valid_denominator']} | "
             f"{row['unsupported_numerator']}/{row['unsupported_denominator']} | "
             f"{row['unique_adjudicated_bugs']} | {row['false_properties_on_controls']} | "
-            f"{row['replay_successes']} | {row['actual_model_calls']} | "
-            f"{row['actual_evaluations']} |"
+            f"{row['replay_successes']} | {row['actual_model_calls']}/{row['charged_model_calls']} | "
+            f"{row['actual_evaluations']}/{row['charged_evaluations']} |"
         )
     lines.extend(
         [

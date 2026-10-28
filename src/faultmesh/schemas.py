@@ -353,6 +353,18 @@ def scout_response_json_schema_for(function: FunctionMetadata) -> dict[str, Any]
     """
 
     schema = copy.deepcopy(scout_response_json_schema())
+    for definition_name in (
+        "IntegerStrategy",
+        "TextStrategy",
+        "IntegerListStrategy",
+        "NoExceptionOracle",
+        "ResultListNondecreasingOracle",
+    ):
+        definition = schema["$defs"][definition_name]
+        definition["properties"]["kind"].pop("default", None)
+        required = definition.setdefault("required", [])
+        if "kind" not in required:
+            required.insert(0, "kind")
     supported = {
         parameter.name: parameter.annotation
         for parameter in function.parameters

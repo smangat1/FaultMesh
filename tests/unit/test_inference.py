@@ -117,6 +117,8 @@ def test_function_schema_specializes_arguments_and_oracles(
     serialized_oracle = json.dumps(property_schema["properties"]["oracle"])
 
     assert property_schema["properties"]["schema_version"]["const"] == "1.1"
+    assert "kind" in schema["$defs"][expected_strategy]["required"]
+    assert "default" not in schema["$defs"][expected_strategy]["properties"]["kind"]
     assert arguments["minItems"] == len(function.parameters)
     assert any(
         item["properties"]["strategy"]["$ref"].endswith(expected_strategy)
