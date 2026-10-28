@@ -321,6 +321,27 @@ button:disabled {
   display: none;
 }
 
+.entrance-card:hover {
+  background-color: rgba(255, 255, 255, 0.045) !important;
+  border-color: rgba(56, 189, 248, 0.35) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.entrance-card:hover .entrance-card-arrow {
+  transform: translateX(4px);
+  color: #f8fafc !important;
+}
+
+.entrance-card:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+.entrance-card:active {
+  transform: translateY(0);
+}
+
 /* Toast animation */
 @keyframes liveToastFadeIn {
   from {
