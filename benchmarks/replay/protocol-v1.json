@@ -1,0 +1,57 @@
+{
+  "schema_version": "replay-evaluation-protocol-1.0",
+  "frozen_at": "2026-10-28T00:00:00Z",
+  "status": "preliminary_unvalidated",
+  "split_unit": "whole_run_and_task_family",
+  "development_policy": "Only fixture IDs listed in split-manifest-v1.json may be used for implementation or tuning.",
+  "held_out_policy": "Reserved held-out IDs may not be opened, relabeled, or reassigned during implementation. Empty reservations mean the final gate is pending.",
+  "model_comparison": {
+    "classes": ["1.5B", "3B", "7B"],
+    "same_packets": true,
+    "same_order": true,
+    "same_context_budget": true,
+    "same_output_budget": true,
+    "one_model_at_a_time": true
+  },
+  "claim_metrics": [
+    "raw_true_generated_over_checkable_generated",
+    "unsupported_unknown_invalid_and_abstention_counts",
+    "verified_true_accepted_over_accepted",
+    "verified_true_accepted_over_relevant_reference_facts",
+    "accepted_over_generated",
+    "zero_accepted_steps",
+    "true_claims_falsely_rejected_or_contradicted",
+    "false_claims_accepted",
+    "false_claims_contradicted",
+    "false_claims_routed_unknown"
+  ],
+  "reason_metrics": [
+    "quote_integrity",
+    "quote_relevance_human_label",
+    "inference_plausibility_human_label"
+  ],
+  "chapter_metrics": {
+    "boundary_f1_tolerance_steps": 1,
+    "blind_title_faithfulness": true,
+    "blind_title_usefulness": true,
+    "find_task_time_and_accuracy": true
+  },
+  "gates": {
+    "held_out_false_supported": 0,
+    "minimum_relevant_fact_coverage": 0.8,
+    "model_induced_recording_stalls": 0,
+    "warm_p95_narration_seconds_max": 10,
+    "recording_load_minutes_min": 30,
+    "chapter_human_outcome_must_improve_over_baseline": true
+  },
+  "reporting_rules": [
+    "Every rate includes numerator, denominator, and sample count.",
+    "Zero accepted claims has undefined precision, never 100 percent.",
+    "Facts are canonicalized, deduplicated, and matched one-to-one.",
+    "First and repaired outputs are reported separately.",
+    "Natural hallucinations and injected adversarial errors are separate strata.",
+    "Synthetic oracle tests validate code but do not establish natural model quality.",
+    "Unreviewed human labels keep the report PRELIMINARY/UNVALIDATED.",
+    "No observed error count is described as universal soundness."
+  ]
+}

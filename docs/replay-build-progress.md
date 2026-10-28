@@ -120,3 +120,47 @@ Known gaps:
 
 Push the reviewed branch and open one draft PR against `main`. Stop with the PR unmerged. Prompt B
 can consume `replay-export-1.0` only after review accepts this capture and replay foundation.
+
+## Prompt B reference point
+
+- Branch: `replay-checked-narration`
+- Fresh `origin/main` base and revert/reference SHA:
+  `131a48bcb6fafdd4523df08427aabf3430b82819`
+- The base is merged Prompt A PR #18 and contains all Phase 0-2 commits.
+- Evaluation protocol, rubric, split manifest and metric rules were frozen and SHA-256 locked under
+  `benchmarks/replay/` before narration prompt or checker tuning. Held-out reservations are empty,
+  so final evaluation remains pending.
+
+## Phase 3A — typed claims and three-way checker
+
+Status: complete.
+
+Implemented:
+
+- bounded immutable evidence packets built only from verified `replay-export-1.0` bytes;
+- atomic typed predicates for file changes, Python function additions/removals, command exits and
+  exact structured pytest counts;
+- explicit function identity by project-relative path plus AST qualified name, with no inferred
+  rename;
+- `supported`, `contradicted` and `unsupported_or_unknown` verdicts with checker version, reason
+  code and evidence references;
+- packet, source session/step, evidence type, hash and completeness checks;
+- deterministic no-model templates and bounded local-model selection with one repair attempt;
+- separate preservation of first raw output, parsed first claims, repaired output, parsed repaired
+  claims and final verdicts;
+- cache identity over evidence, model config, prompt, schema and checker versions;
+- invalid, unavailable or adversarial model output falls back without executing captured text.
+
+Acceptance commands:
+
+- Targeted ruff for the checker, checker tests and frozen metric rules: passed.
+- `mypy`: passed for 54 source files.
+- Checker plus replay store/view/privacy and legacy inference tests: 30 passed.
+- Checker tests cover exact support, complete contradiction, wrong paths/names/hashes/counts,
+  deleted functions, stale ASTs, partial reports, mismatched packet/source step, fabricated refs,
+  invalid JSON and adversarial captured instructions.
+
+## Next step
+
+Phase 3A commit is the next coherent commit. Continue with evidence-linked inference and summary
+audit; a valid citation must never upgrade model inference into verified intent.

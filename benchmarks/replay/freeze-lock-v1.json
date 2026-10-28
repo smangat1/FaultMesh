@@ -1,0 +1,10 @@
+{
+  "schema_version": "replay-evaluation-freeze-1.0",
+  "frozen_at": "2026-10-28T00:00:00Z",
+  "files": {
+    "label-rubric-v1.json": "5493c275b3f26adabb74a13171003e7326ab95628f6cdd58c3ba84632a59876d",
+    "metrics-v1.py": "3cef85e663ee6caaa4be569cd7785414d4663751dbaffd4cb22b28cb9a0415f8",
+    "protocol-v1.json": "56f28a7c2b53110d34c1b858c09a36d08808e1bade3ac70e0c9f7b17f34559cd",
+    "split-manifest-v1.json": "2d930905d20ab9dff1f0244c08ac3b04356736797c9220cb7c2a1330e7af1fae"
+  }
+}

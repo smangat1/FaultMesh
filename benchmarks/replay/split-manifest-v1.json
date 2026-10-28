@@ -1,0 +1,41 @@
+{
+  "schema_version": "replay-evaluation-split-1.0",
+  "frozen_at": "2026-10-28T00:00:00Z",
+  "target": {
+    "short_runs": 20,
+    "atomic_labeled_claims": 200,
+    "python_projects": 3
+  },
+  "development": [
+    {
+      "id": "fixture:capture_initial",
+      "kind": "handcrafted_capture_fixture",
+      "path": "tests/fixtures/replay/capture_initial.json",
+      "sha256": "2ff54e26b6472e6a00903f7204bdf4ba69eed6b88eb806ff9b159e22d649c43b"
+    },
+    {
+      "id": "fixture:capture_sequence",
+      "kind": "handcrafted_capture_fixture",
+      "path": "tests/fixtures/replay/capture_sequence.ndjson",
+      "sha256": "6ceab09411ff72fd6a8cb1ca2430775e14a1cc96da65f851ebe834c08a36e856"
+    }
+  ],
+  "held_out": [],
+  "held_out_reservations": [
+    "heldout:project-a:run-01..run-08",
+    "heldout:project-b:run-01..run-06",
+    "heldout:project-c:run-01..run-06"
+  ],
+  "required_strata": [
+    "failures",
+    "shell_edits",
+    "no_tests",
+    "syntax_errors",
+    "missing_snapshots",
+    "human_or_external_edits",
+    "natural_model_output",
+    "injected_adversarial_claims"
+  ],
+  "freeze_state": "pending_real_runs_and_independent_human_labels",
+  "reassignment_allowed": false
+}
