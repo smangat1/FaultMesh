@@ -6,6 +6,7 @@ import type { AgentPhase, AgentSimulationStep } from '../agent/agentSimulation';
 import { AGENT_SIMULATION_STEPS } from '../agent/agentSimulation';
 import { InvestigationReplayBar } from './InvestigationReplayBar';
 import { StepExplanationPopup } from './StepExplanationPopup';
+import { disambiguateFileNames, getFileFolder } from '../utils/nestedPaths';
 
 export type GraphViewMode = 'structure' | 'changes' | 'tests' | 'investigation';
 
@@ -271,6 +272,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
     if (graphData.files && graphData.files.length > 0) {
       return graphData.files;
     }
+    const filePaths = Array.from(new Set(graphData.nodes.map((n) => n.file)));
+    const disambiguated = disambiguateFileNames(filePaths);
     const fileMap = new Map<string, { count: number; changeStatus: CodeNode['changeStatus'] }>();
     graphData.nodes.forEach((n) => {
       const existing = fileMap.get(n.file) || { count: 0, changeStatus: 'unchanged' };
@@ -283,7 +286,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
     });
     return Array.from(fileMap.entries()).map(([file, info]) => ({
       file,
-      name: file.split('/').pop() || file,
+      name: disambiguated.get(file) || file.split('/').pop() || file,
+      folder: getFileFolder(file),
       symbolCount: info.count,
       changeStatus: info.changeStatus,
       lineCount: 100,
@@ -362,6 +366,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           label: fc.name,
           shortLabel: fc.name,
           file: fc.file,
+          folder: fc.folder || getFileFolder(fc.file),
           isFileCluster: true,
           isCollapsed,
           symbolCount: fc.symbolCount,
@@ -485,12 +490,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
         // Collect immediate neighbors connected to any focus node
         const neighborSet = new Set<string>(focusNodes);
         graphData.edges.forEach((e) => {
-          if (focusNodes.has(e.source) || focusNodes.has(`file:${graphData.nodes.find((n) => n.id === e.source)?.file}`)) {
+          const sNode = graphData.nodes.find((n) => n.id === e.source);
+          const sFile = sNode ? `file:${sNode.file}` : (e.source.startsWith('file:') ? e.source : undefined);
+          if (focusNodes.has(e.source) || (sFile && focusNodes.has(sFile))) {
             neighborSet.add(e.target);
             const targetNode = graphData.nodes.find((n) => n.id === e.target);
             if (targetNode) neighborSet.add(`file:${targetNode.file}`);
           }
-          if (focusNodes.has(e.target) || focusNodes.has(`file:${graphData.nodes.find((n) => n.id === e.target)?.file}`)) {
+          const tNode = graphData.nodes.find((n) => n.id === e.target);
+          const tFile = tNode ? `file:${tNode.file}` : (e.target.startsWith('file:') ? e.target : undefined);
+          if (focusNodes.has(e.target) || (tFile && focusNodes.has(tFile))) {
             neighborSet.add(e.source);
             const sourceNode = graphData.nodes.find((n) => n.id === e.source);
             if (sourceNode) neighborSet.add(`file:${sourceNode.file}`);
@@ -1055,6 +1064,25 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'z-index': 80,
             },
           },
+          // Selected edge styling (cross-folder and call links)
+          {
+            selector: 'edge:selected, edge.selected-edge',
+            style: {
+              'line-color': '#38bdf8',
+              'target-arrow-color': '#38bdf8',
+              width: 2.2,
+              opacity: 1.0,
+              'z-index': 950,
+            },
+          },
+          {
+            selector: 'node.selected-edge-endpoint',
+            style: {
+              'border-color': '#38bdf8',
+              'border-width': 1.8,
+              'z-index': 850,
+            },
+          },
           // Neighbor highlighted on hover
           {
             selector: 'node.neighbor-highlighted',
@@ -1328,11 +1356,54 @@ export const GraphView: React.FC<GraphViewProps> = ({
       // Tap handlers
       cy.on('tap', 'node', (evt: EventObject) => {
         const target = evt.target;
+        cy.edges().removeClass('selected-edge');
+        cy.nodes().removeClass('selected-edge-endpoint');
         if (target.data('isFileCluster')) {
           onSelectFile?.(target.data('file'));
         } else {
           onSelectNode?.(target.id());
         }
+      });
+
+      // Tap on edge to select cross-folder or call link
+      cy.on('tap', 'edge', (evt: EventObject) => {
+        const edge = evt.target;
+        cy.edges().removeClass('selected-edge').unselect();
+        edge.select();
+        edge.addClass('selected-edge');
+
+        cy.nodes().removeClass('selected-edge-endpoint');
+        edge.source().addClass('selected-edge-endpoint');
+        edge.target().addClass('selected-edge-endpoint');
+
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originalEvt = evt.originalEvent as MouseEvent;
+        const x = originalEvt ? originalEvt.clientX - rect.left : rect.width / 2;
+        const y = originalEvt ? originalEvt.clientY - rect.top : rect.height / 2;
+
+        const src = edge.source().data('rawName') || edge.source().data('label') || edge.source().id();
+        const tgt = edge.target().data('rawName') || edge.target().data('label') || edge.target().id();
+        const srcFile = edge.source().data('file') || edge.source().id().replace(/^file:/, '');
+        const tgtFile = edge.target().data('file') || edge.target().id().replace(/^file:/, '');
+        const isCross = getFileFolder(srcFile) !== getFileFolder(tgtFile);
+
+        setHoverTag({
+          x,
+          y,
+          title: `${src} → ${tgt}`,
+          subtitle: isCross ? `Cross-folder link (${srcFile} → ${tgtFile})` : `Call link (${srcFile})`,
+          badge: {
+            text: isCross ? 'CROSS-FOLDER' : 'LINK',
+            color: '#38bdf8',
+            bg: 'rgba(56, 189, 248, 0.15)',
+          },
+          meta: [
+            `From: ${srcFile}`,
+            `To: ${tgtFile}`,
+            'Selected link',
+          ],
+        });
       });
 
       // Double tap on file cluster to toggle expand/collapse
@@ -1356,6 +1427,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
       // Tap on background to deselect
       cy.on('tap', (evt: EventObject) => {
         if (evt.target === cy) {
+          cy.edges().removeClass('selected-edge').unselect();
+          cy.nodes().removeClass('selected-edge-endpoint');
+          setHoverTag(null);
           onSelectNode?.(null);
           onSelectFile?.(null);
         }
@@ -1377,11 +1451,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
         if (target.data('isFileCluster')) {
           const isCollapsed = target.data('isCollapsed');
           const changeStatus = target.data('changeStatus');
+          const folder = target.data('folder');
+          const folderSubtitle = folder && folder !== '.' ? `Folder: ${folder}` : (target.data('role') || 'File Cluster');
           setHoverTag({
             x,
             y,
             title: target.data('file'),
-            subtitle: target.data('role') || 'File Cluster',
+            subtitle: folderSubtitle,
             badge:
               changeStatus !== 'unchanged'
                 ? {

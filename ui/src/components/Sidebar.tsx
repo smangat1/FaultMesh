@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { formatDurationMs } from '../utils/format';
+import { disambiguateFileNames, getFileFolder } from '../utils/nestedPaths';
 
 export interface SidebarProps {
   tests: TestItem[];
@@ -74,6 +75,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Compute file clusters if not explicitly passed
   const fileClusters = useMemo(() => {
     if (files.length > 0) return files;
+    const filePaths = Array.from(new Set(nodes.map((n) => n.file)));
+    const disambiguated = disambiguateFileNames(filePaths);
     const map = new Map<string, { count: number; changeStatus: CodeNode['changeStatus'] }>();
     nodes.forEach((n) => {
       const existing = map.get(n.file) || { count: 0, changeStatus: 'unchanged' };
@@ -86,7 +89,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     });
     return Array.from(map.entries()).map(([file, info]) => ({
       file,
-      name: file.split('/').pop() || file,
+      name: disambiguated.get(file) || file.split('/').pop() || file,
+      folder: getFileFolder(file),
       symbolCount: info.count,
       changeStatus: info.changeStatus,
       lineCount: 100,

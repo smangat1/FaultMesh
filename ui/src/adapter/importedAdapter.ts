@@ -19,6 +19,7 @@ import type {
   V3CoverageOverlay,
 } from '../import';
 import { joinV2CoverageToV3 } from '../import';
+import { disambiguateFileNames, getFileFolder } from '../utils/nestedPaths';
 
 /**
  * ImportedAdapter
@@ -312,6 +313,8 @@ export class ImportedAdapter implements FaultMeshAdapter {
       }
     }
 
+    const disambiguatedNames = disambiguateFileNames(this.v3.files.map((f) => f.path));
+
     const files: FileCluster[] = this.v3.files.map((f) => {
       const gitStatusStr = gitFiles.get(f.path) || (f.removed ? 'deleted' : 'unchanged');
       let changeStatus: ChangeStatus = 'unchanged';
@@ -321,7 +324,8 @@ export class ImportedAdapter implements FaultMeshAdapter {
 
       return {
         file: f.path,
-        name: f.path.split('/').pop() || f.path,
+        name: disambiguatedNames.get(f.path) || f.path.split('/').pop() || f.path,
+        folder: getFileFolder(f.path),
         symbolCount: this.v3.symbols.filter((s) => s.path === f.path).length,
         changeStatus,
         lineCount: f.line_count,

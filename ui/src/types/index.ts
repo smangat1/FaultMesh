@@ -92,6 +92,7 @@ export interface CodeNode {
 export interface FileCluster {
   file: string; // e.g. "auth/tokens.py"
   name: string; // e.g. "tokens.py"
+  folder?: string; // e.g. "auth" or "."
   symbolCount: number;
   changeStatus: ChangeStatus;
   lineCount: number;
