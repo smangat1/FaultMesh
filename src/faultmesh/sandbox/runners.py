@@ -111,11 +111,13 @@ class DockerSandbox:
         timeout_seconds: int = 30,
         memory: str = "512m",
         cpus: str = "1.0",
+        faultmesh_source: Path | None = None,
     ) -> None:
         self.image = image
         self.timeout_seconds = timeout_seconds
         self.memory = memory
         self.cpus = cpus
+        self.faultmesh_source = faultmesh_source.resolve() if faultmesh_source else None
 
     @staticmethod
     def available() -> bool:
@@ -161,16 +163,37 @@ class DockerSandbox:
                 f"{manifest_path.resolve()}:/job/manifest.json:ro",
                 "--workdir",
                 "/workspace",
-                self.image,
-                "python",
-                "-I",
-                "-m",
-                "faultmesh.verification.worker",
-                "--repository",
-                "/workspace",
-                "--manifest",
-                "/job/manifest.json",
             ]
+            if self.faultmesh_source is not None:
+                if not (self.faultmesh_source / "faultmesh/verification/worker.py").is_file():
+                    raise SandboxError(
+                        f"FaultMesh worker source is missing: {self.faultmesh_source}"
+                    )
+                command.extend(
+                    [
+                        "--volume",
+                        f"{self.faultmesh_source}:/faultmesh-source:ro",
+                    ]
+                )
+            command.extend([self.image, "python", "-I"])
+            if self.faultmesh_source is None:
+                command.extend(["-m", "faultmesh.verification.worker"])
+            else:
+                command.extend(
+                    [
+                        "-c",
+                        "import runpy,sys;sys.path.insert(0,'/faultmesh-source');"
+                        "runpy.run_module('faultmesh.verification.worker',run_name='__main__')",
+                    ]
+                )
+            command.extend(
+                [
+                    "--repository",
+                    "/workspace",
+                    "--manifest",
+                    "/job/manifest.json",
+                ]
+            )
             try:
                 completed = subprocess.run(
                     command,

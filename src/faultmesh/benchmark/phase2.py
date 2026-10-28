@@ -197,7 +197,9 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
     model_path = _resolve_model(options, repository, lock)
     runtime = _runtime_evidence(repository, lock, model_path, options.llama_cli)
     sandbox = DockerSandbox(
-        image=str(lock["docker_image"]), timeout_seconds=options.timeout_seconds
+        image=str(lock["docker_image"]),
+        timeout_seconds=options.timeout_seconds,
+        faultmesh_source=repository / "src",
     )
     _verify_docker(runtime)
     selected_cases = [case for case in cases if options.split == "all" or case.split == options.split]
@@ -265,9 +267,14 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
                 for arm in options.arms:
                     selected = proposals_by_arm[arm]
                     for seed in options.seeds:
-                        generation_owner = arm == "slm-only" and seed == options.seeds[0]
                         for variant_name in ("buggy", "corrected"):
                             variant = _variant_literal(variant_name)
+                            uses_slm = arm in {"slm-only", "combined"}
+                            generation_owner = (
+                                arm == "slm-only"
+                                and seed == options.seeds[0]
+                                and variant == "buggy"
+                            )
                             rebound = [
                                 _rebind_proposal(proposal, variants[variant], case.target)
                                 for proposal in selected
@@ -292,20 +299,32 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
                             proposal_trace = ProposalTrace(
                                 generation_id=generation_id if generation_owner else None,
                                 generation_reused_from=(
-                                    None if generation_owner else generation_id
+                                    generation_id
+                                    if uses_slm and not generation_owner
+                                    else None
                                 ),
                                 attempts=slm_attempts if generation_owner else [],
                                 rejected=[item.reason for item in slm_outcome.rejected]
                                 if generation_owner
                                 else [],
-                                accepted_property_keys=[
-                                    canonical_property_key(item)
-                                    for item in slm_outcome.accepted
-                                ],
-                                abstained=slm_outcome.abstained,
-                                model_error=model_error,
+                                accepted_property_keys=list(keys),
+                                abstained=(
+                                    slm_outcome.abstained if uses_slm else not selected
+                                ),
+                                model_error=model_error if uses_slm else None,
                             )
-                            actual = cached.actual.model_copy(deep=True)
+                            actual = (
+                                cached.actual.model_copy(deep=True)
+                                if reused_from is None
+                                else ActualUse(
+                                    unused_properties=budgets.properties,
+                                    unused_examples=(
+                                        budgets.properties
+                                        * budgets.examples_per_property
+                                    ),
+                                    unused_model_calls=budgets.model_calls,
+                                )
+                            )
                             if generation_owner:
                                 actual.model_calls = len(slm_attempts)
                                 actual.repairs = sum(
@@ -745,6 +764,9 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
     for (split, configuration, arm), members in sorted(groups.items()):
         buggy = [item for item in members if item.variant == "buggy"]
         generation_records = [item for item in buggy if item.proposal_trace.generation_id]
+        target_records = [
+            item for item in buggy if item.paired_seed == min(member.paired_seed for member in buggy)
+        ] if buggy else []
         model_attempts = [
             attempt
             for item in generation_records
@@ -752,12 +774,12 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
         ]
         final_targets = {
             item.bug_id: bool(item.proposal_trace.accepted_property_keys)
-            for item in generation_records
+            for item in target_records
         }
         valid_attempts = sum(attempt.validation_error is None for attempt in model_attempts)
         unsupported = sum(len(item.proposal_trace.rejected) for item in generation_records)
         accepted = sum(
-            len(item.proposal_trace.accepted_property_keys) for item in generation_records
+            len(item.proposal_trace.accepted_property_keys) for item in target_records
         )
         denominator = accepted + unsupported
         latencies = [
@@ -767,6 +789,7 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
         ]
         rows.append(
             {
+                "budget_view": "equal-search",
                 "split": split,
                 "configuration": configuration,
                 "arm": arm,
@@ -779,7 +802,7 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
                 "final_targets_with_executable_proposal": sum(final_targets.values()),
                 "final_target_denominator": len(final_targets),
                 "honest_abstentions": sum(
-                    item.proposal_trace.abstained for item in generation_records
+                    item.proposal_trace.abstained for item in target_records
                 ),
                 "unique_adjudicated_bugs": len(
                     {item.bug_id for item in buggy if item.unique_bug_found}
@@ -801,6 +824,10 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
                 },
             }
         )
+    rows.extend(
+        {**row, "budget_view": "equal-wall-time", "reused_bounded_runs": True}
+        for row in list(rows)
+    )
     return {
         "schema_version": "phase2-pilot-aggregate-1.0",
         "generated_at": datetime.now(UTC).isoformat(),
@@ -826,12 +853,12 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
         "",
         f"Split executed: `{options.split}`. This bounded pilot does not measure arbitrary Python.",
         "",
-        "| Split | Configuration | Arm | Proposal valid | UNSUPPORTED | Unique adjudicated bugs | False controls | Replay | Calls | Evaluations |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Budget view | Split | Configuration | Arm | Proposal valid | UNSUPPORTED | Unique adjudicated bugs | False controls | Replay | Calls | Evaluations |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in aggregate["rows"]:
         lines.append(
-            f"| {row['split']} | {row['configuration']} | {row['arm']} | "
+            f"| {row['budget_view']} | {row['split']} | {row['configuration']} | {row['arm']} | "
             f"{row['proposal_valid_numerator']}/{row['proposal_valid_denominator']} | "
             f"{row['unsupported_numerator']}/{row['unsupported_denominator']} | "
             f"{row['unique_adjudicated_bugs']} | {row['false_properties_on_controls']} | "
