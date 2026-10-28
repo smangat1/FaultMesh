@@ -103,6 +103,25 @@ export const LiveChangesView: React.FC<LiveChangesViewProps> = ({
         </div>
       </div>
 
+      {/* 1-Line First-Run Help Banner */}
+      <div
+        data-testid="changes-help-banner"
+        style={{
+          padding: '6px 16px',
+          backgroundColor: 'rgba(255, 255, 255, 0.02)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          fontSize: '11px',
+          color: 'var(--text-secondary)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}
+      >
+        <span>
+          Changes lists files modified on disk during this session and their line diffs. Save any .py file in your editor to see changes appear here.
+        </span>
+      </div>
+
       {/* Stopped status banner if watcher is stopped */}
       {liveStatus === 'stopped' && (
         <div

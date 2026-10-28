@@ -134,15 +134,101 @@ async function run() {
     const fileUrl = `file://${DIST_INDEX_PATH}`;
     await page.goto(fileUrl, { waitUntil: 'networkidle0' });
 
-    // Step 1: Click "Select project"
-    await page.waitForSelector('button.btn-primary');
+    // Step 0: Capture Startup Screen (plain Python-only text and 3-step example card)
+    await page.waitForSelector('[data-testid="startup-example-card"]');
+    await new Promise((r) => setTimeout(r, 400));
+    await captureState(page, `00_startup_python_only_${res.name}.png`, res.width, res.height);
+
+    // Step 0.5: Test 0 Python files snapshot and capture honest error banner
     await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent && b.textContent.includes('Select project'));
-      if (btn) btn.click();
+      if (window.__emit) {
+        window.__emit({
+          schema_version: 'spectate-1.1',
+          session_id: 'live-empty-1',
+          sequence: 1,
+          emitted_at: new Date().toISOString(),
+          event: 'session_started',
+          root_display_name: 'empty-docs',
+        });
+        window.__emit({
+          schema_version: 'spectate-1.1',
+          session_id: 'live-empty-1',
+          sequence: 2,
+          emitted_at: new Date().toISOString(),
+          event: 'initial_snapshot',
+          files: [],
+          structure: { files: [], symbols: [], skips: [] },
+        });
+      }
+    });
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-testid="no-python-files-banner"]')), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 400));
+    await captureState(page, `00_live_workspace_no_python_files_${res.name}.png`, res.width, res.height);
+
+    // Step 1: Transition to normal project with Python files
+    await page.evaluate(() => {
+      if (window.__emit) {
+        window.__emit({
+          schema_version: 'spectate-1.1',
+          session_id: 'live-sess-1',
+          sequence: 1,
+          emitted_at: new Date().toISOString(),
+          event: 'session_started',
+          root_display_name: 'vscode_playground',
+        });
+        window.__emit({
+          schema_version: 'spectate-1.1',
+          session_id: 'live-sess-1',
+          sequence: 2,
+          emitted_at: new Date().toISOString(),
+          event: 'initial_snapshot',
+          files: [
+            { id: 'file:src/playground/config.py', path: 'src/playground/config.py', module: 'config', content_sha256: 'c1', line_count: 42, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+            { id: 'file:src/playground/pricing.py', path: 'src/playground/pricing.py', module: 'pricing', content_sha256: 'p1', line_count: 120, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+            { id: 'file:src/playground/formatting.py', path: 'src/playground/formatting.py', module: 'formatting', content_sha256: 'f1', line_count: 65, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+            { id: 'file:src/playground/invoice.py', path: 'src/playground/invoice.py', module: 'invoice', content_sha256: 'i1', line_count: 90, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+            { id: 'file:tests/test_pricing.py', path: 'tests/test_pricing.py', module: 'test_pricing', content_sha256: 't1', line_count: 55, is_test: true, is_test_heuristic: true, parse_error: null, removed: false, revision_side: 'head' },
+          ],
+          structure: {
+            files: [
+              { id: 'file:src/playground/config.py', path: 'src/playground/config.py', module: 'config', content_sha256: 'c1', line_count: 42, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+              { id: 'file:src/playground/pricing.py', path: 'src/playground/pricing.py', module: 'pricing', content_sha256: 'p1', line_count: 120, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+              { id: 'file:src/playground/formatting.py', path: 'src/playground/formatting.py', module: 'formatting', content_sha256: 'f1', line_count: 65, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+              { id: 'file:src/playground/invoice.py', path: 'src/playground/invoice.py', module: 'invoice', content_sha256: 'i1', line_count: 90, is_test: false, is_test_heuristic: false, parse_error: null, removed: false, revision_side: 'head' },
+              { id: 'file:tests/test_pricing.py', path: 'tests/test_pricing.py', module: 'test_pricing', content_sha256: 't1', line_count: 55, is_test: true, is_test_heuristic: true, parse_error: null, removed: false, revision_side: 'head' },
+            ],
+            symbols: [
+              { id: 'symbol:src/playground/config.py:load_config', path: 'src/playground/config.py', qualified_name: 'load_config', name: 'load_config', kind: 'function', disambiguator: 1, parent_id: 'file:src/playground/config.py', start_line: 5, end_line: 20, content_sha256: 's1', signature: '(env=None)', parameter_names: ['env'], decorators: [], docstring: { text: 'Load application configuration settings.', source: 'docstring' }, bases: [], removed: false, revision_side: 'head' },
+              { id: 'symbol:src/playground/pricing.py:calculate_total', path: 'src/playground/pricing.py', qualified_name: 'calculate_total', name: 'calculate_total', kind: 'function', disambiguator: 1, parent_id: 'file:src/playground/pricing.py', start_line: 12, end_line: 45, content_sha256: 's2', signature: '(items, discount=0.0)', parameter_names: ['items', 'discount'], decorators: [], docstring: { text: 'Calculate the gross and net order pricing with applied discounts.', source: 'docstring' }, bases: [], removed: false, revision_side: 'head' },
+              { id: 'symbol:src/playground/pricing.py:apply_tax', path: 'src/playground/pricing.py', qualified_name: 'apply_tax', name: 'apply_tax', kind: 'function', disambiguator: 1, parent_id: 'file:src/playground/pricing.py', start_line: 48, end_line: 70, content_sha256: 's3', signature: '(subtotal, rate=0.08)', parameter_names: ['subtotal', 'rate'], decorators: [], docstring: { text: 'Apply regional VAT / sales tax calculation.', source: 'docstring' }, bases: [], removed: false, revision_side: 'head' },
+              { id: 'symbol:src/playground/formatting.py:format_currency', path: 'src/playground/formatting.py', qualified_name: 'format_currency', name: 'format_currency', kind: 'function', disambiguator: 1, parent_id: 'file:src/playground/formatting.py', start_line: 8, end_line: 25, content_sha256: 's4', signature: '(amount, symbol="$")', parameter_names: ['amount', 'symbol'], decorators: [], docstring: { text: 'Format numeric currency output.', source: 'docstring' }, bases: [], removed: false, revision_side: 'head' },
+              { id: 'symbol:src/playground/invoice.py:generate_invoice', path: 'src/playground/invoice.py', qualified_name: 'generate_invoice', name: 'generate_invoice', kind: 'function', disambiguator: 1, parent_id: 'file:src/playground/invoice.py', start_line: 15, end_line: 60, content_sha256: 's5', signature: '(order_id, recipient)', parameter_names: ['order_id', 'recipient'], decorators: [], docstring: { text: 'Compile and render invoice artifact.', source: 'docstring' }, bases: [], removed: false, revision_side: 'head' },
+            ],
+            skips: [],
+          },
+        });
+        window.__emit({
+          schema_version: 'spectate-1.1',
+          session_id: 'live-sess-1',
+          sequence: 3,
+          emitted_at: new Date().toISOString(),
+          event: 'relationship_update',
+          edges: [
+            { id: 'edge:inv-calc', layer: 'static', kind: 'possible_call', source_id: 'symbol:src/playground/invoice.py:generate_invoice', target_id: 'symbol:src/playground/pricing.py:calculate_total', callsite_path: 'src/playground/invoice.py', callsite_line: 25, resolution_reason: 'import_binding', confidence: 'resolved', external_module: null, removed: false, revision_side: 'head' },
+            { id: 'edge:calc-tax', layer: 'static', kind: 'possible_call', source_id: 'symbol:src/playground/pricing.py:calculate_total', target_id: 'symbol:src/playground/pricing.py:apply_tax', callsite_path: 'src/playground/pricing.py', callsite_line: 35, resolution_reason: 'local_scope', confidence: 'resolved', external_module: null, removed: false, revision_side: 'head' },
+            { id: 'edge:inv-fmt', layer: 'static', kind: 'possible_call', source_id: 'symbol:src/playground/invoice.py:generate_invoice', target_id: 'symbol:src/playground/formatting.py:format_currency', callsite_path: 'src/playground/invoice.py', callsite_line: 45, resolution_reason: 'import_binding', confidence: 'resolved', external_module: null, removed: false, revision_side: 'head' },
+          ],
+          unresolved: [],
+          external_modules: [],
+          stale_paths: [],
+          complete: true,
+          partial_reasons: [],
+        });
+      }
     });
 
-    // Wait for transition into calm Entrance Screen
-    await page.waitForFunction(() => Boolean(document.querySelector('[data-testid="live-entrance-screen"]')), { timeout: 5000 });
+    // Wait for transition into calm Entrance Screen with cards
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-testid="entrance-card-map"]')), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 600));
 
     // Capture Entrance Screen

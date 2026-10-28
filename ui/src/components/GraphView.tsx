@@ -2195,6 +2195,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
         }}
       >
         <div
+          data-testid={isLive ? 'map-empty-state' : undefined}
           style={{
             padding: '16px 24px',
             backgroundColor: '#111722',
@@ -2207,7 +2208,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
           }}
         >
-          {isRealImport
+          {isLive
+            ? 'No Python files found in this folder. Pick the folder that contains your .py code.'
+            : isRealImport
             ? 'Structure file contains no symbols. The project may be empty or filtered out.'
             : 'No graph nodes or source files are recorded for this run.'}
         </div>
@@ -2647,6 +2650,28 @@ export const GraphView: React.FC<GraphViewProps> = ({
         </div>
       </div>
 
+      {/* 1-Line First-Run Help Banner */}
+      {isLive && (
+        <div
+          data-testid="map-help-banner"
+          style={{
+            padding: '5px 16px',
+            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexShrink: 0,
+          }}
+        >
+          <span>
+            Map shows your Python files and static call links. Click any file or function to trace connections, or use Diff to inspect changes.
+          </span>
+        </div>
+      )}
+
       {/* Canvas Area Container - Relative Anchor for Cytoscape and its Overlays */}
       <div
         style={{
@@ -2666,6 +2691,33 @@ export const GraphView: React.FC<GraphViewProps> = ({
             backgroundColor: '#101114',
           }}
         />
+
+        {/* Empty state when 0 Python files in watched folder */}
+        {isLive && (graphData.files?.length ?? 0) === 0 && (
+          <div
+            data-testid="map-empty-state"
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              zIndex: 5,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <div style={{ fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>
+              No Python files found in this folder
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Pick the folder that contains your .py code.
+            </div>
+          </div>
+        )}
 
         {/* Fresh Map Interaction Hint */}
         {isLive && !selectedNodeId && !selectedFile && highlightedNodeIds.length === 0 && !hasActiveToast && (

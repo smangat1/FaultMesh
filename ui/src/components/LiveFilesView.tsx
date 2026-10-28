@@ -160,6 +160,25 @@ export const LiveFilesView: React.FC<LiveFilesViewProps> = ({
         </div>
       </div>
 
+      {/* 1-Line First-Run Help Banner */}
+      <div
+        data-testid="files-help-banner"
+        style={{
+          padding: '6px 16px',
+          backgroundColor: 'rgba(255, 255, 255, 0.02)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          fontSize: '11px',
+          color: 'var(--text-secondary)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}
+      >
+        <span>
+          Files shows all Python files in this folder and their save recency. Click a file to view symbols, open its map, or review diffs.
+        </span>
+      </div>
+
       {/* Stopped status banner if watcher is stopped */}
       {liveStatus === 'stopped' && (
         <div
@@ -179,9 +198,10 @@ export const LiveFilesView: React.FC<LiveFilesViewProps> = ({
         </div>
       )}
 
-      {/* Pre-first-snapshot empty state */}
+      {/* Pre-first-snapshot or empty state */}
       {files.length === 0 && (
         <div
+          data-testid="files-empty-state"
           style={{
             flex: 1,
             display: 'flex',
@@ -192,13 +212,15 @@ export const LiveFilesView: React.FC<LiveFilesViewProps> = ({
             color: 'var(--text-muted)',
             fontSize: '12px',
             gap: '8px',
+            textAlign: 'center',
           }}
         >
           <FileCode size={24} style={{ opacity: 0.5 }} />
-          <span>
-            {liveStatus === 'live'
-              ? 'Waiting for project snapshot...'
-              : 'No files recorded in watched project.'}
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+            No Python files found in this folder
+          </span>
+          <span style={{ maxWidth: '380px', color: 'var(--text-secondary)' }}>
+            Pick the folder that contains your .py code.
           </span>
         </div>
       )}
