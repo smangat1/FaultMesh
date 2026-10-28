@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { FaultMeshAdapter } from './adapter';
 import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter } from './adapter';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
@@ -10,6 +10,7 @@ import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { ReplayComparisonView } from './components/ReplayComparisonView';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
 import { StartupScreen } from './components/StartupScreen';
+import { LiveEntranceScreen } from './components/LiveEntranceScreen';
 import { SpectateHook } from './components/SpectateHook';
 import { LiveToast } from './components/LiveToast';
 import { LiveFilesView } from './components/LiveFilesView';
@@ -36,7 +37,7 @@ import './styles/theme.css';
 
 export interface AppProps {
   adapter?: FaultMeshAdapter;
-  initialScreen?: 'selector' | 'workspace';
+  initialScreen?: 'selector' | 'entrance' | 'workspace';
   isDemo?: boolean;
 }
 
@@ -52,7 +53,7 @@ export const App: React.FC<AppProps> = ({
   });
 
   const [importError, setImportError] = useState<string | null>(null);
-  const [currentScreen, setCurrentScreen] = useState<'selector' | 'workspace'>(initialScreen);
+  const [currentScreen, setCurrentScreen] = useState<'selector' | 'entrance' | 'workspace'>(initialScreen);
   const [activeView, setActiveView] = useState<WorkspaceActiveView>('map');
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -200,6 +201,24 @@ export const App: React.FC<AppProps> = ({
     (graphData.unresolvedReferences?.length || 0) +
     (graphData.parseErrors?.length || 0) +
     (activeRun?.errorMessage ? 1 : 0);
+
+  const latestSavedTimestamp = useMemo(() => {
+    if (liveSpectateState.fileHistory.length > 0) {
+      return Math.max(...liveSpectateState.fileHistory.map((f) => f.timestamp || 0));
+    }
+    return null;
+  }, [liveSpectateState.fileHistory]);
+
+  const lastSavedRelativeText = useMemo(() => {
+    if (!latestSavedTimestamp) return 'just now';
+    const diffSec = Math.max(0, Math.round((Date.now() - latestSavedTimestamp) / 1000));
+    if (diffSec < 10) return 'just now';
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.round(diffMin / 60);
+    return `${diffHours}h ago`;
+  }, [latestSavedTimestamp]);
 
   // Shortlist management
   const handlePinSymbol = (symbol: PinnedSymbol) => {
@@ -433,7 +452,8 @@ export const App: React.FC<AppProps> = ({
       liveAdapterRef.current = liveAdapter;
       activeAdapterRef.current = liveAdapter;
       setActiveAdapter(liveAdapter);
-      setCurrentScreen('workspace');
+      // When watching starts / project selected, land on calm entrance screen instead of tab bar
+      setCurrentScreen((prev) => (prev === 'selector' ? 'entrance' : prev));
       setActiveView('map');
       setPinnedSymbols([]);
       setSelectedTestId(null);
@@ -718,9 +738,23 @@ export const App: React.FC<AppProps> = ({
             hasBridge={spectate.hasBridge}
             statusNote={spectate.statusNote}
             activeRun={activeRun}
-            onReturnToWorkspace={() => setCurrentScreen('workspace')}
+            onReturnToWorkspace={() => setCurrentScreen(activeRun?.isLive ? 'entrance' : 'workspace')}
           />
         )
+      ) : currentScreen === 'entrance' ? (
+        <LiveEntranceScreen
+          projectName={activeRun?.project || liveSpectateState.projectName || 'Watched Project'}
+          filesCount={liveSpectateState.files.length || graphData.files?.length || 0}
+          nodesCount={graphData.nodes?.length || liveSpectateState.symbols?.length || 0}
+          changedFilesCount={liveSpectateState.fileHistory.length}
+          lastSavedText={lastSavedRelativeText}
+          liveStatus={liveSpectateState.status === 'live' ? 'live' : 'stopped'}
+          onSelectMode={(mode) => {
+            setActiveView(mode);
+            setCurrentScreen('workspace');
+          }}
+          onBackToSelector={() => setCurrentScreen('selector')}
+        />
       ) : (
         <>
           <Header
@@ -728,6 +762,7 @@ export const App: React.FC<AppProps> = ({
             activeRun={activeRun}
             onSelectRun={handleSelectRun}
             onBackToSelector={() => setCurrentScreen('selector')}
+            onBackToEntrance={() => setCurrentScreen('entrance')}
             activeView={activeView}
             onSelectView={setActiveView}
             failedTestCount={failedTestCount}
@@ -982,7 +1017,7 @@ export const App: React.FC<AppProps> = ({
           </main>
         </>
       )}
-      {currentScreen === 'workspace' && (
+      {(currentScreen === 'workspace' || currentScreen === 'entrance') && (
         <SpectateHook controller={spectate} hideBanner={Boolean(activeRun?.isLive)} />
       )}
     </div>

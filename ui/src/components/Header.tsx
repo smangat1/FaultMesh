@@ -20,6 +20,7 @@ interface HeaderProps {
   activeRun: RunSummary | null;
   onSelectRun?: (runId: string) => void;
   onBackToSelector?: () => void;
+  onBackToEntrance?: () => void;
   activeView: WorkspaceActiveView;
   onSelectView: (view: WorkspaceActiveView) => void;
   failedTestCount?: number;
@@ -33,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeRun,
   onSelectRun,
   onBackToSelector,
+  onBackToEntrance,
   activeView,
   onSelectView,
   failedTestCount = 0,
@@ -118,6 +120,32 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <ChevronLeft size={13} />
               <span>Projects</span>
+            </button>
+          )}
+
+          {/* Back to Modes (Entrance Screen) in Live Watch */}
+          {activeRun && activeRun.isLive && onBackToEntrance && (
+            <button
+              onClick={onBackToEntrance}
+              data-testid="header-back-to-modes"
+              className="btn-ghost btn-sm"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                padding: '3px 8px',
+                color: '#38bdf8',
+                backgroundColor: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+              title="Return to mode selection (Entrance Screen)"
+              aria-label="Back to modes"
+            >
+              <ChevronLeft size={13} />
+              <span>Modes</span>
             </button>
           )}
 
