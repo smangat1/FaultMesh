@@ -32,13 +32,13 @@ describe('Part 2: Live Workspace Entrance Screen', () => {
       // Card 1: Map
       const mapCard = screen.getByTestId('entrance-card-map');
       expect(mapCard).toBeDefined();
-      expect(screen.getByText('5 files, 8 nodes')).toBeDefined();
+      expect(screen.getByText('5 Python files, 8 nodes')).toBeDefined();
       expect(screen.getByText(/Interactive structural map of your files and dependencies/i)).toBeDefined();
 
       // Card 2: Files
       const filesCard = screen.getByTestId('entrance-card-files');
       expect(filesCard).toBeDefined();
-      expect(screen.getByText('5 files, last saved just now')).toBeDefined();
+      expect(screen.getByText('5 Python files, last saved just now')).toBeDefined();
       expect(screen.getByText(/Explore project files, symbol counts/i)).toBeDefined();
 
       // Card 3: Changes
@@ -91,7 +91,7 @@ describe('Part 2: Live Workspace Entrance Screen', () => {
       );
 
       expect(screen.getByText('2 files changed on disk')).toBeDefined();
-      expect(screen.getByText('3 files, last saved 2m ago')).toBeDefined();
+      expect(screen.getByText('3 Python files, last saved 2m ago')).toBeDefined();
     });
   });
 
@@ -189,7 +189,7 @@ describe('Part 2: Live Workspace Entrance Screen', () => {
       expect(screen.getByTestId('entrance-card-changes')).toBeDefined();
 
       // Verify live status cards on entrance screen
-      expect(screen.getByText('1 files, 2 nodes')).toBeDefined();
+      expect(screen.getByText('1 Python file, 2 nodes')).toBeDefined();
       expect(screen.getByText('0 files changed on disk')).toBeDefined();
 
       // 3. Disk file change occurs while on entrance screen: live watching keeps running and updates cards

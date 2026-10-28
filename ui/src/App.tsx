@@ -754,6 +754,7 @@ export const App: React.FC<AppProps> = ({
             setCurrentScreen('workspace');
           }}
           onBackToSelector={() => setCurrentScreen('selector')}
+          onSelectAnotherProject={spectate.startWatching}
         />
       ) : (
         <>
