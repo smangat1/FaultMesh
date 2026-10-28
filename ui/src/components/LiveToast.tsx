@@ -28,7 +28,7 @@ export const LiveToast: React.FC<LiveToastProps> = ({
       aria-live="polite"
       style={{
         position: 'absolute',
-        top: '14px',
+        bottom: '22px',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 1000,
@@ -45,7 +45,7 @@ export const LiveToast: React.FC<LiveToastProps> = ({
         fontFamily: 'var(--font-mono)',
         pointerEvents: 'auto',
         maxWidth: '480px',
-        animation: 'fadeIn 0.15s ease-out',
+        animation: 'liveToastFadeIn 0.15s ease-out',
       }}
     >
       <span
