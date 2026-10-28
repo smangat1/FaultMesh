@@ -34,6 +34,7 @@ from faultmesh.project_runner.replay import open_run_store
 from faultmesh.replay.adapter import capture_hook_event
 from faultmesh.replay.chapters import ChapterProposalBatch, propose_chapters
 from faultmesh.replay.claims import ClaimBatch, ClaimNarrator, build_evidence_packet
+from faultmesh.replay.evaluation import EvaluationInput, EvaluationReport, evaluate_file
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
@@ -705,12 +706,42 @@ def replay_narrate(
     )
 
 
+@app.command("replay-evaluate")
+def replay_evaluate(
+    observations: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
+    ],
+    out: Annotated[Path, typer.Option(help="Write schema-checked offline report JSON here.")],
+) -> None:
+    """Compare frozen offline observations without calling a model or touching a checkout."""
+    try:
+        report = evaluate_file(observations, out)
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay evaluation failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "schema_version": report.schema_version,
+                "status": report.status,
+                "decision": report.decision,
+                "runs": len(report.run_metrics),
+                "path": str(out.resolve()),
+            },
+            sort_keys=True,
+        )
+    )
+
+
 @app.command("replay-schema")
 def replay_schema(
     contract: Annotated[
         str,
         typer.Argument(
-            help="capture, export, narration-export, claims, or chapter-proposals"
+            help=(
+                "capture, export, narration-export, claims, chapter-proposals, "
+                "evaluation-input, or evaluation-report"
+            )
         ),
     ],
 ) -> None:
@@ -725,9 +756,14 @@ def replay_schema(
         schema = ClaimBatch.model_json_schema()
     elif contract == "chapter-proposals":
         schema = ChapterProposalBatch.model_json_schema()
+    elif contract == "evaluation-input":
+        schema = EvaluationInput.model_json_schema()
+    elif contract == "evaluation-report":
+        schema = EvaluationReport.model_json_schema()
     else:
         raise typer.BadParameter(
-            "contract must be capture, export, narration-export, claims, or chapter-proposals"
+            "contract must be capture, export, narration-export, claims, chapter-proposals, "
+            "evaluation-input, or evaluation-report"
         )
     typer.echo(json.dumps(schema, indent=2, sort_keys=True))
 

@@ -237,3 +237,64 @@ Acceptance commands:
 
 Commit Phase 4A, then implement the frozen offline comparison/report command and record only actual
 synthetic measurements plus the pending held-out/human/model/M2 gates.
+
+Phase 4A commit: `cae286892d82e7b1d3b9270b133e27e283e5a4b2`.
+
+## Phase 4B — frozen fair evaluation and measurement
+
+Status: implementation complete; evaluation gate pending.
+
+Implemented:
+
+- frozen-file hash verification before an evaluation report can run;
+- versioned, schema-checked offline observation and report contracts;
+- comparison-group enforcement for identical packet order, split and context/output budgets;
+- canonical one-to-one relevant-fact coverage so repeated claims cannot inflate it;
+- numerator/denominator/sample reporting for generated truth, accepted precision and coverage;
+- explicit unknown, unsupported, invalid, abstention, zero-accepted, false-accepted,
+  false-contradicted, false-unknown and true-rejected counts;
+- separate first/repaired, natural/injected, deterministic/raw/checker and development/held-out
+  fields;
+- optional performance sample fields and frozen gate calculation without invented percentiles;
+- `replay-evaluate` offline command plus evaluation input/report JSON schemas.
+
+Measured development-only synthetic oracle observations:
+
+- deterministic template: 1/1 true checkable, 1/1 accepted, 1/1 relevant-fact coverage;
+- injected raw output: 1/3 true checkable, 3/3 accepted, 2 false accepted;
+- injected output plus checker: 1/3 accepted, 1/1 accepted precision, 1/1 coverage, zero false
+  accepted, one false contradicted and one false routed unknown;
+- these are three supplied synthetic observations and validate code paths only. They are not model
+  runs or human-reviewed natural-quality measurements.
+
+Pending:
+
+- held-out set contains no real recordings or independent labels;
+- Sam review, second-reviewer disagreement, reason relevance/plausibility and chapter task ratings;
+- 1.5B/3B/7B model files and same-budget model comparisons;
+- M2/8GB cold load, warm p50/p95, chapter latency, invalid/retry, process/system memory and swap;
+- no 30-minute recording/load run was performed.
+
+Gate decision: **NO-GO: experimental/default-off**. All six frozen gates are pending; none is
+reported as passed from synthetic tests.
+
+Acceptance commands:
+
+- Targeted ruff and mypy for evaluation/CLI/tests: passed.
+- Evaluation unit tests: 4 passed.
+- Committed report validated against `EvaluationReport` and matched the executable command output
+  after JSON parsing.
+
+## Next step
+
+Run the one-time final repository checks, commit Phase 4B, push this branch and open one draft PR.
+Do not merge or start UI work.
+
+Final acceptance on 2026-10-28:
+
+- `ruff check .`: passed.
+- `mypy`: passed for 58 source files.
+- `python -m pytest -m 'not container' --cov=faultmesh --cov-report=term-missing`:
+  201 passed, 5 container tests deselected, total coverage 85%.
+- UI files and UI contract types were not changed; UI tests/build were not required.
+- No integration environment beyond the existing non-container suite was required.

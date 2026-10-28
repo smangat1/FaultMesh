@@ -1,0 +1,113 @@
+{
+  "schema_version": "replay-evaluation-report-1.0",
+  "status": "PRELIMINARY/UNVALIDATED",
+  "protocol_version": "replay-evaluation-protocol-1.0",
+  "run_metrics": [
+    {
+      "run_id": "synthetic-baseline",
+      "arm": "deterministic_templates",
+      "split": "development",
+      "data_kind": "injected_adversarial",
+      "generated_claims": 1,
+      "raw_true_checkable": {"numerator": 1, "denominator": 1, "value": 1.0},
+      "unknown_truth_claims": 0,
+      "unsupported_claims": 0,
+      "invalid_output_steps": 0,
+      "abstention_steps": 0,
+      "accepted_generated": {"numerator": 1, "denominator": 1, "value": 1.0},
+      "accepted_true_precision": {"numerator": 1, "denominator": 1, "value": 1.0},
+      "relevant_fact_coverage": {"numerator": 1, "denominator": 1, "value": 1.0},
+      "zero_accepted_steps": 0,
+      "true_claims_falsely_rejected_or_contradicted": 0,
+      "false_claims_accepted": 0,
+      "false_claims_contradicted": 0,
+      "false_claims_routed_unknown": 0,
+      "first_output_claims": 0,
+      "repaired_output_claims": 0,
+      "retries": 0,
+      "retry_steps": 0
+    },
+    {
+      "run_id": "synthetic-raw-slm",
+      "arm": "raw_slm",
+      "split": "development",
+      "data_kind": "injected_adversarial",
+      "generated_claims": 3,
+      "raw_true_checkable": {"numerator": 1, "denominator": 3, "value": 0.3333333333333333},
+      "unknown_truth_claims": 0,
+      "unsupported_claims": 0,
+      "invalid_output_steps": 0,
+      "abstention_steps": 0,
+      "accepted_generated": {"numerator": 3, "denominator": 3, "value": 1.0},
+      "accepted_true_precision": {"numerator": 1, "denominator": 3, "value": 0.3333333333333333},
+      "relevant_fact_coverage": {"numerator": 1, "denominator": 1, "value": 1.0},
+      "zero_accepted_steps": 0,
+      "true_claims_falsely_rejected_or_contradicted": 0,
+      "false_claims_accepted": 2,
+      "false_claims_contradicted": 0,
+      "false_claims_routed_unknown": 0,
+      "first_output_claims": 3,
+      "repaired_output_claims": 0,
+      "retries": 0,
+      "retry_steps": 0
+    },
+    {
+      "run_id": "synthetic-slm-checker",
+      "arm": "slm_checker",
+      "split": "development",
+      "data_kind": "injected_adversarial",
+      "generated_claims": 3,
+      "raw_true_checkable": {"numerator": 1, "denominator": 3, "value": 0.3333333333333333},
+      "unknown_truth_claims": 0,
+      "unsupported_claims": 1,
+      "invalid_output_steps": 0,
+      "abstention_steps": 0,
+      "accepted_generated": {"numerator": 1, "denominator": 3, "value": 0.3333333333333333},
+      "accepted_true_precision": {"numerator": 1, "denominator": 1, "value": 1.0},
+      "relevant_fact_coverage": {"numerator": 1, "denominator": 1, "value": 1.0},
+      "zero_accepted_steps": 0,
+      "true_claims_falsely_rejected_or_contradicted": 0,
+      "false_claims_accepted": 0,
+      "false_claims_contradicted": 1,
+      "false_claims_routed_unknown": 1,
+      "first_output_claims": 3,
+      "repaired_output_claims": 0,
+      "retries": 0,
+      "retry_steps": 0
+    }
+  ],
+  "strata_counts": {"injected_adversarial": 3},
+  "gates": [
+    {"name": "zero false-supported held-out claims", "status": "pending", "measured": "no held-out sample", "target": "0 false-supported claims"},
+    {"name": "held-out relevant-fact coverage", "status": "pending", "measured": "no held-out reference facts", "target": ">=80%"},
+    {"name": "model-induced recording stalls", "status": "pending", "measured": "not measured", "target": "0"},
+    {"name": "bounded warm p95 narration", "status": "pending", "measured": "not measured", "target": "<=10000 ms"},
+    {"name": "30-minute recording/load stability", "status": "pending", "measured": "not measured", "target": ">=30 minutes without crash or sustained pressure"},
+    {"name": "chapter human outcome improves over baseline", "status": "pending", "measured": "no preregistered human comparison", "target": "measurable improvement"}
+  ],
+  "decision": "NO-GO: experimental/default-off",
+  "implemented": [
+    "versioned input/report schemas",
+    "fair packet/order/budget validation",
+    "one-to-one canonical fact coverage",
+    "first/repaired and natural/injected stratification",
+    "offline comparison and frozen gate calculation"
+  ],
+  "measured": ["3 supplied offline run(s)", "3 supplied step(s)"],
+  "pending": [
+    "real held-out agent runs",
+    "independent human labels and disagreement report",
+    "1.5B/3B/7B local model comparisons",
+    "M2 8GB latency, memory pressure and 30-minute load run",
+    "reason relevance/plausibility and chapter usefulness ratings"
+  ],
+  "proposed": [
+    "20 short runs, 200 atomic claims and three Python projects",
+    "zero false-supported, >=80% coverage, <=10s warm p95"
+  ],
+  "limitations": [
+    "Synthetic oracle cases validate metric/checker code, not natural SLM quality.",
+    "No observed error count establishes universal soundness.",
+    "Undefined precision is reported as null when no claim is accepted."
+  ]
+}

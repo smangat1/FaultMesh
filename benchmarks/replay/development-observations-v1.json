@@ -1,0 +1,154 @@
+{
+  "schema_version": "replay-evaluation-input-1.0",
+  "protocol_version": "replay-evaluation-protocol-1.0",
+  "protocol_lock_sha256": "076618f74f93fc190976484588914e774988227612d4817162266af7e6f7eb50",
+  "labels_human_reviewed": false,
+  "reviewer_count": 0,
+  "reviewer_disagreements": null,
+  "runs": [
+    {
+      "id": "synthetic-baseline",
+      "comparison_group": "synthetic-oracle-v1",
+      "arm": "deterministic_templates",
+      "split": "development",
+      "data_kind": "injected_adversarial",
+      "model_id": null,
+      "model_sha256": null,
+      "quantization": null,
+      "backend_build": null,
+      "hardware": "synthetic-only",
+      "config_sha256": "synthetic-baseline-v1",
+      "context_budget": 4096,
+      "output_budget": 1024,
+      "steps": [
+        {
+          "packet_id": "fixture:capture_sequence:step-3",
+          "relevant_reference_facts": ["file:value.py:modified"],
+          "claims": [
+            {
+              "canonical_key": "file:value.py:modified",
+              "truth": "true",
+              "relevant": true,
+              "accepted": true,
+              "checker_verdict": "supported",
+              "output_stage": "template",
+              "error_source": "none"
+            }
+          ],
+          "invalid_output": false,
+          "abstained": false,
+          "retries": 0
+        }
+      ],
+      "performance": null
+    },
+    {
+      "id": "synthetic-raw-slm",
+      "comparison_group": "synthetic-oracle-v1",
+      "arm": "raw_slm",
+      "split": "development",
+      "data_kind": "injected_adversarial",
+      "model_id": "synthetic-output-not-a-model-run",
+      "model_sha256": null,
+      "quantization": null,
+      "backend_build": null,
+      "hardware": "synthetic-only",
+      "config_sha256": "synthetic-raw-v1",
+      "context_budget": 4096,
+      "output_budget": 1024,
+      "steps": [
+        {
+          "packet_id": "fixture:capture_sequence:step-3",
+          "relevant_reference_facts": ["file:value.py:modified"],
+          "claims": [
+            {
+              "canonical_key": "file:value.py:modified",
+              "truth": "true",
+              "relevant": true,
+              "accepted": true,
+              "checker_verdict": "not_checked",
+              "output_stage": "first",
+              "error_source": "none"
+            },
+            {
+              "canonical_key": "file:invented.py:added",
+              "truth": "false",
+              "relevant": false,
+              "accepted": true,
+              "checker_verdict": "not_checked",
+              "output_stage": "first",
+              "error_source": "injected"
+            },
+            {
+              "canonical_key": "pytest:10-passed",
+              "truth": "false",
+              "relevant": false,
+              "accepted": true,
+              "checker_verdict": "not_checked",
+              "output_stage": "first",
+              "error_source": "injected"
+            }
+          ],
+          "invalid_output": false,
+          "abstained": false,
+          "retries": 0
+        }
+      ],
+      "performance": null
+    },
+    {
+      "id": "synthetic-slm-checker",
+      "comparison_group": "synthetic-oracle-v1",
+      "arm": "slm_checker",
+      "split": "development",
+      "data_kind": "injected_adversarial",
+      "model_id": "synthetic-output-not-a-model-run",
+      "model_sha256": null,
+      "quantization": null,
+      "backend_build": null,
+      "hardware": "synthetic-only",
+      "config_sha256": "synthetic-checked-v1",
+      "context_budget": 4096,
+      "output_budget": 1024,
+      "steps": [
+        {
+          "packet_id": "fixture:capture_sequence:step-3",
+          "relevant_reference_facts": ["file:value.py:modified"],
+          "claims": [
+            {
+              "canonical_key": "file:value.py:modified",
+              "truth": "true",
+              "relevant": true,
+              "accepted": true,
+              "checker_verdict": "supported",
+              "output_stage": "first",
+              "error_source": "none"
+            },
+            {
+              "canonical_key": "file:invented.py:added",
+              "truth": "false",
+              "relevant": false,
+              "accepted": false,
+              "checker_verdict": "contradicted",
+              "output_stage": "first",
+              "error_source": "injected"
+            },
+            {
+              "canonical_key": "pytest:10-passed",
+              "truth": "false",
+              "relevant": false,
+              "accepted": false,
+              "checker_verdict": "unsupported_or_unknown",
+              "output_stage": "first",
+              "error_source": "injected"
+            }
+          ],
+          "invalid_output": false,
+          "abstained": false,
+          "retries": 0
+        }
+      ],
+      "performance": null
+    }
+  ]
+}
