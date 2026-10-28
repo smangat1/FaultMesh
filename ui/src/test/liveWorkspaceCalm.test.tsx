@@ -235,9 +235,13 @@ describe('Live-Watch Calm Workspace (Parts A, B, C, D)', () => {
       );
 
       // When isLive is true and no node is selected or changed:
-      // All inter-node links should be excluded (only containment edges exist)
+      // Fix 3: Show small useful default (capped at 4 strongest cross-file links, thin and muted), never a hairball
       const nonContainmentEdges = cy.edges('[category != "containment"]');
-      expect(nonContainmentEdges.length).toBe(0);
+      expect(nonContainmentEdges.length).toBe(1);
+      expect(nonContainmentEdges.first().hasClass('default-live-edge')).toBe(true);
+
+      // And displays the calm interaction hint
+      expect(screen.getByText('Click a file to see what it connects to')).toBeDefined();
 
       // "Agent Auto-Repair (Demo only)" must not appear in live watch
       expect(screen.queryByText('Agent Auto-Repair (Demo only)')).toBeNull();
