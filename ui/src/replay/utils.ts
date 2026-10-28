@@ -25,14 +25,9 @@ export function decodeBase64ToUtf8(b64: string): string {
  * Computes SHA-256 hex digest of raw base64 string bytes.
  */
 export async function computeBase64Sha256(b64: string): Promise<string> {
-  if (typeof Buffer !== 'undefined') {
-    const crypto = await import('node:crypto');
-    const buf = Buffer.from(b64, 'base64');
-    return crypto.createHash('sha256').update(buf).digest('hex');
-  }
   const binString = atob(b64);
   const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0) || 0);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+  const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', bytes);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }

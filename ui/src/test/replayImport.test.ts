@@ -459,4 +459,26 @@ describe('Replay Export Validation (Phase C1)', () => {
     const decoded = decodeBase64ToUtf8(b64);
     expect(decoded).toBe(raw);
   });
+
+  it('successfully validates generated disk fixtures fixture_replay_v2_enriched and fixture_replay_v1_nomodel', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    const v2Path = path.resolve(__dirname, '../../../tests/fixtures/replay/fixture_replay_v2_enriched.json');
+    const v1Path = path.resolve(__dirname, '../../../tests/fixtures/replay/fixture_replay_v1_nomodel.json');
+
+    const v2Json = JSON.parse(fs.readFileSync(v2Path, 'utf-8'));
+    const v1Json = JSON.parse(fs.readFileSync(v1Path, 'utf-8'));
+
+    const v2Result = validateReplayExport(v2Json, fs.statSync(v2Path).size, v2Path);
+    expect(v2Result.success).toBe(true);
+    expect(v2Result.version).toBe('replay-export-2.0');
+    expect(v2Result.origin).toBe('synthetic_fixture');
+
+    const v1Result = validateReplayExport(v1Json, fs.statSync(v1Path).size, v1Path);
+    expect(v1Result.success).toBe(true);
+    expect(v1Result.version).toBe('replay-export-1.0');
+    expect(v1Result.origin).toBe('synthetic_fixture');
+    expect(v1Result.isPartial).toBe(true);
+  });
 });

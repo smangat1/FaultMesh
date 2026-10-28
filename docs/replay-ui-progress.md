@@ -67,8 +67,37 @@ Acceptance:
 - `cd ui && npx vitest run src/test/replayViewer.test.tsx src/test/replayEvidence.test.tsx`: 11 passed.
 - `cd ui && npm test`: 22 test files (176 vitest tests) + 8 electron tests passed.
 
-Phase C2 commit: pending.
+Phase C2 commit: `d8b33ad6929837a77d5494cb3d1b821ee5ae042e`.
 
 ## Phase C3 — Tests + Real Pixels
 
-Status: in progress.
+Status: complete.
+
+Implemented & Verified:
+- Replay fixture generators and sanitized fixtures:
+  - `scripts/generate_replay_fixtures.py`: automated script generating realistic, schema-valid, sanitized fixtures.
+  - `tests/fixtures/replay/fixture_replay_v2_enriched.json`: `replay-export-2.0` synthetic fixture demonstrating complete manifests, tool boundary checkpoints, model-generated chapters labeled `model interpretation`, unified diffs with AST badges, recorded pytest run with exit code 1 and failed tests, `State matched (man-02)` label, likely reason with source quote citation and `verified intent: false`, 3-way checked atomic claims (checked against recording, strikethrough contradicted with reason code, unsupported/unknown), and complete summary audit statements.
+  - `tests/fixtures/replay/fixture_replay_v1_nomodel.json`: `replay-export-1.0` synthetic fixture demonstrating model-unavailable scenarios, missing chapters, observed checkpoint granularity, `partial` completeness with snapshot gaps, missing test observations ("not observed"), and honest empty states without fake narration or simulated leaks.
+- Unit and integration tests:
+  - Added fixture validation tests in `ui/src/test/replayImport.test.ts` verifying both disk fixtures pass schema, hash, and origin checks.
+  - Updated `ui/src/replay/utils.ts` to utilize standard `globalThis.crypto.subtle` avoiding Node crypto bundler warnings in Vite.
+  - All 177 UI Vitest unit tests pass.
+  - All 8 Electron IPC tests pass.
+  - Python replay test suite (18 tests in `test_replay_capture.py` and `test_replay_narration.py`) passes cleanly.
+- Visual inspection & pixel capture:
+  - Created automated screenshot runner `ui/scripts/capture_replay_screenshots.js` using Chrome headless over `file://` with zero external requests or localhost servers.
+  - Captured 8 screenshots across both desktop viewports (1440x900 and 1024x700) into `docs/screenshots/replay/`:
+    1. `01_whole_recording_chapters_diff_1440x900.png` & `01_whole_recording_chapters_diff_1024x700.png`: Replay workspace showing 3-column layout, chapter list tagged `model interpretation`, checkpoint scrubber with failure indicator, unified diff with function badge, and evidence inspector.
+    2. `02_failed_test_state_match_1440x900.png` & `02_failed_test_state_match_1024x700.png`: Nearby Tests tab showing exit code 1, structured pytest counts (passed: 3, failed: 1, errors: 0, skipped: 0), test node failure output, explicit `State matched (man-02)` badge, and chronological disclaimer.
+    3. `03_evidence_inspector_verdicts_reason_1440x900.png` & `03_evidence_inspector_verdicts_reason_1024x700.png`: Evidence Inspector showing `likely reason (model inference)` card with `Source quote checked` and `verified intent: false`, checked atomic claims with strikethrough for contradicted facts with counterevidence reasons, and neutral unsupported claims.
+    4. `04_nomodel_partial_missing_evidence_1440x900.png` & `04_nomodel_partial_missing_evidence_1024x700.png`: Graceful degradation for Prompt A/no-model export showing `PARTIAL` gap badge, no fabricated chapters, and honest empty diff and claim states.
+  - Visual inspection verified: Obsidian/Zotero calm aesthetic, no layout shift, zero horizontal text clipping at 1024x700, readable strikethrough, high-contrast badges, and strict visual distinction between recorded ground truth and model interpretations.
+
+Acceptance:
+- `cd ui && npx tsc --noEmit`: passed with 0 errors.
+- `cd ui && npm test`: 22 test files (177 vitest tests) + 8 electron tests passed.
+- `python -m pytest tests/unit/test_replay*`: 18 passed.
+- `cd ui && npm run build`: production bundle built cleanly (0 errors).
+
+Phase C3 commit: `352e6fb589cb1cb25d67996a10a07a1f3e18ff48`.
+
