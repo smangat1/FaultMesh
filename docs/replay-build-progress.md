@@ -164,3 +164,33 @@ Acceptance commands:
 
 Phase 3A commit is the next coherent commit. Continue with evidence-linked inference and summary
 audit; a valid citation must never upgrade model inference into verified intent.
+
+Phase 3A commit: `c1189b0883ebd7445a5ab2428de390d29d408c79`.
+
+## Phase 3B — evidence-linked reasons and agent-summary audit
+
+Status: complete.
+
+Implemented:
+
+- local citation sources scoped to one replay session and bounded current/prior sequences;
+- documented NFC/LF normalization with exact character offsets and quote matching;
+- rejection of missing, wrong-session, future, current-non-prompt, redacted, truncated, altered or
+  out-of-bounds references;
+- permanent `likely reason (model inference)` labeling even when every quote is exact;
+- explicit separation of citation integrity from unassessed entailment and unverified intent;
+- exact-span agent-summary auditing through the Phase 3A typed-claim checker;
+- only supported atomic predicates are extracted as facts; contradictions require complete
+  contrary evidence and other statements remain “not supported by this recording.”
+
+Acceptance commands:
+
+- Targeted ruff and mypy for citation/audit code and tests: passed.
+- Citation/audit tests: 5 passed.
+- Cases cover quote forgery, altered quote, redaction, wrong session, future/current event,
+  irrelevant-but-real quote, empty references, exact-span acceptance and summary false positives.
+
+## Next step
+
+Commit the Phase 3B boundary, then add deterministic and model-proposed chapters, independent local
+model jobs and the backwards-compatible enriched export.
