@@ -9,8 +9,8 @@
     "src/faultmesh/proposal_quality.py": "2fa9c251ffd0e2c1f6c1b838f3922251eee0003dba6d941507670f743d42ead7"
   },
   "development_artifacts": {
-    "phase-2-development.ndjson": "09715b0ba9be31118a1e984af8912d4a8afa8acd943120980a6748d0e4406755",
-    "phase-2-development.summary.json": "8bc87b56ad4fde603a547dac3e66f486b445f1c18780d602527c03d05dc36144"
+    "phase-2-development.ndjson": "abbf03aed0b24dd8d1d049fe64031edd5bb27199bc9ca276bba58144b0318359",
+    "phase-2-development.summary.json": "e063aa6c8a5ab88562e9edb319c8de0c7fa0f07937cc011603c7b98d68e27253"
   },
   "budget_rule": "max_model_calls=2 is shared by initial generation, JSON repair, and semantic retry; max_repairs=2 is subordinate and cannot create a third call",
   "development_prompt_sha256": {

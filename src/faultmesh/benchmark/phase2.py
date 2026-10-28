@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import random
 import shutil
 import statistics
 import subprocess
@@ -112,6 +113,8 @@ class ProposalTrace(StrictModel):
     accepted_property_keys: list[str] = Field(default_factory=list)
     abstained: bool = False
     model_error: str | None = None
+    raw_proposals: Annotated[int, Field(ge=0)] = 0
+    duplicates: Annotated[int, Field(ge=0)] = 0
 
 
 class EvaluationEvidence(StrictModel):
@@ -416,6 +419,7 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
                             )
                             records.append(record)
     _mark_pair_findings(records)
+    enrich_duplicate_counts(records)
     _write_ndjson(raw_out, records)
     summary_path = raw_out.with_suffix(".summary.json")
     report_path = raw_out.with_suffix(".report.md")
@@ -782,9 +786,15 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
     for (split, configuration, arm), members in sorted(groups.items()):
         buggy = [item for item in members if item.variant == "buggy"]
         generation_records = [item for item in buggy if item.proposal_trace.generation_id]
-        target_records = [
-            item for item in buggy if item.paired_seed == min(member.paired_seed for member in buggy)
-        ] if buggy else []
+        target_records = (
+            [
+                item
+                for item in buggy
+                if item.paired_seed == min(member.paired_seed for member in buggy)
+            ]
+            if buggy
+            else []
+        )
         model_attempts = [
             attempt
             for item in generation_records
@@ -805,6 +815,12 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
             for item in buggy
             if item.timing_ms.charged_end_to_end is not None
         ]
+        found_ids = {item.bug_id for item in buggy if item.unique_bug_found}
+        pending_ids = {
+            item.bug_id
+            for item in buggy
+            if item.classification == "pending_adjudication"
+        }
         rows.append(
             {
                 "budget_view": "equal-search",
@@ -822,14 +838,37 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
                 "honest_abstentions": sum(
                     item.proposal_trace.abstained for item in target_records
                 ),
-                "unique_adjudicated_bugs": len(
-                    {item.bug_id for item in buggy if item.unique_bug_found}
-                ),
+                "unique_adjudicated_bugs": len(found_ids),
+                "unique_adjudicated_bug_ids": sorted(found_ids),
                 "verified_violations": len(
-                    {item.bug_id for item in buggy if item.classification in {"adjudicated_bug", "pending_adjudication"}}
+                    {
+                        item.bug_id
+                        for item in buggy
+                        if item.classification
+                        in {"adjudicated_bug", "pending_adjudication"}
+                    }
                 ),
                 "false_properties_on_controls": sum(
                     item.classification == "false_property_on_control" for item in members
+                ),
+                "pending_adjudication_bug_ids": sorted(pending_ids),
+                "model_errors": sum(
+                    item.proposal_trace.model_error is not None
+                    for item in generation_records
+                ),
+                "timeouts": sum(item.classification == "timeout" for item in buggy),
+                "harness_errors": sum(
+                    item.classification == "harness_error" for item in buggy
+                ),
+                "environment_errors": sum(
+                    item.classification == "environment_error" for item in buggy
+                ),
+                "flaky": sum(item.classification == "flaky" for item in buggy),
+                "misses": sum(
+                    item.classification == "miss_or_control_pass" for item in buggy
+                ),
+                "duplicates": sum(
+                    item.proposal_trace.duplicates for item in generation_records
                 ),
                 "replay_successes": sum(item.replay is True for item in buggy),
                 "actual_model_calls": sum(item.actual.model_calls for item in members),
@@ -851,6 +890,29 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
                 },
             }
         )
+    bug_ids_by_split = {
+        split: sorted({record.bug_id for record in records if record.split == split})
+        for split in {record.split for record in records}
+    }
+    for row in rows:
+        baseline = next(
+            (
+                candidate
+                for candidate in rows
+                if candidate["split"] == row["split"]
+                and candidate["configuration"] == row["configuration"]
+                and candidate["arm"] == "baseline-only"
+            ),
+            None,
+        )
+        found = set(row["unique_adjudicated_bug_ids"])
+        baseline_found = (
+            set(baseline["unique_adjudicated_bug_ids"]) if baseline else set()
+        )
+        row["incremental_unique_bugs_over_baseline"] = len(found - baseline_found)
+        row["paired_increment_interval_95"] = _paired_bootstrap_interval(
+            bug_ids_by_split[row["split"]], found, baseline_found
+        )
     rows.extend(
         {**row, "budget_view": "equal-wall-time", "reused_bounded_runs": True}
         for row in list(rows)
@@ -862,8 +924,8 @@ def aggregate_records(records: list[Phase2Record]) -> dict[str, Any]:
         "rows": rows,
         "uncertainty": {
             "unit": "bug-pair",
-            "method": "descriptive paired counts only",
-            "reason": "eight held-out pairs are too few for stable interval estimates",
+            "method": "10,000-draw paired bug-level bootstrap of discovery-rate difference",
+            "reason": "Intervals are descriptive and unstable with only eight held-out pairs",
         },
         "notes": [
             "Paired seeds are repeated search runs, not independent model samples.",
@@ -880,17 +942,21 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
         "",
         f"Split executed: `{options.split}`. This bounded pilot does not measure arbitrary Python.",
         "",
-        "| Budget view | Split | Configuration | Arm | Proposal valid | UNSUPPORTED | Unique adjudicated bugs | False controls | Replay | Calls physical/charged | Evaluations physical/charged |",
-        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Budget view | Split | Configuration | Arm | Proposal valid | UNSUPPORTED | Bugs | Increment vs baseline (95% paired bootstrap) | False controls | Replay | Calls physical/charged | Evaluations physical/charged | Median ms |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in aggregate["rows"]:
         lines.append(
             f"| {row['budget_view']} | {row['split']} | {row['configuration']} | {row['arm']} | "
             f"{row['proposal_valid_numerator']}/{row['proposal_valid_denominator']} | "
             f"{row['unsupported_numerator']}/{row['unsupported_denominator']} | "
-            f"{row['unique_adjudicated_bugs']} | {row['false_properties_on_controls']} | "
+            f"{row['unique_adjudicated_bugs']} | "
+            f"{row['incremental_unique_bugs_over_baseline']} "
+            f"({row['paired_increment_interval_95'][0]:.2f}, {row['paired_increment_interval_95'][1]:.2f}) | "
+            f"{row['false_properties_on_controls']} | "
             f"{row['replay_successes']} | {row['actual_model_calls']}/{row['charged_model_calls']} | "
-            f"{row['actual_evaluations']}/{row['charged_evaluations']} |"
+            f"{row['actual_evaluations']}/{row['charged_evaluations']} | "
+            f"{row['latency_ms']['median']:.1f} |"
         )
     lines.extend(
         [
@@ -901,6 +967,7 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
             "- Verified violations pending independent review are not adjudicated bugs.",
             "- The equal-wall-time view reuses the same bounded runs and charges cached inference; it is not another sample.",
             "- Missing token and memory telemetry is recorded as null, not estimated.",
+            "- Timeout, harness, environment, model-error, flaky, miss, pending-adjudication, and duplicate counts remain separate in the JSON aggregate.",
             "",
         ]
     )
@@ -919,6 +986,45 @@ def _verify_hash(path: Path, expected: str) -> None:
     actual = hashlib.sha256(path.read_bytes()).hexdigest()
     if actual != expected:
         raise ValueError(f"content hash mismatch for {path}: {actual} != {expected}")
+
+
+def enrich_duplicate_counts(records: list[Phase2Record]) -> None:
+    """Recover raw exact-property duplicate counts without another model call."""
+
+    for record in records:
+        if not record.proposal_trace.generation_id:
+            continue
+        keys: list[str] = []
+        for attempt in record.proposal_trace.attempts:
+            try:
+                start = attempt.raw_response.index("{")
+                end = attempt.raw_response.rindex("}") + 1
+                payload = json.loads(attempt.raw_response[start:end])
+                hypotheses = payload.get("hypotheses", [])
+                for hypothesis in hypotheses:
+                    proposal = ProposedHypothesis.model_validate(hypothesis)
+                    keys.append(canonical_property_key(proposal))
+            except (ValueError, TypeError):
+                continue
+        record.proposal_trace.raw_proposals = len(keys)
+        record.proposal_trace.duplicates = len(keys) - len(set(keys))
+
+
+def _paired_bootstrap_interval(
+    bug_ids: list[str], found: set[str], baseline_found: set[str]
+) -> list[float]:
+    if not bug_ids:
+        return [0.0, 0.0]
+    randomizer = random.Random(20261027)
+    differences: list[float] = []
+    for _ in range(10_000):
+        sample = [randomizer.choice(bug_ids) for _ in bug_ids]
+        differences.append(
+            sum(int(item in found) - int(item in baseline_found) for item in sample)
+            / len(sample)
+        )
+    differences.sort()
+    return [differences[249], differences[9749]]
 
 
 def _validate_prompt_lock(repository: Path) -> None:

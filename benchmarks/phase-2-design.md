@@ -1,4 +1,8 @@
-# Phase 2 preregistered pilot design (not yet run)
+# Phase 2 preregistered pilot design
+
+The design below was frozen before tuning. The completed bounded result is reported separately in
+[`phase2-report.md`](phase2-report.md); preserving this document's prospective language makes the
+preregistration auditable.
 
 Phase 2 will test a limited population of small, pure, synchronous top-level Python functions whose
 contracts and inputs fit FaultMesh's closed integer/text/`list[int]` DSL. It will not estimate
@@ -99,6 +103,5 @@ faultmesh benchmark phase2-pilot \
   --raw-out .faultmesh/benchmarks/phase-2-pilot.ndjson
 ```
 
-That command does not exist in phase 1 and is not run here. Phase 2 must add the locked manifest,
-transparent proposer, raw schema, adjudication workflow, and aggregation before producing any
-comparative claim.
+Phase 2 added this command, the locked manifest, transparent proposer, raw schema, adjudication
+workflow, and aggregation before producing the linked comparative result.
