@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 REPLAY_SCHEMA_VERSION = "replay-store-1.0"
 CAPTURE_SCHEMA_VERSION = "replay-capture-1.0"
+EXPORT_SCHEMA_VERSION = "replay-export-1.0"
 
 
 class ReplayModel(BaseModel):
@@ -50,6 +51,22 @@ class Completeness(StrEnum):
     PARTIAL = "partial"
     MISSING = "missing"
     UNSUPPORTED = "unsupported"
+
+
+class TestState(StrEnum):
+    PASSED = "pass"
+    FAILED = "fail"
+    ERROR = "error"
+    SKIPPED = "skipped"
+    NOT_OBSERVED = "not_observed"
+    INCOMPLETE = "incomplete"
+
+
+class TestAssociation(StrEnum):
+    CONTENT_IDENTITY = "content_identity"
+    CONTROLLED_NO_WRITE = "controlled_no_write"
+    NEARBY_UNVERIFIED = "nearby_in_time_state_unverified"
+    NONE = "none"
 
 
 class SkipReason(StrEnum):
@@ -189,3 +206,119 @@ class ReplayRecord(ReplayModel):
     tool_response: object | None = None
     gap_reason: str | None = None
     test_refs: list[str] = Field(default_factory=list)
+
+
+class TestCounts(ReplayModel):
+    passed: int | None = Field(default=None, ge=0)
+    failed: int | None = Field(default=None, ge=0)
+    errors: int | None = Field(default=None, ge=0)
+    skipped: int | None = Field(default=None, ge=0)
+
+
+class TestCaseEvidence(ReplayModel):
+    node_id: str
+    state: TestState
+
+
+class StructuredTestEvidence(ReplayModel):
+    schema_version: Literal["replay-store-1.0"] = "replay-store-1.0"
+    id: str
+    session_id: str
+    observed_at: datetime
+    state: TestState
+    suite_scope: str
+    source: Literal["structured_fixture", "version_tested_parser", "command_observation"]
+    command_record_id: str | None = None
+    command_exit_code: int | None = None
+    associated_manifest_id: str | None = None
+    association: TestAssociation = TestAssociation.NONE
+    counts: TestCounts | None = None
+    tests: list[TestCaseEvidence] = Field(default_factory=list)
+    output_missing: bool = False
+    partial: bool = False
+
+    @model_validator(mode="after")
+    def honest_command_evidence(self) -> StructuredTestEvidence:
+        if self.source == "command_observation" and (self.counts is not None or self.tests):
+            raise ValueError("command observations cannot contain structured pytest counts")
+        if self.source == "command_observation" and self.state not in {
+            TestState.NOT_OBSERVED,
+            TestState.INCOMPLETE,
+        }:
+            raise ValueError("command observations cannot claim a test outcome")
+        if self.association in {
+            TestAssociation.CONTENT_IDENTITY,
+            TestAssociation.CONTROLLED_NO_WRITE,
+        } and self.associated_manifest_id is None:
+            raise ValueError("verified test association requires a manifest identity")
+        return self
+
+
+class ChangedFileView(ReplayModel):
+    path: str
+    change: Literal["added", "modified", "deleted", "unchanged"]
+    before_sha256: str | None = None
+    after_sha256: str | None = None
+    unified_diff: str | None = None
+
+
+class ChangedSymbolView(ReplayModel):
+    path: str
+    qualified_name: str
+    kind: str
+    change: Literal["added", "modified", "deleted"]
+    before_content_sha256: str | None = None
+    after_content_sha256: str | None = None
+    verified: bool
+
+
+class TimelineEntry(ReplayModel):
+    sequence: int
+    record_id: str
+    record_type: RecordKind
+    captured_at: datetime
+    completeness: Completeness
+    attribution_status: AttributionStatus
+    tool_name: str | None = None
+    tool_use_id: str | None = None
+    before_manifest_id: str | None = None
+    after_manifest_id: str | None = None
+    changed_files: list[ChangedFileView] = Field(default_factory=list)
+    changed_symbols: list[ChangedSymbolView] = Field(default_factory=list)
+    test_evidence: list[StructuredTestEvidence] = Field(default_factory=list)
+    prompt_or_tool_evidence_redacted: bool = False
+    gap_reason: str | None = None
+
+
+class CheckpointFileView(ReplayModel):
+    path: str
+    content_sha256: str
+    size: int
+    text: str
+    parse_ok: bool
+    parse_error: str | None = None
+
+
+class CheckpointView(ReplayModel):
+    schema_version: Literal["replay-store-1.0"] = "replay-store-1.0"
+    session_id: str
+    sequence: int
+    record: ReplayRecord
+    selected_manifest_id: str | None
+    files: list[CheckpointFileView]
+    changed_files: list[ChangedFileView]
+    changed_symbols: list[ChangedSymbolView]
+    test_evidence: list[StructuredTestEvidence]
+    limitations: list[str]
+
+
+class ReplayExport(ReplayModel):
+    schema_version: Literal["replay-export-1.0"] = "replay-export-1.0"
+    exported_at: datetime
+    session: ReplaySession
+    records: list[ReplayRecord]
+    manifests: list[SnapshotManifest]
+    content_base64_by_sha256: dict[str, str]
+    tests: list[StructuredTestEvidence]
+    timeline: list[TimelineEntry]
+    limitations: list[str]

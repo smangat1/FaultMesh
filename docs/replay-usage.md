@@ -1,0 +1,98 @@
+# Local replay usage
+
+## Defaults
+
+FaultMesh replay is explicit opt-in and local-only. Storage defaults to
+`~/.faultmesh/replay`, outside the selected checkout. Override it with `--store`. FaultMesh does
+not scan old Codex sessions, the Codex home or unrelated repositories.
+
+Default capture bounds are 2,000 UTF-8 Python files, 512 KiB per file, 32 MiB per snapshot and
+512 MiB of stored unique content. `.git`, `.faultmesh`, model/dependency/build/artifact folders,
+binaries, secret-like filenames and symlinks are excluded. Non-Python source is visibly skipped;
+no language-agnostic AST claim is made.
+
+Tool input/output is best-effort pattern-redacted and bounded before persistence. Redaction is not
+a secrecy guarantee. `--raw-logging` explicitly opts into unredacted local fields. Exports can
+contain private source and evidence, so review them before sharing.
+
+Retention is manual. Records and content are append-only during a session. `replay-delete` deletes
+one whole selected recording and garbage-collects content not referenced by another recording.
+There is no automatic cloud upload, telemetry or cloud model fallback.
+
+## Record a new selected project
+
+```console
+faultmesh replay-start /path/to/project \
+  --codex-version 'codex-cli 0.165.0-alpha.1.2'
+```
+
+The command captures the initial snapshot and prints a synchronous hook command plus the matcher
+`^(Bash|apply_patch)$`. Configure that command for both Codex `PreToolUse` and `PostToolUse` for the
+new session. Hook capture is rejected when its working directory differs from the selected root.
+
+List and stop recordings:
+
+```console
+faultmesh replay-sessions
+faultmesh replay-stop <session-id>
+```
+
+For a capture producer that writes the frozen NDJSON contract:
+
+```console
+faultmesh replay-ingest <session-id> capture.ndjson --source-name codex-hook-stream
+```
+
+An incomplete trailing line remains pending. Duplicate ingestion is stable. Detectable
+rotation/truncation starts a new generation with a visible gap.
+
+## Query without executing
+
+```console
+faultmesh replay-timeline <session-id>
+faultmesh replay-checkpoint <session-id> 3
+```
+
+These commands read stored bytes only. The checkpoint response includes source, diff, changed
+Python symbols, tool/prompt evidence markers and structured/unknown test markers. It does not run
+the selected command or test.
+
+## Export and play back without the checkout
+
+```console
+faultmesh replay-export <session-id> --out replay.json
+faultmesh replay-view-export replay.json --sequence 3
+```
+
+`replay-view-export` needs neither the replay store nor the original project. Content hashes and
+sizes are verified before display.
+
+Run the disposable no-model demonstration:
+
+```console
+faultmesh replay-demo
+```
+
+The demo creates two synthetic Python checkpoints, exports them, deletes its disposable checkout,
+and selects the earlier and later source from the export. It does not launch Codex, pytest or
+Docker.
+
+## Delete a recording
+
+```console
+faultmesh replay-delete <session-id>
+```
+
+Deletion is the only supported mutation of historical recording evidence and operates on the
+whole selected session. It is local and irreversible unless the store has been backed up.
+
+## Current limitations
+
+- One selected project, one supported Codex version, new sessions and no concurrent writers.
+- Exact pre/post tool snapshots; intermediate writes inside one tool invocation are unavailable.
+- Bounded UTF-8 Python source only.
+- Concurrent external changes inside a tool interval cannot be attributed reliably.
+- Command output has no pytest-count semantics without separate structured evidence or a narrow
+  version-tested parser.
+- Existing investigator, spectate and isolated failed-test rerun features remain separate legacy
+  capabilities and are not prerequisites for playback.

@@ -28,11 +28,13 @@ from faultmesh.replay.models import (
     ReplaySession,
     SessionStatus,
     SnapshotManifest,
+    StructuredTestEvidence,
+    TestAssociation,
 )
 from faultmesh.replay.privacy import redact_value
 from faultmesh.structure.index import index_python_bytes
 
-STORE_SCHEMA_VERSION = 1
+STORE_SCHEMA_VERSION = 2
 
 
 class ReplayStoreError(RuntimeError):
@@ -104,16 +106,39 @@ class ReplayStore:
             "manifests",
             "manifest_files",
             "structures",
+            "test_evidence",
             "ingestion_cursors",
         }
         if not tables:
             self._create_schema()
             return
+        version_row = self.connection.execute("SELECT version FROM schema_metadata").fetchone()
+        old_expected = expected - {"test_evidence"}
+        if tables == old_expected and version_row is not None and int(version_row["version"]) == 1:
+            self._migrate_v1_to_v2()
+            return
         if tables != expected:
             raise ReplayStoreError("replay store schema is unsupported; choose a fresh store root")
-        row = self.connection.execute("SELECT version FROM schema_metadata").fetchone()
-        if row is None or int(row["version"]) != STORE_SCHEMA_VERSION:
+        if version_row is None or int(version_row["version"]) != STORE_SCHEMA_VERSION:
             raise ReplayStoreError("replay store version is unsupported; choose a fresh store root")
+
+    def _migrate_v1_to_v2(self) -> None:
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            self._create_test_evidence_table()
+            self.connection.execute("UPDATE schema_metadata SET version = 2")
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def _create_test_evidence_table(self) -> None:
+        self.connection.execute(
+            "CREATE TABLE test_evidence ("
+            "id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) "
+            "ON DELETE CASCADE, observed_at TEXT NOT NULL, associated_manifest_id TEXT "
+            "REFERENCES manifests(id), record_json TEXT NOT NULL)"
+        )
 
     def _create_schema(self) -> None:
         try:
@@ -165,6 +190,7 @@ class ReplayStore:
                 "inode INTEGER NOT NULL, offset INTEGER NOT NULL, last_source_sequence INTEGER, "
                 "PRIMARY KEY (session_id, source_name))"
             )
+            self._create_test_evidence_table()
             self.connection.execute(
                 "INSERT INTO schema_metadata VALUES (?)", (STORE_SCHEMA_VERSION,)
             )
@@ -280,6 +306,19 @@ class ReplayStore:
                 ),
             )
         return stopped
+
+    def capture_checkpoint(
+        self, session_id: str, *, provenance: str = "manual_checkpoint"
+    ) -> ReplayRecord:
+        session = self.get_session(session_id)
+        snapshot = capture_snapshot(self.get_project_root(session_id), session.limits)
+        envelope = self._snapshot_envelope(session, snapshot, RecordKind.CHECKPOINT)
+        return self.add_envelope(
+            envelope,
+            source_identity=f"checkpoint:{envelope.record_id}",
+            source_offset=0,
+            provenance=provenance,
+        )
 
     def _object_path(self, digest: str) -> Path:
         return self.objects / digest[:2] / digest
@@ -666,6 +705,63 @@ class ReplayStore:
             if len(data) != int(row["size"]):
                 errors.append(f"content object size mismatch: {digest}")
         return errors
+
+    def add_test_evidence(self, evidence: StructuredTestEvidence) -> None:
+        self._session_row(evidence.session_id)
+        if evidence.associated_manifest_id is not None:
+            self.get_manifest(evidence.associated_manifest_id)
+            linked = self.connection.execute(
+                "SELECT 1 FROM records WHERE session_id = ? AND manifest_id = ?",
+                (evidence.session_id, evidence.associated_manifest_id),
+            ).fetchone()
+            if linked is None:
+                raise ReplayStoreError("test evidence manifest is not in this session")
+        if evidence.command_record_id is not None:
+            linked_command = self.connection.execute(
+                "SELECT record_json FROM records WHERE session_id = ? AND id = ?",
+                (evidence.session_id, evidence.command_record_id),
+            ).fetchone()
+            if linked_command is None:
+                raise ReplayStoreError("test evidence command record is not in this session")
+            command_record = ReplayRecord.model_validate_json(linked_command["record_json"])
+        else:
+            command_record = None
+        if (
+            evidence.association == TestAssociation.NEARBY_UNVERIFIED
+            and evidence.associated_manifest_id is not None
+        ):
+            raise ReplayStoreError("nearby unverified evidence cannot claim a manifest identity")
+        if evidence.association == TestAssociation.CONTROLLED_NO_WRITE and (
+            command_record is None
+            or command_record.before_manifest_id is None
+            or command_record.before_manifest_id != command_record.after_manifest_id
+            or command_record.after_manifest_id != evidence.associated_manifest_id
+        ):
+            raise ReplayStoreError(
+                "controlled no-write test evidence requires an unchanged command boundary"
+            )
+        try:
+            with self.connection:
+                self.connection.execute(
+                    "INSERT INTO test_evidence VALUES (?, ?, ?, ?, ?)",
+                    (
+                        evidence.id,
+                        evidence.session_id,
+                        evidence.observed_at.isoformat(),
+                        evidence.associated_manifest_id,
+                        evidence.model_dump_json(),
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ReplayStoreError(f"test evidence already exists: {evidence.id}") from exc
+
+    def list_test_evidence(self, session_id: str) -> list[StructuredTestEvidence]:
+        self._session_row(session_id)
+        rows = self.connection.execute(
+            "SELECT record_json FROM test_evidence WHERE session_id = ? ORDER BY observed_at, id",
+            (session_id,),
+        ).fetchall()
+        return [StructuredTestEvidence.model_validate_json(row["record_json"]) for row in rows]
 
     def delete_session(self, session_id: str) -> None:
         self._session_row(session_id)

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import shlex
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -26,7 +28,15 @@ from faultmesh.project_runner import (
 from faultmesh.project_runner.replay import open_run_store
 from faultmesh.replay.adapter import capture_hook_event
 from faultmesh.replay.ingest import ingest_jsonl
+from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.store import ReplayStore, default_replay_root
+from faultmesh.replay.views import (
+    export_session,
+    load_export,
+    select_checkpoint,
+    select_export_checkpoint,
+    timeline,
+)
 from faultmesh.spectate.engine import (
     SpectateEngine,
     SpectateError,
@@ -480,6 +490,140 @@ def replay_delete(
         typer.secho(f"FaultMesh replay delete failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(json.dumps({"deleted_session": session_id}, sort_keys=True))
+
+
+@app.command("replay-timeline")
+def replay_timeline(
+    session_id: Annotated[str, typer.Argument()],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Print an ordered evidence timeline without touching the original checkout."""
+    try:
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            entries = timeline(replay_store, session_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay timeline failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            [entry.model_dump(mode="json") for entry in entries],
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("replay-checkpoint")
+def replay_checkpoint(
+    session_id: Annotated[str, typer.Argument()],
+    sequence: Annotated[int, typer.Argument(min=1)],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Select one stored checkpoint read-only; never apply or execute it."""
+    try:
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            selected = select_checkpoint(replay_store, session_id, sequence)
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay checkpoint failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(selected.model_dump_json(indent=2))
+
+
+@app.command("replay-export")
+def replay_export(
+    session_id: Annotated[str, typer.Argument()],
+    out: Annotated[Path, typer.Option(help="Write deterministic offline replay JSON here.")],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Export stored replay evidence without reading the selected checkout."""
+    try:
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            exported = export_session(replay_store, session_id)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(exported.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay export failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "schema_version": exported.schema_version,
+                "session_id": session_id,
+                "records": len(exported.records),
+                "path": str(out.resolve()),
+            },
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("replay-view-export")
+def replay_view_export(
+    export_file: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
+    ],
+    sequence: Annotated[int, typer.Option(min=1)],
+) -> None:
+    """Select historical source from an offline export with no store or checkout."""
+    try:
+        selected = select_export_checkpoint(load_export(export_file), sequence)
+    except Exception as exc:
+        typer.secho(f"FaultMesh exported replay failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(selected.model_dump_json(indent=2))
+
+
+@app.command("replay-schema")
+def replay_schema(
+    contract: Annotated[str, typer.Argument(help="capture or export")],
+) -> None:
+    """Print the strict machine-readable capture or export JSON Schema."""
+    if contract == "capture":
+        schema = CaptureEnvelope.model_json_schema()
+    elif contract == "export":
+        schema = ReplayExport.model_json_schema()
+    else:
+        raise typer.BadParameter("contract must be 'capture' or 'export'")
+    typer.echo(json.dumps(schema, indent=2, sort_keys=True))
+
+
+@app.command("replay-demo")
+def replay_demo() -> None:
+    """Run a no-model disposable capture/export/playback demonstration."""
+    with tempfile.TemporaryDirectory(prefix="faultmesh-replay-demo-") as temporary:
+        base = Path(temporary)
+        project = base / "project"
+        project.mkdir()
+        source = project / "value.py"
+        source.write_text("def value() -> int:\n    return 1\n", encoding="utf-8")
+        store_root = base / "store"
+        export_path = base / "replay.json"
+        with ReplayStore(store_root) as replay_store:
+            session = replay_store.create_session(
+                project, codex_version="synthetic-demo-no-agent"
+            )
+            source.write_text("def value() -> int:\n    return 2\n", encoding="utf-8")
+            later = replay_store.capture_checkpoint(session.id, provenance="synthetic_demo")
+            exported = export_session(replay_store, session.id)
+            export_path.write_text(exported.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        shutil.rmtree(project)
+        earlier = select_export_checkpoint(load_export(export_path), 1)
+        latest = select_export_checkpoint(load_export(export_path), later.sequence)
+        typer.echo(
+            json.dumps(
+                {
+                    "checkout_exists_during_playback": project.exists(),
+                    "earlier_source": earlier.files[0].text,
+                    "later_source": latest.files[0].text,
+                    "model_used": False,
+                    "original_checkout_written_during_playback": False,
+                    "records": len(exported.records),
+                    "schema_version": exported.schema_version,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
 
 
 @app.command("spectate")

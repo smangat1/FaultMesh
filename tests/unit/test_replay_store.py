@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -328,3 +330,26 @@ def test_committed_capture_fixtures_validate_and_contain_no_home_paths() -> None
         RecordKind.POST_TOOL,
     ]
     assert "/Users/" not in initial_text + sequence_text
+
+
+def test_store_migrates_phase_one_schema_without_rewriting_records(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    store_root = tmp_path / "store"
+    with ReplayStore(store_root) as store:
+        session = store.create_session(root, codex_version="codex-cli test")
+        record_ids = [item.id for item in store.list_records(session.id)]
+    database = store_root / "replay.sqlite3"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute("DROP TABLE test_evidence")
+        connection.execute("UPDATE schema_metadata SET version = 1")
+        connection.commit()
+
+    with ReplayStore(store_root) as migrated:
+        assert [item.id for item in migrated.list_records(session.id)] == record_ids
+        tables = {
+            row[0]
+            for row in migrated.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "test_evidence" in tables

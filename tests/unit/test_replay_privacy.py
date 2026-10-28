@@ -25,15 +25,17 @@ def test_redaction_happens_before_default_persistence(tmp_path: Path) -> None:
             "turn_id": "turn-1",
             "tool_name": "Bash",
             "cwd": str(root),
-            "tool_input": {"command": "API_KEY=sk-secret-value password=hunter2"},
+            "tool_input": {
+                "command": "api_key=synthetic_value token=synthetic_token"
+            },
         }
         capture_hook_event(store, session.id, event)
         record = store.list_records(session.id)[-1]
 
     serialized = str(record.tool_input)
     assert REDACTION_MARKER in serialized
-    assert "sk-secret-value" not in serialized
-    assert "hunter2" not in serialized
+    assert "synthetic_value" not in serialized
+    assert "synthetic_token" not in serialized
     assert record.redaction_applied is True
 
 

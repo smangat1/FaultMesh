@@ -209,6 +209,12 @@ faultmesh replay-test <run-id> '<exact-failed-node-id>' --config /path/to/projec
 faultmesh export-run <run-id> --config /path/to/project-run.toml
 faultmesh structure /path/to/project --out structure.json
 faultmesh structure-summary structure.json
+faultmesh replay-start /path/to/project --codex-version 'codex-cli 0.165.0-alpha.1.2'
+faultmesh replay-timeline <session-id>
+faultmesh replay-checkpoint <session-id> 3
+faultmesh replay-export <session-id> --out replay.json
+faultmesh replay-view-export replay.json --sequence 3
+faultmesh replay-demo
 ```
 
 See [docs/architecture.md](docs/architecture.md) for architecture, contracts, risks, the complete
@@ -219,6 +225,13 @@ the copy-paste procedure in [docs/testing.md](docs/testing.md).
 The schema 3.0 structure contract, static-evidence limits, Git comparison behavior, V2 join, and
 real-project V3 acceptance are documented in
 [docs/v3-static-structure.md](docs/v3-static-structure.md).
+
+The new local capture boundary, frozen capture contract, privacy defaults and no-model offline
+playback are documented in [docs/replay-capture-boundary.md](docs/replay-capture-boundary.md),
+[docs/replay-capture-format.md](docs/replay-capture-format.md),
+[docs/replay-format.md](docs/replay-format.md) and
+[docs/replay-usage.md](docs/replay-usage.md). The investigator and isolated failed-test rerun remain
+separate features; neither is a prerequisite for viewing a saved agent recording.
 
 ## Try it manually
 
