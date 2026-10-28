@@ -882,6 +882,7 @@ export const App: React.FC<AppProps> = ({
                     errorMessage={activeRun?.errorMessage}
                     isRealImport={activeRun?.isRealImport}
                     isLive={activeRun?.isLive}
+                    hasActiveToast={Boolean(toastMessage)}
                     activeMapDrawer={activeMapDrawer}
                     onToggleMapDrawer={setActiveMapDrawer}
                     onCyReady={(cy) => {
