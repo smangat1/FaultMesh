@@ -194,3 +194,46 @@ Acceptance commands:
 
 Commit the Phase 3B boundary, then add deterministic and model-proposed chapters, independent local
 model jobs and the backwards-compatible enriched export.
+
+Phase 3B commit: `71f312671e375fbab4f29bfa1c611c8ed0d36f04`.
+
+## Phase 4A — chapters and swappable local models
+
+Status: complete; local-model quality remains unmeasured.
+
+Implemented:
+
+- always-available prompt-turn chapters with documented fixed-size grouping when turn IDs are
+  absent;
+- strict validation of model-proposed contiguous ranges, bounds, stable IDs, full coverage and real
+  record links, with titles labeled `model interpretation`;
+- honest empty, long and invalid-output fallbacks;
+- one-worker local narration queue that cancels pending requests and discards stale results;
+- bounded llama.cpp CLI and loopback-server configuration with 1.5B/3B/7B-class resource presets;
+- explicit-root GGUF inventory and hashing with no download or model loading;
+- `replay-export-2.0` containing v1 evidence plus packets, checked narration, reasons, audits,
+  baseline chapters and selected chapters; v1 remains loadable;
+- `replay-narrate`, `replay-model-inventory` and machine-readable narration/claim/chapter schemas;
+- sanitized valid/unknown/contradicted/inference/timeout examples for Prompt C.
+
+Local inventory on 2026-10-28:
+
+- hardware reports 8,589,934,592 bytes RAM (8 GiB);
+- no local `*.gguf` file was found in the inspected user area;
+- neither `llama-cli` nor `llama-server` was on `PATH`;
+- therefore no model was downloaded, loaded or benchmarked, and no 1.5B/3B/7B quality or fit claim
+  is made.
+
+Acceptance commands:
+
+- Targeted ruff for CLI, backends, chapters, narration and tests: passed.
+- `mypy`: passed for 57 source files.
+- Chapters/narration plus checker, citations, replay store/view/privacy and legacy inference tests:
+  42 passed.
+- CLI no-model export, schema generation, v1/v2 round-trip, chapter fallback, stale job cancellation
+  and explicit-root inventory are covered.
+
+## Next step
+
+Commit Phase 4A, then implement the frozen offline comparison/report command and record only actual
+synthetic measurements plus the pending held-out/human/model/M2 gates.

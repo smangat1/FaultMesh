@@ -17,6 +17,11 @@ from faultmesh.analysis import ProjectAnalyzer
 from faultmesh.api import AnalysisOptions, analyze_repository, reproduce_incident
 from faultmesh.config import FaultMeshConfig
 from faultmesh.evidence import EvidenceStore
+from faultmesh.inference.backends import (
+    InferenceBackend,
+    LlamaCppCliBackend,
+    LlamaCppServerBackend,
+)
 from faultmesh.project_runner import (
     ReplayComparison,
     RunOutcome,
@@ -27,8 +32,20 @@ from faultmesh.project_runner import (
 )
 from faultmesh.project_runner.replay import open_run_store
 from faultmesh.replay.adapter import capture_hook_event
+from faultmesh.replay.chapters import ChapterProposalBatch, propose_chapters
+from faultmesh.replay.claims import ClaimBatch, ClaimNarrator, build_evidence_packet
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
+from faultmesh.replay.narration import (
+    MODEL_PRESETS,
+    ReplayNarrationExport,
+    StepNarration,
+    build_narration_export,
+    build_no_model_narration,
+    inventory_local_models,
+    load_replay_document,
+    suggest_likely_reason,
+)
 from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.replay.views import (
     export_session,
@@ -573,17 +590,145 @@ def replay_view_export(
     typer.echo(selected.model_dump_json(indent=2))
 
 
+@app.command("replay-model-inventory")
+def replay_model_inventory(
+    search_root: Annotated[
+        list[Path], typer.Argument(exists=True, resolve_path=True)
+    ],
+    available_memory_bytes: Annotated[
+        int | None,
+        typer.Option(
+            min=0,
+            help="Optional measured available memory; omitted means not measured.",
+        ),
+    ] = None,
+) -> None:
+    """Hash local GGUF files under explicit roots without loading or downloading them."""
+    inventory = inventory_local_models(
+        search_root, available_memory_bytes=available_memory_bytes
+    )
+    typer.echo(inventory.model_dump_json(indent=2))
+
+
+@app.command("replay-narrate")
+def replay_narrate(
+    export_file: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
+    ],
+    out: Annotated[Path, typer.Option(help="Write replay-export-2.0 JSON here.")],
+    backend: Annotated[
+        str, typer.Option(help="none, llama-cli, or llama-server")
+    ] = "none",
+    preset: Annotated[
+        str, typer.Option(help="small-1.5b, medium-3b, or large-7b resource caps")
+    ] = "small-1.5b",
+    model_path: Annotated[Path | None, typer.Option(help="Explicit local GGUF path")] = None,
+    llama_executable: Annotated[str, typer.Option()] = "llama-cli",
+    endpoint: Annotated[str | None, typer.Option(help="Loopback llama-server endpoint")] = None,
+    model_name: Annotated[str, typer.Option(help="Server-reported local model name")] = (
+        "local-model"
+    ),
+) -> None:
+    """Add local checked narration to an offline replay export; never touch its checkout."""
+    try:
+        document = load_replay_document(export_file)
+        if not isinstance(document, ReplayExport):
+            raise ValueError("input is already an enriched replay-export-2.0 document")
+        if preset not in MODEL_PRESETS:
+            raise ValueError(f"unknown preset: {preset}")
+        selected = MODEL_PRESETS[preset]
+        inference_backend: InferenceBackend | None = None
+        if backend == "llama-cli":
+            if model_path is None or not model_path.is_file():
+                raise ValueError("llama-cli requires an existing explicit --model-path")
+            inference_backend = LlamaCppCliBackend(
+                llama_executable,
+                model_path,
+                timeout_seconds=selected.timeout_seconds,
+                context_size=selected.context_size,
+                max_output_tokens=selected.max_output_tokens,
+            )
+        elif backend == "llama-server":
+            if endpoint is None:
+                raise ValueError("llama-server requires an explicit loopback --endpoint")
+            inference_backend = LlamaCppServerBackend(
+                endpoint,
+                model=model_name,
+                timeout_seconds=selected.timeout_seconds,
+                max_output_tokens=selected.max_output_tokens,
+            )
+        elif backend != "none":
+            raise ValueError("backend must be none, llama-cli, or llama-server")
+        if inference_backend is None:
+            enriched = build_no_model_narration(document)
+        else:
+            claim_narrator = ClaimNarrator(
+                inference_backend,
+                model_config_id=(
+                    f"{backend}:{preset}:{model_path.name if model_path else model_name}"
+                ),
+            )
+            steps: list[StepNarration] = []
+            for record in sorted(document.records, key=lambda item: item.sequence):
+                packet = build_evidence_packet(document, record.sequence)
+                steps.append(
+                    StepNarration(
+                        sequence=record.sequence,
+                        packet=packet,
+                        claims=claim_narrator.run(packet),
+                        reason=suggest_likely_reason(
+                            document, record.sequence, inference_backend
+                        ),
+                    )
+                )
+            enriched = build_narration_export(
+                document,
+                steps=steps,
+                chapter_run=propose_chapters(document, inference_backend),
+            )
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(enriched.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay narration failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "schema_version": enriched.schema_version,
+                "mode": "no-model" if backend == "none" else backend,
+                "steps": len(enriched.narration),
+                "chapters": len(enriched.chapters),
+                "path": str(out.resolve()),
+            },
+            sort_keys=True,
+        )
+    )
+
+
 @app.command("replay-schema")
 def replay_schema(
-    contract: Annotated[str, typer.Argument(help="capture or export")],
+    contract: Annotated[
+        str,
+        typer.Argument(
+            help="capture, export, narration-export, claims, or chapter-proposals"
+        ),
+    ],
 ) -> None:
     """Print the strict machine-readable capture or export JSON Schema."""
     if contract == "capture":
         schema = CaptureEnvelope.model_json_schema()
     elif contract == "export":
         schema = ReplayExport.model_json_schema()
+    elif contract == "narration-export":
+        schema = ReplayNarrationExport.model_json_schema()
+    elif contract == "claims":
+        schema = ClaimBatch.model_json_schema()
+    elif contract == "chapter-proposals":
+        schema = ChapterProposalBatch.model_json_schema()
     else:
-        raise typer.BadParameter("contract must be 'capture' or 'export'")
+        raise typer.BadParameter(
+            "contract must be capture, export, narration-export, claims, or chapter-proposals"
+        )
     typer.echo(json.dumps(schema, indent=2, sort_keys=True))
 
 

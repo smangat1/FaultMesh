@@ -77,6 +77,28 @@ The demo creates two synthetic Python checkpoints, exports them, deletes its dis
 and selects the earlier and later source from the export. It does not launch Codex, pytest or
 Docker.
 
+## Add checked narration without blocking recording
+
+The deterministic path is always available:
+
+```console
+faultmesh replay-narrate replay.json --out narrated.json --backend none
+```
+
+To use one explicitly selected local GGUF with bounded 1.5B-class resource settings:
+
+```console
+faultmesh replay-model-inventory /path/to/models --available-memory-bytes 8589934592
+faultmesh replay-narrate replay.json --out narrated.json \
+  --backend llama-cli --model-path /path/to/model.gguf --preset small-1.5b
+```
+
+Loopback `llama-server` is also supported with an explicit `--endpoint`. FaultMesh does not guess
+model paths, download weights, contact a cloud service or load several models together. Presets are
+resource caps for 1.5B-, 3B- and 7B-class files, not claims that any specific model is installed,
+fits memory or performs well. Missing, invalid or timed-out model output falls back to deterministic
+claims and chapters. Recording and ordinary playback never start an inference job.
+
 ## Delete a recording
 
 ```console

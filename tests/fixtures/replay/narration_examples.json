@@ -1,0 +1,37 @@
+{
+  "schema_version": "replay-narration-examples-1.0",
+  "sanitized": true,
+  "examples": [
+    {
+      "kind": "checked_claim",
+      "claim": "value.py changed from hash-a to hash-b",
+      "verdict": "supported",
+      "reason_code": "exact_file_fact"
+    },
+    {
+      "kind": "checked_claim",
+      "claim": "missing.py changed",
+      "verdict": "contradicted",
+      "reason_code": "complete_path_absence"
+    },
+    {
+      "kind": "checked_claim",
+      "claim": "pytest reported 10 passing tests",
+      "verdict": "unsupported_or_unknown",
+      "reason_code": "structured_test_report_unavailable"
+    },
+    {
+      "kind": "likely_reason",
+      "label": "likely reason (model inference)",
+      "citation_status": "valid",
+      "entailment_status": "not_deterministically_assessed",
+      "verified_intent": false
+    },
+    {
+      "kind": "model_failure",
+      "error": "timeout",
+      "fallback": "deterministic templates",
+      "recording_blocked": false
+    }
+  ]
+}

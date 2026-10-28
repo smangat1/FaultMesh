@@ -11,6 +11,16 @@ Print the machine-readable schema with:
 faultmesh replay-schema export
 ```
 
+`replay-export-2.0` is the optional enriched document. It retains every v1 evidence field and adds
+bounded evidence packets, raw/parsed/repaired claim attempts, three-way checker verdicts,
+evidence-linked likely-reason records, summary audits, deterministic baseline chapters and selected
+chapters. Print its schema with `faultmesh replay-schema narration-export`. V1 documents remain
+loadable and never require narration.
+
+Model-selected facts are checked atomically. A supported predicate does not certify adjacent prose.
+Likely reasons are always model inferences, and model chapter titles are always interpretations.
+The sanitized UI contract examples are in `tests/fixtures/replay/narration_examples.json`.
+
 The capture input schema is available as `faultmesh replay-schema capture`.
 
 ## Top-level fields
