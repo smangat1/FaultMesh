@@ -382,7 +382,6 @@ def scout_response_json_schema_for(function: FunctionMetadata) -> dict[str, Any]
         "prefixItems": prefix_items,
         "minItems": len(prefix_items),
         "maxItems": len(prefix_items),
-        "items": False,
     }
     property_schema["properties"]["schema_version"] = {
         "const": "1.1",
