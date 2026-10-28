@@ -75,6 +75,10 @@ were not required in the specialized model-facing schema and charged reuse was a
 aggregate. Its raw output and invalidation record are preserved. Development run 2 froze the
 prompt/configuration hashes. No proposal code changed before the single held-out run.
 
+After the held-out run, CI required source formatting and import-order changes. An AST comparison
+confirmed that every string constant, including all prompt and few-shot text, was unchanged; no
+experiment was rerun, and the prompt lock records the formatting-only source hashes.
+
 ## Reproduction
 
 The locked model is Qwen2.5-Coder-1.5B-Instruct Q4_K_M, SHA-256

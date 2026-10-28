@@ -11,23 +11,22 @@ from faultmesh.agents import ProposalConfiguration, ScoutAgent
 from faultmesh.inference import ModelCallBudget
 from faultmesh.inference.client import ValidatedInference
 from faultmesh.schemas import (
-    FunctionMetadata,
     ArgumentSpec,
-    IntegerListStrategy,
-    IntegerStrategy,
+    FunctionMetadata,
     InferenceAttempt,
     InferenceMetadata,
-    ProjectIndex,
-    ProposedHypothesis,
+    IntegerListStrategy,
+    IntegerStrategy,
     NoExceptionOracle,
     OracleSpec,
+    ProjectIndex,
     PropertySpec,
+    ProposedHypothesis,
     ResultBetweenOracle,
     ResultBoundOracle,
     ResultLengthOracle,
     ResultListNondecreasingOracle,
     ResultListPreservesMultisetOracle,
-    ScoutResponse,
     TextStrategy,
 )
 from faultmesh.verification import (
@@ -264,7 +263,8 @@ class DocumentedContractProposer:
         if function.return_annotation == "list[int]" and list_argument and nondecreasing:
             candidates.append((ResultListNondecreasingOracle(), nondecreasing.group(0)))
         duplicates = re.search(
-            r"(?:preserv(?:e|ing) (?:every|duplicate)|including duplicates|including duplicate values)",
+            r"(?:preserv(?:e|ing) (?:every|duplicate)|including duplicates|"
+            r"including duplicate values)",
             normalized,
             re.I,
         )
@@ -385,4 +385,4 @@ def _sum_optional(values: Iterable[int | None]) -> int | None:
     collected = list(values)
     if any(value is None for value in collected):
         return None
-    return sum(int(value) for value in collected)
+    return sum(value for value in collected if value is not None)

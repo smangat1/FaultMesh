@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -16,6 +16,8 @@ from faultmesh.schemas import (
     ScoutResponse,
     scout_response_json_schema,
 )
+
+InferencePhase = Literal["initial", "json_repair", "semantic_retry"]
 
 
 class InferenceValidationError(RuntimeError):
@@ -75,7 +77,7 @@ class InferenceClient:
         *,
         json_schema: dict[str, Any] | None = None,
         budget: ModelCallBudget | None = None,
-        phase: str = "initial",
+        phase: InferencePhase = "initial",
     ) -> ValidatedInference:
         schema: dict[str, Any] = json_schema or scout_response_json_schema()
         call_budget = budget or ModelCallBudget(self.max_repair_attempts + 1)
@@ -149,7 +151,7 @@ class InferenceClient:
 
 def _attempt(
     call_index: int,
-    phase: str,
+    phase: InferencePhase,
     prompt: str,
     result: BackendResult,
     error: str | None,

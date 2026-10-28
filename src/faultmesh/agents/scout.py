@@ -8,7 +8,7 @@ from enum import StrEnum
 from faultmesh.agents.examples import few_shot_examples
 from faultmesh.analysis import ContextBuilder
 from faultmesh.inference import HeuristicBackend, InferenceClient
-from faultmesh.inference.client import ModelCallBudget, ValidatedInference
+from faultmesh.inference.client import InferencePhase, ModelCallBudget, ValidatedInference
 from faultmesh.schemas import (
     FunctionMetadata,
     ScoutResponse,
@@ -51,14 +51,15 @@ class ScoutAgent:
         if configuration in {ProposalConfiguration.AB, ProposalConfiguration.ABC}:
             examples = _few_shot_prompt()
         correction = ""
-        phase = "initial"
+        phase: InferencePhase = "initial"
         if semantic_feedback is not None:
             phase = "semantic_retry"
             previous = previous_response.model_dump_json(indent=2) if previous_response else "{}"
             correction = (
-                "\nThis is the only semantic correction attempt. The prior proposal was rejected "
-                "before execution. Correct only the reported issue using the same function evidence, "
-                "or return an empty hypotheses array when the contract is unsupported. Do not infer "
+                "\nThis is the only semantic correction attempt. The prior proposal was "
+                "rejected before execution. Correct only the reported issue using the same "
+                "function evidence, or return an empty hypotheses array when the contract is "
+                "unsupported. Do not infer "
                 "a new contract from the implementation.\n"
                 f"Rejection reason(s): {semantic_feedback[:3000]}\n"
                 f"Previous proposal:\n{previous[:8000]}\n"

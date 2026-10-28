@@ -9,8 +9,11 @@ import pytest
 from faultmesh.agents import ScoutAgent
 from faultmesh.analysis import ContextBuilder, ProjectAnalyzer
 from faultmesh.inference.backends import BackendResult, HeuristicBackend, LlamaCppCliBackend
-from faultmesh.inference.client import InferenceClient, InferenceValidationError
-from faultmesh.inference.client import ModelCallBudget
+from faultmesh.inference.client import (
+    InferenceClient,
+    InferenceValidationError,
+    ModelCallBudget,
+)
 from faultmesh.schemas import (
     FunctionMetadata,
     ParameterMetadata,

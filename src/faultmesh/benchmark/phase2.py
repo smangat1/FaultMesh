@@ -42,7 +42,7 @@ from faultmesh.schemas import (
     VerificationManifest,
 )
 
-SCHEMA_VERSION = "phase2-pilot-1.0"
+SCHEMA_VERSION: Literal["phase2-pilot-1.0"] = "phase2-pilot-1.0"
 Arm = Literal["slm-only", "baseline-only", "combined", "heuristic-ablation"]
 Split = Literal["development", "heldout"]
 Variant = Literal["buggy", "corrected"]
@@ -211,12 +211,18 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
         faultmesh_source=repository / "src",
     )
     _verify_docker(runtime)
-    selected_cases = [case for case in cases if options.split == "all" or case.split == options.split]
+    selected_cases = [
+        case
+        for case in cases
+        if options.split == "all" or case.split == options.split
+    ]
     if not selected_cases:
         raise ValueError(f"no corpus cases selected for split {options.split!r}")
 
     records: list[Phase2Record] = []
-    verification_cache: dict[tuple[str, Variant, int, tuple[str, ...]], _VerificationCacheEntry] = {}
+    verification_cache: dict[
+        tuple[str, Variant, int, tuple[str, ...]], _VerificationCacheEntry
+    ] = {}
     with tempfile.TemporaryDirectory(prefix="phase2-", dir=raw_out.parent) as temporary:
         work_root = Path(temporary)
         for case in selected_cases:
@@ -246,10 +252,9 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
                 except (InferenceValidationError, RuntimeError, OSError, ValueError) as exc:
                     slm_outcome = ProposalOutcome()
                     model_error = f"{type(exc).__name__}: {exc}"
-                    if isinstance(exc, InferenceValidationError):
-                        slm_attempts = exc.attempts
-                    else:
-                        slm_attempts = []
+                    slm_attempts = (
+                        exc.attempts if isinstance(exc, InferenceValidationError) else []
+                    )
                 else:
                     slm_attempts = (
                         slm_outcome.metadata.attempts if slm_outcome.metadata else []
@@ -292,7 +297,11 @@ def run_phase2_pilot(options: Phase2PilotOptions) -> tuple[Path, Path]:
                             cache_key = (case.bug_id, variant, seed, keys)
                             cached = verification_cache.get(cache_key)
                             if cached is None:
-                                charged_inference = slm_ms if arm in {"slm-only", "combined"} else 0.0
+                                charged_inference = (
+                                    slm_ms
+                                    if arm in {"slm-only", "combined"}
+                                    else 0.0
+                                )
                                 cached = _verify_properties(
                                     variants[variant],
                                     rebound,
@@ -497,10 +506,11 @@ def _load_and_validate_lock(
 
 
 def _resolve_model(options: Phase2PilotOptions, repository: Path, lock: dict[str, Any]) -> Path:
-    candidates = [
+    model_filename = str(lock["model_filename"])
+    candidates: list[Path | None] = [
         options.model_path,
-        repository / ".faultmesh/models" / lock["model_filename"],
-        Path.cwd() / ".faultmesh/models" / lock["model_filename"],
+        repository / ".faultmesh/models" / model_filename,
+        Path.cwd() / ".faultmesh/models" / model_filename,
     ]
     model = next((path.resolve() for path in candidates if path and path.is_file()), None)
     if model is None:
@@ -942,7 +952,10 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
         "",
         f"Split executed: `{options.split}`. This bounded pilot does not measure arbitrary Python.",
         "",
-        "| Budget view | Split | Configuration | Arm | Proposal valid | UNSUPPORTED | Bugs | Increment vs baseline (95% paired bootstrap) | False controls | Replay | Calls physical/charged | Evaluations physical/charged | Median ms |",
+        "| Budget view | Split | Configuration | Arm | Proposal valid | "
+        "UNSUPPORTED | Bugs | Increment vs baseline (95% paired bootstrap) | "
+        "False controls | Replay | Calls physical/charged | "
+        "Evaluations physical/charged | Median ms |",
         "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in aggregate["rows"]:
@@ -952,9 +965,11 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
             f"{row['unsupported_numerator']}/{row['unsupported_denominator']} | "
             f"{row['unique_adjudicated_bugs']} | "
             f"{row['incremental_unique_bugs_over_baseline']} "
-            f"({row['paired_increment_interval_95'][0]:.2f}, {row['paired_increment_interval_95'][1]:.2f}) | "
+            f"({row['paired_increment_interval_95'][0]:.2f}, "
+            f"{row['paired_increment_interval_95'][1]:.2f}) | "
             f"{row['false_properties_on_controls']} | "
-            f"{row['replay_successes']} | {row['actual_model_calls']}/{row['charged_model_calls']} | "
+            f"{row['replay_successes']} | "
+            f"{row['actual_model_calls']}/{row['charged_model_calls']} | "
             f"{row['actual_evaluations']}/{row['charged_evaluations']} | "
             f"{row['latency_ms']['median']:.1f} |"
         )
@@ -965,9 +980,12 @@ def _render_report(aggregate: dict[str, Any], options: Phase2PilotOptions) -> st
             "",
             "- Development and held-out records remain separate.",
             "- Verified violations pending independent review are not adjudicated bugs.",
-            "- The equal-wall-time view reuses the same bounded runs and charges cached inference; it is not another sample.",
+            "- The equal-wall-time view reuses the same bounded runs and charges "
+            "cached inference; it is not another sample.",
             "- Missing token and memory telemetry is recorded as null, not estimated.",
-            "- Timeout, harness, environment, model-error, flaky, miss, pending-adjudication, and duplicate counts remain separate in the JSON aggregate.",
+            "- Timeout, harness, environment, model-error, flaky, miss, "
+            "pending-adjudication, and duplicate counts remain separate in the "
+            "JSON aggregate.",
             "",
         ]
     )

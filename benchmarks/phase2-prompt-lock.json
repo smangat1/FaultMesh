@@ -2,11 +2,17 @@
   "schema_version": "phase2-prompt-lock-1.0",
   "frozen_after_development_run": "phase-2-development",
   "faultmesh_commit": "0035a87",
-  "files": {
+  "frozen_run_files": {
     "src/faultmesh/agents/scout.py": "9ac13c9610e173689d0cc0c605d3e4db7e1cadc1065b3f5fd22335c428cebf2b",
     "src/faultmesh/agents/examples.py": "4138424dded1feee64a6a0d3c4df63fac2791dc1487919759ff17b7591c655f3",
     "src/faultmesh/schemas.py": "e1e9629940fce8a06b8699bd0387f1201e2544f53c6b34b848a8c55cf6ae6279",
     "src/faultmesh/proposal_quality.py": "2fa9c251ffd0e2c1f6c1b838f3922251eee0003dba6d941507670f743d42ead7"
+  },
+  "files": {
+    "src/faultmesh/agents/scout.py": "2f54dddb51b5fbbc4313ad7456a8aee78a2476ae09d1ae57bcdd97468a98c5b9",
+    "src/faultmesh/agents/examples.py": "0df12feb795510a7fabe6a4191039240ad18e8d392971ffbd204333c26434804",
+    "src/faultmesh/schemas.py": "e1e9629940fce8a06b8699bd0387f1201e2544f53c6b34b848a8c55cf6ae6279",
+    "src/faultmesh/proposal_quality.py": "f2ad56abe43a312289d78db7fa0edb248e84492f8dbff7c3eefa90a3fe3fdd12"
   },
   "development_artifacts": {
     "phase-2-development.ndjson": "abbf03aed0b24dd8d1d049fe64031edd5bb27199bc9ca276bba58144b0318359",
@@ -39,5 +45,5 @@
       "abc": ["10b6ff9035b3f99444a2524f4b8e2ec008dbe8523299c70f05c8eb2340177c3c"]
     }
   },
-  "note": "Held-out prompts include target-specific evidence and therefore have different hashes. This lock freezes their generating code and settings before the one held-out run."
+  "note": "Held-out prompts include target-specific evidence and therefore have different hashes. This lock freezes their generating code and settings before the one held-out run. The recorded post-run source hashes include a CI-only formatting/import-order patch; AST string constants and generated prompt content were verified unchanged."
 }

@@ -19,7 +19,6 @@ from faultmesh.benchmark.phase2 import (
 )
 from faultmesh.cli.app import app
 
-
 ROOT = Path(__file__).parents[2]
 LOCK = ROOT / "benchmarks/phase-2-pilot.lock.toml"
 

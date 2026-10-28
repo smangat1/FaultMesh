@@ -67,7 +67,11 @@ def few_shot_examples() -> tuple[FewShotExample, ...]:
     return (
         _example(
             "integer_upper",
-            'def cap(value: int, maximum: int) -> int:\n    """Return a value that never exceeds maximum."""\n    return min(value, maximum)\n',
+            (
+                "def cap(value: int, maximum: int) -> int:\n"
+                '    """Return a value that never exceeds maximum."""\n'
+                "    return min(value, maximum)\n"
+            ),
             "cap",
             [
                 {
@@ -90,7 +94,11 @@ def few_shot_examples() -> tuple[FewShotExample, ...]:
         ),
         _example(
             "text_at_most",
-            'def trim(value: str) -> str:\n    """Return text with at most the input length."""\n    return value.rstrip()\n',
+            (
+                "def trim(value: str) -> str:\n"
+                '    """Return text with at most the input length."""\n'
+                "    return value.rstrip()\n"
+            ),
             "trim",
             [
                 {
@@ -120,7 +128,11 @@ def few_shot_examples() -> tuple[FewShotExample, ...]:
         ),
         _example(
             "text_equal",
-            'def identity(value: str) -> str:\n    """Return text with exactly the input length."""\n    return value\n',
+            (
+                "def identity(value: str) -> str:\n"
+                '    """Return text with exactly the input length."""\n'
+                "    return value\n"
+            ),
             "identity",
             [
                 {
@@ -150,7 +162,12 @@ def few_shot_examples() -> tuple[FewShotExample, ...]:
         ),
         _example(
             "list_sort",
-            'def ordered(values: list[int]) -> list[int]:\n    """Return values in nondecreasing order and preserve every item, including duplicates."""\n    return sorted(values)\n',
+            (
+                "def ordered(values: list[int]) -> list[int]:\n"
+                '    """Return values in nondecreasing order and preserve every item, '
+                'including duplicates."""\n'
+                "    return sorted(values)\n"
+            ),
             "ordered",
             [
                 {
@@ -208,7 +225,11 @@ def few_shot_examples() -> tuple[FewShotExample, ...]:
         ),
         _example(
             "unsupported_abstain",
-            'def title(value: str) -> str:\n    """Return a grammatically improved title."""\n    return value.title()\n',
+            (
+                "def title(value: str) -> str:\n"
+                '    """Return a grammatically improved title."""\n'
+                "    return value.title()\n"
+            ),
             "title",
             [],
         ),
