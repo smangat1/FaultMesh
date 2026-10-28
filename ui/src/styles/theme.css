@@ -321,6 +321,99 @@ button:disabled {
   display: none;
 }
 
+/* Toast animation */
+@keyframes liveToastFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Graph Toolbar Responsive Adaptations */
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background-color: #11141a;
+  border-bottom: 1px solid var(--border-default);
+  gap: 8px;
+  flex-wrap: nowrap;
+  z-index: 10;
+  min-height: 38px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+}
+
+.graph-btn-label-full {
+  display: inline;
+}
+
+.graph-title-label {
+  display: inline;
+}
+
+.graph-context-label {
+  display: inline;
+}
+
+.graph-search-container {
+  position: relative;
+  width: 115px;
+  flex-shrink: 1;
+  min-width: 65px;
+  transition: width 0.15s ease;
+}
+
+.graph-search-container:focus-within {
+  width: 130px;
+}
+
+@media (max-width: 1150px) {
+  .graph-toolbar {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .graph-btn-label-full {
+    display: none;
+  }
+  .graph-title-label {
+    display: none;
+  }
+  .graph-context-label {
+    display: none;
+  }
+  .graph-search-container {
+    width: 75px;
+  }
+  .graph-search-container:focus-within {
+    width: 110px;
+  }
+}
+
+@container (max-width: 860px) {
+  .graph-btn-label-full {
+    display: none;
+  }
+  .graph-title-label {
+    display: none;
+  }
+  .graph-context-label {
+    display: none;
+  }
+  .graph-search-container {
+    width: 75px;
+  }
+  .graph-search-container:focus-within {
+    width: 110px;
+  }
+}
+
 @media (max-width: 1200px) {
   .inspector-drawer {
     width: 330px;

@@ -53,6 +53,7 @@ interface GraphViewProps {
   onToggleExplanationExpand?: () => void;
   isRealImport?: boolean;
   isLive?: boolean;
+  hasActiveToast?: boolean;
   activeMapDrawer?: 'none' | 'files' | 'diff';
   onToggleMapDrawer?: (drawer: 'none' | 'files' | 'diff') => void;
   onCyReady?: (cy: Core) => void;
@@ -108,6 +109,17 @@ export function computeDeterministicPositions(
     if (KNOWN_FILE_COORDINATES[fileCluster.file]) {
       fileCenterX = KNOWN_FILE_COORDINATES[fileCluster.file].x;
       fileCenterY = KNOWN_FILE_COORDINATES[fileCluster.file].y;
+    } else if (files.length <= 6) {
+      // Balanced distribution for small projects so they comfortably use the space without feeling barren
+      if (files.length === 1) {
+        fileCenterX = 480;
+        fileCenterY = 360;
+      } else {
+        const angle = (fIdx / files.length) * 2 * Math.PI - Math.PI / 2;
+        const radius = 175 - Math.max(0, files.length - 2) * 10;
+        fileCenterX = Math.round(480 + Math.cos(angle) * radius);
+        fileCenterY = Math.round(360 + Math.sin(angle) * radius);
+      }
     } else {
       // Golden angle spiral distribution for arbitrary repositories / scale fixtures
       const phi = 2.399963229728653; // golden angle in radians
@@ -141,11 +153,13 @@ export function computeDeterministicPositions(
       return a.lineStart - b.lineStart;
     });
 
+    const isSmallProject = files.length <= 6 && nodes.length <= 25;
     sortedFileNodes.forEach((node, sIdx) => {
       const angle = (sIdx * ((2 * Math.PI) / Math.max(count, 1))) + 0.35;
       // Stagger radius between alternating orbits for sibling nodes to prevent cluster crowding
       const radialOffset = count > 5 ? (sIdx % 2 === 0 ? 0 : 26) : 0;
-      const radius = 50 + radialOffset;
+      const baseRadius = isSmallProject ? (count <= 4 ? 65 : 55) : 50;
+      const radius = baseRadius + radialOffset;
       const symX = Math.round(fileCenterX + Math.cos(angle) * radius);
       const symY = Math.round(fileCenterY + Math.sin(angle) * radius);
       positions[node.id] = { x: symX, y: symY };
@@ -197,6 +211,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   onToggleExplanationExpand,
   isRealImport = false,
   isLive = false,
+  hasActiveToast = false,
   activeMapDrawer = 'none',
   onToggleMapDrawer,
   onCyReady,
@@ -333,6 +348,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       });
     });
 
+    const isSparse = fileClusters.length <= 6 && graphData.nodes.length <= 30;
+
     // 1. Add File Clusters (clean filename label without cluttering persistent text)
     fileClusters.forEach((fc) => {
       const fileId = `file:${fc.file}`;
@@ -355,8 +372,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
           lineCount: fc.lineCount,
           isGhost: fc.isGhost,
           structureStale: fc.structureStale,
+          isSparse,
         },
         position: pos,
+        classes: isSparse ? 'sparse-node' : undefined,
       });
     });
 
@@ -397,8 +416,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
           signature: n.signature,
           docstringFirstLine: n.docstringFirstLine,
           contentHash: n.contentHash,
+          isSparse,
         },
-        classes: `${staggerClass}${n.isGhost ? ' ghost-node' : ''}`,
+        classes: `${staggerClass}${n.isGhost ? ' ghost-node' : ''}${isSparse ? ' sparse-node' : ''}`,
         position: pos,
       });
 
@@ -420,8 +440,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     // In live watch, calm the map edges:
     // Draw links only for the selected node and for nodes that just changed on disk (plus their immediate neighbors);
-    // leave the rest of the nodes clean.
-    let isEdgeAllowedInLive: ((e: { source: string; target: string; sourceId: string; targetId: string }) => boolean) | null = null;
+    // On open with nothing selected, show a small useful default (capped at 4 strongest real cross-file links, thin/muted).
+    let isEdgeAllowedInLive: ((e: { source: string; target: string; sourceId: string; targetId: string; id?: string }) => boolean) | null = null;
+    let isFreshDefaultLive = false;
     if (isLive) {
       const focusNodes = new Set<string>();
       if (selectedNodeId) focusNodes.add(selectedNodeId);
@@ -441,8 +462,25 @@ export const GraphView: React.FC<GraphViewProps> = ({
       });
 
       if (focusNodes.size === 0) {
-        // No node selected and no nodes changed on disk: draw 0 inter-node links
-        isEdgeAllowedInLive = () => false;
+        isFreshDefaultLive = true;
+        // Show small useful default: top cross-file links from real data (capped at 4, thin and muted)
+        // Links must come from real data only. If there are no links in the data, show 0 links.
+        const crossFileEdges = graphData.edges.filter((e) => {
+          const sNode = graphData.nodes.find((n) => n.id === e.source);
+          const tNode = graphData.nodes.find((n) => n.id === e.target);
+          return sNode && tNode && sNode.file !== tNode.file;
+        });
+
+        // Deterministic sort: resolved static calls/imports first, then stable by id
+        const sortedCrossEdges = [...crossFileEdges].sort((a, b) => {
+          const aRank = a.confidence === 'resolved' ? 2 : a.confidence === 'ambiguous' ? 1 : 0;
+          const bRank = b.confidence === 'resolved' ? 2 : b.confidence === 'ambiguous' ? 1 : 0;
+          if (bRank !== aRank) return bRank - aRank;
+          return a.id.localeCompare(b.id);
+        });
+
+        const cappedDefaultEdgeIds = new Set(sortedCrossEdges.slice(0, 4).map((e) => e.id));
+        isEdgeAllowedInLive = ({ id }) => Boolean(id && cappedDefaultEdgeIds.has(id));
       } else {
         // Collect immediate neighbors connected to any focus node
         const neighborSet = new Set<string>(focusNodes);
@@ -491,7 +529,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       // Avoid self-loops when nodes within same collapsed file connect
       if (sourceId === targetId) return;
 
-      if (isEdgeAllowedInLive && !isEdgeAllowedInLive({ source: e.source, target: e.target, sourceId, targetId })) {
+      if (isEdgeAllowedInLive && !isEdgeAllowedInLive({ source: e.source, target: e.target, sourceId, targetId, id: e.id })) {
         return;
       }
 
@@ -518,7 +556,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
             isAggregated: true,
             provenance: 'static_ast',
             testIds: e.testIds || [],
+            isDefaultLive: isFreshDefaultLive,
           },
+          classes: isFreshDefaultLive ? 'default-live-edge' : undefined,
         });
         return;
       }
@@ -547,7 +587,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
           kind: e.kind,
           isGhost: e.isGhost,
           resolutionReason: e.resolutionReason,
+          isDefaultLive: isFreshDefaultLive,
         },
+        classes: isFreshDefaultLive ? 'default-live-edge' : undefined,
       });
     });
 
@@ -656,6 +698,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
               height: 12,
             },
           },
+          // Sparse project adaptations for file clusters
+          {
+            selector: 'node[?isFileCluster].sparse-node',
+            style: {
+              width: 15,
+              height: 15,
+              'font-size': '11px',
+              'font-weight': 600,
+            },
+          },
           // --- Child Symbol Nodes (Functions / Classes: sleek modern dots, no cartoon border) ---
           {
             selector: 'node[!isFileCluster]',
@@ -678,6 +730,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
               'text-outline-width': 1.0,
               'text-outline-opacity': 0.95,
               'z-index': 15,
+            },
+          },
+          // Sparse project adaptations for child symbols
+          {
+            selector: 'node[!isFileCluster].sparse-node',
+            style: {
+              width: 6,
+              height: 6,
+              'font-size': '10px',
             },
           },
           // Minimal label stagger/offset for sibling function nodes in expanded clusters
@@ -802,6 +863,20 @@ export const GraphView: React.FC<GraphViewProps> = ({
               opacity: 0.65,
               'target-arrow-shape': 'none',
               'z-index': 5,
+            },
+          },
+          // Default live preview cross-file edges (thin, muted, dashed)
+          {
+            selector: 'edge.default-live-edge',
+            style: {
+              'line-color': '#475569',
+              'target-arrow-color': '#475569',
+              'line-style': 'dashed',
+              'line-dash-pattern': [3, 3],
+              opacity: 0.38,
+              width: 0.85,
+              'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.6,
             },
           },
           // --- Structural Edges with Directional Triangle Arrows ---
@@ -1458,10 +1533,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
       // On initial creation, fit graph and establish readable zoom
       if (elements.nodes.length > 0) {
         hasFittedRef.current = true;
-        cy.fit(cy.elements(), 48);
+        const isSparse = fileClusters.length <= 6 && elements.nodes.length <= 30;
+        const fitPadding = isSparse ? 64 : 48;
+        cy.fit(cy.elements(), fitPadding);
         const z = cy.zoom();
-        if (z > 1.15) {
-          cy.zoom(1.05);
+        const maxZoom = isSparse ? 1.35 : 1.15;
+        const targetZoom = isSparse ? 1.25 : 1.05;
+        if (z > maxZoom) {
+          cy.zoom(targetZoom);
           cy.center();
         }
         const finalZ = cy.zoom();
@@ -1519,10 +1598,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
     if (shouldFitCamera) {
       prevDatasetKeyRef.current = datasetKey;
       hasFittedRef.current = true;
-      cy.fit(cy.elements(), 48);
+      const isSparse = fileClusters.length <= 6 && elements.nodes.length <= 30;
+      const fitPadding = isSparse ? 64 : 48;
+      cy.fit(cy.elements(), fitPadding);
       const z = cy.zoom();
-      if (z > 1.15) {
-        cy.zoom(1.05);
+      const maxZoom = isSparse ? 1.35 : 1.15;
+      const targetZoom = isSparse ? 1.25 : 1.05;
+      if (z > maxZoom) {
+        cy.zoom(targetZoom);
         cy.center();
       }
       const finalZ = cy.zoom();
@@ -2087,8 +2170,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const handleFit = () => {
     const cy = cyRef.current;
     if (!cy) return;
+    const isSparse = fileClusters.length <= 6 && elements.nodes.length <= 30;
+    const padding = isSparse ? 64 : 40;
     cy.animate({
-      fit: { eles: cy.elements(), padding: 40 },
+      fit: { eles: cy.elements(), padding },
       duration: 250,
     });
   };
@@ -2132,6 +2217,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
   return (
     <div
+      className="graph-container"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -2144,15 +2230,13 @@ export const GraphView: React.FC<GraphViewProps> = ({
     >
       {/* Calm Toolbar */}
       <div
+        className="graph-toolbar"
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 14px',
           backgroundColor: '#11141a',
           borderBottom: '1px solid var(--border-default)',
-          gap: '10px',
-          flexWrap: 'nowrap',
           zIndex: 10,
           minHeight: '38px',
           overflowX: 'auto',
@@ -2249,7 +2333,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               aria-label="Unfold All Files"
             >
               <ChevronsDown size={11} />
-              <span>Unfold All</span>
+              <span className="graph-btn-label-full">Unfold All</span>
             </button>
             <button
               onClick={onCollapseAllFiles}
@@ -2273,7 +2357,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
               aria-label="Fold All Files"
             >
               <ChevronsUp size={11} />
-              <span>Fold to Files</span>
+              <span className="graph-btn-label-full">Fold to Files</span>
             </button>
           </div>
 
@@ -2323,7 +2407,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                   aria-label="Toggle Diff drawer"
                 >
                   <FileDiff size={12} />
-                  <span>Diff / Source</span>
+                  <span>Diff<span className="graph-btn-label-full"> / Source</span></span>
                 </button>
               </div>
             )
@@ -2417,6 +2501,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             </div>
           ) : (
             <span
+              className="graph-title-label"
               style={{
                 fontSize: '11px',
                 fontWeight: 600,
@@ -2481,11 +2566,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
               onChange={(e) => setIncludeStaticContext(e.target.checked)}
               aria-label="Include Static Context"
             />
-            <span>Static Context</span>
+            <span>Static<span className="graph-context-label"> Context</span></span>
           </label>
 
           {/* Quick Search */}
-          <div style={{ position: 'relative', width: '130px' }}>
+          <div className="graph-search-container">
             <Search
               size={11}
               style={{
@@ -2512,6 +2597,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                 fontSize: '11px',
                 outline: 'none',
                 fontFamily: 'inherit',
+                boxSizing: 'border-box',
               }}
               aria-label="Find symbol in map"
             />
@@ -2525,13 +2611,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
               fontFamily: 'var(--font-mono)',
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
+              flexShrink: 0,
             }}
           >
             {zoomLevel}
           </span>
 
           {/* Zoom Buttons */}
-          <div style={{ display: 'flex', gap: '2px' }}>
+          <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
             <button
               onClick={handleZoomIn}
               className="btn-ghost btn-sm"
@@ -2579,6 +2666,34 @@ export const GraphView: React.FC<GraphViewProps> = ({
             backgroundColor: '#101114',
           }}
         />
+
+        {/* Fresh Map Interaction Hint */}
+        {isLive && !selectedNodeId && !selectedFile && highlightedNodeIds.length === 0 && !hasActiveToast && (
+          <div
+            data-testid="live-map-hint"
+            style={{
+              position: 'absolute',
+              bottom: '18px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              pointerEvents: 'none',
+              backgroundColor: 'rgba(15, 23, 42, 0.85)',
+              backdropFilter: 'blur(4px)',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              borderRadius: '16px',
+              padding: '4px 12px',
+              color: '#94a3b8',
+              fontSize: '11px',
+              fontFamily: 'var(--font-sans)',
+              zIndex: 15,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
+              letterSpacing: '0.01em',
+            }}
+          >
+            Click a file to see what it connects to
+          </div>
+        )}
 
         {/* Floating Glassmorphic Tag Card on Hover */}
         {hoverTag && (
