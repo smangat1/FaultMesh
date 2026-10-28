@@ -32,22 +32,43 @@ Acceptance:
 - `cd ui && npx vitest run src/test/replayImport.test.ts src/test/replayAdapter.test.ts`: 12 passed.
 - `cd ui && npm test`: 20 test files (165 vitest tests) + 8 electron tests passed.
 
-Phase C1 commit: pending.
+Phase C1 commit: `4384cc0051e59c2357335606d15a9ffca5ea969a`.
 
 ## Phase C2 — Replay Workspace
 
-Status: in progress.
+Status: complete.
 
-### Scope & Contract
-- Look: quiet Obsidian/Zotero-like interface, restrained edges, spacious layout, plain labels, no physics gimmicks or busy dashboard. Existing project-wide map can be optional; reading a run must not require a graph.
-- Chapter timeline with selectable ranges, titles and counts. Model titles say 'model interpretation'; deterministic chapters say 'baseline'. Use validated backend ranges, don't invent groups. Bound/virtualize long lists where needed.
-- Previous/next/scrub selects a historical checkpoint. Show stable ID/time, prompt/tool evidence, changed files/functions and exact stored before/after diff. Navigation never edits code, reruns commands/tests, rolls back or starts inference.
-- Historical state stays historical when the current checkout differs. Handle added/deleted/renamed files, stale AST/syntax errors, truncated source and missing snapshots. Last-good structure is visibly stale.
-- Tests before/after/nearby: command, actual test scope, output/exit evidence, structured counts when supplied. Missing = 'not observed', not passed. 'State matched' only on backend-supported identity; otherwise 'nearby in time, code state unverified'. Later pass is not 'fixed by this edit'.
-- Click a test/claim to see its exact recorded evidence, path/range/ID/hash where useful, no private absolute roots.
-- Supported facts: small 'checked against recording' label + evidence link. Contradicted: strikethrough plus readable verdict/reason/counterevidence. Unsupported/unknown: neutral explicit label. Don't use color alone. Keep raw claim separate from verdict; never make a whole free-form paragraph green.
-- 'likely reason (model inference)' remains labeled even when citations exist. 'Source quote checked' is distinct, not an intent/causality badge. Expand exact prompt sentence, prior step or agent-logged explanation. Missing/invalid citations remain visible and neutral. Never say the checker verified why.
-- Summary audit: original agent sentence, supported/contradicted/unknown predicate and evidence. 'Not supported by this recording' is not 'false'. Broad semantic claims remain unverified.
-- Allow narration off and baseline comparison. Show measured results separately from targets; no hardcoded improvement/fit/success claims. If evaluation is pending, display 'evaluation pending'.
-- Accessible keyboard controls/focus/buttons/status text. Long paths/quotes/diffs/tracebacks and narrow windows must wrap/scroll without hiding controls. Keep selection/scroll stable; no camera reset each step.
-Gate: timeline/diff/tests/evidence stay coherent; verdicts/inference remain distinct; existing watch/import flows still work. Commit.
+Implemented:
+- Quiet Obsidian/Zotero-style Replay Workspace layout with restrained edges, spacious typography, high contrast, plain labels, and no busy dashboard gimmicks.
+- `ReplayTimeline` component:
+  - Chapter list with title, sequence range, checkpoint count.
+  - Prominent tags: `model interpretation` for model chapters vs `baseline` for deterministic chapters.
+  - Checkpoint scrubber/list with sequence `#`, timestamps, tool name, completeness badge, attribution status, and test outcome indicators.
+  - Narration ON/OFF toggle and Model vs Baseline chapters comparison toggle.
+- `ReplayDiffViewer` component:
+  - File selector with status badges (`added`, `modified`, `deleted`).
+  - Stored before/after unified diff viewer with addition/deletion color coding and line numbers.
+  - Toggle between stored diff and full stored historical source text (decoded safely in-memory from `content_base64_by_sha256`).
+  - Stale AST / syntax error handling: displays visible `Stale AST / Syntax error` badge when `verified === false`.
+- `ReplayEvidenceInspector` component:
+  - Nearby Tests tab: shows exit code, actual test scope, structured pytest counts, individual test node IDs, and state-match distinction (`State matched` vs `nearby in time, code state unverified`). Missing tests are explicitly `not observed`, never passed. Chronological disclaimer included.
+  - Checked Atomic Claims tab: 3-way verdicts with plain text labels (`checked against recording`, `contradicted` with strikethrough + reason code & counterevidence, `unsupported / unknown` neutral badge). Never turns paragraphs green; raw claim kept distinct from verdict. Expandable evidence refs.
+  - Likely Reason (Model inference): always labeled `likely reason (model inference)`. Verifies citation quotes (`Source quote checked` distinct from intent). Entailment marked `not deterministically assessed` and `verified intent: false`.
+  - Summary Audit tab: displays original agent summary text and audited statements with explicit display statuses (`supported`, `contradicted`, `not_supported_by_this_recording`, `unverified`).
+  - Limitations tab: displays explicit recording limitations and `evaluation pending` status.
+- `ReplayWorkspace` top toolbar:
+  - Checkpoint Prev/Next scrubber buttons, current sequence badge, stable record ID, and tool name.
+  - Honesty badges: Origin (`REAL RECORDING` / `SYNTHETIC FIXTURE` / `SIMULATED DEMO`), `HISTORICAL (STOPPED)` (never 'live'), `TOOL BOUNDARY` / `OBSERVED CHECKPOINT`, and agent version.
+  - Optional Project Map toggle.
+  - Accessible keyboard shortcuts: `ArrowLeft` / `j` (previous) and `ArrowRight` / `k` (next).
+
+Acceptance:
+- `cd ui && npx tsc --noEmit`: passed with 0 errors.
+- `cd ui && npx vitest run src/test/replayViewer.test.tsx src/test/replayEvidence.test.tsx`: 11 passed.
+- `cd ui && npm test`: 22 test files (176 vitest tests) + 8 electron tests passed.
+
+Phase C2 commit: pending.
+
+## Phase C3 — Tests + Real Pixels
+
+Status: in progress.

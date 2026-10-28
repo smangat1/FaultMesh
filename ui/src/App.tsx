@@ -9,6 +9,7 @@ import { GraphView, type GraphViewMode } from './components/GraphView';
 import { InspectorDrawer } from './components/InspectorDrawer';
 import { RunDiagnosticsPane } from './components/RunDiagnosticsPane';
 import { ReplayComparisonView } from './components/ReplayComparisonView';
+import { ReplayWorkspace } from './components/replay/ReplayWorkspace';
 import { ProjectSelectorScreen } from './components/ProjectSelectorScreen';
 import { StartupScreen } from './components/StartupScreen';
 import { LiveEntranceScreen } from './components/LiveEntranceScreen';
@@ -934,13 +935,20 @@ export const App: React.FC<AppProps> = ({
             ) : activeView === 'diagnostics' ? (
               <RunDiagnosticsPane activeRun={activeRun} graphData={graphData} />
             ) : activeView === 'replay' ? (
-              <ReplayComparisonView
-                activeRun={activeRun}
-                runs={runs}
-                adapter={activeAdapter}
-                onSelectRun={handleSelectRun}
-                onSelectTest={handleSelectTest}
-              />
+              activeAdapter instanceof ReplayAdapter ? (
+                <ReplayWorkspace
+                  adapter={activeAdapter}
+                  onOpenProjectMap={() => setActiveView('map')}
+                />
+              ) : (
+                <ReplayComparisonView
+                  activeRun={activeRun}
+                  runs={runs}
+                  adapter={activeAdapter}
+                  onSelectRun={handleSelectRun}
+                  onSelectTest={handleSelectTest}
+                />
+              )
             ) : (
               /* Holistic Map Workspace */
               <div
