@@ -141,8 +141,18 @@ async function run() {
       if (btn) btn.click();
     });
 
-    // Wait for transition into live workspace Map view
-    await page.waitForFunction(() => document.body.innerText.includes('LIVE: vscode_playground'), { timeout: 5000 });
+    // Wait for transition into calm Entrance Screen
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-testid="live-entrance-screen"]')), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 600));
+
+    // Capture Entrance Screen
+    await captureState(page, `00_live_workspace_entrance_${res.name}.png`, res.width, res.height);
+
+    // Step 2: Click "Map" card on Entrance Screen to enter Map mode full-screen
+    await page.evaluate(() => {
+      const mapCard = document.querySelector('[data-testid="entrance-card-map"]');
+      if (mapCard) mapCard.click();
+    });
     await new Promise((r) => setTimeout(r, 800));
 
     // Scenario 1: Map view after fresh snapshot (fitted and readable)
