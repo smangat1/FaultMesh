@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-01-01T00:00:00Z",
+  "codex_version": "codex-cli synthetic-test",
+  "files": [
+    {
+      "content_base64": "VkFMVUUgPSAxCg==",
+      "content_sha256": "e13df8c44af5dea1e412403910b99cc5a48f2ccbf68a66b3374d6ab9cef9fc65",
+      "mtime_ns": 1,
+      "path": "value.py",
+      "size": 10
+    }
+  ],
+  "partial": false,
+  "project_root_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "record_id": "synthetic-initial-1",
+  "record_type": "initial_snapshot",
+  "redaction_applied": false,
+  "schema_version": "replay-capture-1.0",
+  "session_id": "replay-synthetic",
+  "skipped": [],
+  "source_sequence": 0,
+  "truncated": false
+}

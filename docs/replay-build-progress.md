@@ -29,5 +29,45 @@ Acceptance:
 
 ## Next step
 
-Commit Phase 0. Then implement the versioned append-only local store and ingestion tests for
-Phase 1, using the proven hook-pair contract and explicit gaps for unmatched or unsupported input.
+Phase 0 commit: `3a252369cd3942f5233625673fb68b1626a0c57d`.
+
+## Phase 1 — durable local recording
+
+Status: complete; commit pending.
+
+Implemented:
+
+- strict `replay-capture-1.0` and `replay-store-1.0` contracts;
+- explicit start/hook/stop/list/ingest/delete CLI lifecycle for one selected root;
+- immutable content-addressed exact bytes and append-only SQLite records/manifests;
+- monotonic session sequence plus source identity/offset/sequence distinctions;
+- idempotent restart-safe NDJSON ingestion, partial-tail tolerance and rotation/truncation gaps;
+- strict schema rejection and visible unknown/corrupt/gap records;
+- bounded UTF-8 Python capture, secret/build/model/artifact/symlink/binary exclusions;
+- best-effort bounded pre-persistence redaction and explicit raw logging opt-in;
+- exact initial and tool-boundary manifests, with unmatched attribution left unknown;
+- non-executing Python structure reuse and explicit stale last-good facts after invalid syntax;
+- bounded object storage, corruption checks, atomic durable object writes and whole-session deletion;
+- sanitized frozen JSON/NDJSON fixtures under `tests/fixtures/replay/`.
+
+Acceptance commands:
+
+- `ruff check src/faultmesh/replay src/faultmesh/cli/app.py tests/unit/test_replay_capture.py
+  tests/unit/test_replay_store.py tests/unit/test_replay_privacy.py`: passed.
+- `mypy`: passed for all configured packages.
+- `PYTHONPATH=src python -m pytest tests/unit/test_replay_capture.py
+  tests/unit/test_replay_store.py tests/unit/test_replay_privacy.py -q`: 17 passed.
+- The same new tests plus spectate engine/models/relationships and structure index/Git-safety
+  regressions: 42 passed.
+
+Known boundary:
+
+- intermediate writes inside one tool invocation remain unsupported;
+- no concurrent-writer guarantee beyond stable-read checks and explicit unknown attribution;
+- only the tested Codex adapter and bounded UTF-8 Python source are supported;
+- pattern redaction is best effort and redacted/truncated text cannot verify missing content.
+
+## Next step
+
+Commit Phase 1. Then add Phase 2 read-only timeline/checkpoint/diff/test views and deterministic
+offline export playback using only stored identities and bytes.

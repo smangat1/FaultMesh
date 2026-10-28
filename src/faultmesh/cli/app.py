@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shlex
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -22,6 +24,9 @@ from faultmesh.project_runner import (
     run_project_tests,
 )
 from faultmesh.project_runner.replay import open_run_store
+from faultmesh.replay.adapter import capture_hook_event
+from faultmesh.replay.ingest import ingest_jsonl
+from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.spectate.engine import (
     SpectateEngine,
     SpectateError,
@@ -333,6 +338,148 @@ def structure_summary(
             sort_keys=True,
         )
     )
+
+
+def _replay_store_path(value: Path | None) -> Path:
+    return value.expanduser().resolve() if value is not None else default_replay_root()
+
+
+@app.command("replay-start")
+def replay_start(
+    project: Annotated[Path, typer.Argument(exists=True, file_okay=False, resolve_path=True)],
+    codex_version: Annotated[
+        str, typer.Option(help="Exact Codex adapter version, for example codex-cli 0.165.0.")
+    ],
+    store: Annotated[
+        Path | None, typer.Option(help="Local replay store root; defaults outside the project.")
+    ] = None,
+    raw_logging: Annotated[
+        bool,
+        typer.Option(
+            "--raw-logging",
+            help="Opt in to unredacted local tool input/output storage.",
+        ),
+    ] = False,
+) -> None:
+    """Select one project and start a new explicit local recording."""
+    store_path = _replay_store_path(store)
+    try:
+        with ReplayStore(store_path) as replay_store:
+            session = replay_store.create_session(
+                project, codex_version=codex_version, raw_logging=raw_logging
+            )
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay start failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    hook_command = " ".join(
+        [
+            "faultmesh",
+            "replay-hook",
+            shlex.quote(session.id),
+            "--store",
+            shlex.quote(str(store_path)),
+        ]
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "session": session.model_dump(mode="json"),
+                "hook_command": hook_command,
+                "hook_matcher": "^(Bash|apply_patch)$",
+                "note": "Configure the same command for synchronous PreToolUse and PostToolUse.",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("replay-hook", hidden=True)
+def replay_hook(
+    session_id: Annotated[str, typer.Argument()],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Ingest one Codex hook event from stdin for an active selected session."""
+    raw = sys.stdin.buffer.read(1024 * 1024 + 1)
+    if len(raw) > 1024 * 1024:
+        typer.secho("FaultMesh replay hook input exceeded 1 MiB", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    try:
+        event = json.loads(raw)
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            capture_hook_event(replay_store, session_id, event)
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay hook failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+
+@app.command("replay-stop")
+def replay_stop(
+    session_id: Annotated[str, typer.Argument()],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Stop an active recording; historical evidence remains immutable."""
+    try:
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            session = replay_store.stop_session(session_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay stop failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(session.model_dump_json(indent=2))
+
+
+@app.command("replay-sessions")
+def replay_sessions(
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """List local recording metadata without reading any Codex history."""
+    try:
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            sessions = replay_store.list_sessions()
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay list failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            [session.model_dump(mode="json") for session in sessions],
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("replay-ingest")
+def replay_ingest(
+    session_id: Annotated[str, typer.Argument()],
+    source: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+    source_name: Annotated[str | None, typer.Option(help="Stable logical source identity.")] = None,
+) -> None:
+    """Ingest append-only replay-capture-1.0 NDJSON without executing it."""
+    try:
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            result = ingest_jsonl(
+                replay_store, session_id, source, source_name=source_name
+            )
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay ingest failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(json.dumps(result.__dict__, indent=2, sort_keys=True))
+
+
+@app.command("replay-delete")
+def replay_delete(
+    session_id: Annotated[str, typer.Argument()],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Delete one whole selected recording and its unreferenced local content."""
+    try:
+        with ReplayStore(_replay_store_path(store)) as replay_store:
+            replay_store.delete_session(session_id)
+    except Exception as exc:
+        typer.secho(f"FaultMesh replay delete failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(json.dumps({"deleted_session": session_id}, sort_keys=True))
 
 
 @app.command("spectate")
