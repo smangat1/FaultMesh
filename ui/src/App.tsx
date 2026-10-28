@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { FaultMeshAdapter } from './adapter';
-import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter } from './adapter';
+import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter, ReplayAdapter } from './adapter';
+import { validateReplayExport } from './replay/validators';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header, type WorkspaceActiveView } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -74,6 +75,7 @@ export const App: React.FC<AppProps> = ({
   const lastChangeTimeRef = useRef<string | null>(null);
   const burstCounterRef = useRef<{ count: number; windowStart: number }>({ count: 0, windowStart: 0 });
   const liveAdapterRef = useRef<LiveSpectateAdapter | null>(null);
+  const recordingFileInputRef = useRef<HTMLInputElement>(null);
   const liveRefreshSeq = useRef(0);
   const activeAdapterRef = useRef<FaultMeshAdapter>(activeAdapter);
   const activeRunIdRef = useRef<string | null>(activeRunId);
@@ -343,6 +345,31 @@ export const App: React.FC<AppProps> = ({
           throw new Error(`Malformed JSON in file "${f.name}": ${err instanceof Error ? err.message : String(err)}`);
         }
 
+        if (json.schema_version === 'replay-export-1.0' || json.schema_version === 'replay-export-2.0') {
+          const val = validateReplayExport(json, f.size, f.name);
+          if (!val.success) {
+            throw new Error(`Replay validation failed for "${f.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
+          }
+          const replayAdapter = new ReplayAdapter(val.data!, val.origin);
+          liveAdapterRef.current = null;
+          setLiveChangedNodeIds([]);
+          setActiveAdapter(replayAdapter);
+          setPinnedSymbols([]);
+          setSelectedNodeId(null);
+          setSelectedFile(null);
+          setSelectedTestId(null);
+          setIsAgentActive(false);
+
+          const loadedRuns = await replayAdapter.getRuns();
+          setRuns(loadedRuns);
+          if (loadedRuns.length > 0) {
+            setActiveRunId(loadedRuns[0].id);
+          }
+          setCurrentScreen('workspace');
+          setActiveView('replay');
+          return;
+        }
+
         if (json.schema_version === '3.0') {
           const val = validateV3Structure(json, f.size);
           if (!val.success) {
@@ -404,6 +431,55 @@ export const App: React.FC<AppProps> = ({
       setCurrentScreen('workspace');
     } catch (err) {
       // Keep previous dataset and show specific dismissible error
+      setImportError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleOpenRecordingDialog = async () => {
+    setImportError(null);
+    try {
+      const bridge = (
+        window as unknown as {
+          faultmeshSpectate?: {
+            openRecording?: () => Promise<{ name: string; text: string; size: number } | null>;
+          };
+        }
+      ).faultmeshSpectate;
+
+      if (bridge?.openRecording) {
+        const result = await bridge.openRecording();
+        if (!result) return;
+        let json: Record<string, unknown>;
+        try {
+          json = JSON.parse(result.text);
+        } catch (err) {
+          throw new Error(`Malformed JSON in "${result.name}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+        const val = validateReplayExport(json, result.size, result.name);
+        if (!val.success) {
+          throw new Error(`Replay validation failed for "${result.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
+        }
+        const replayAdapter = new ReplayAdapter(val.data!, val.origin);
+        liveAdapterRef.current = null;
+        setLiveChangedNodeIds([]);
+        setActiveAdapter(replayAdapter);
+        setPinnedSymbols([]);
+        setSelectedNodeId(null);
+        setSelectedFile(null);
+        setSelectedTestId(null);
+        setIsAgentActive(false);
+
+        const loadedRuns = await replayAdapter.getRuns();
+        setRuns(loadedRuns);
+        if (loadedRuns.length > 0) {
+          setActiveRunId(loadedRuns[0].id);
+        }
+        setCurrentScreen('workspace');
+        setActiveView('replay');
+      } else {
+        recordingFileInputRef.current?.click();
+      }
+    } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -660,6 +736,19 @@ export const App: React.FC<AppProps> = ({
         color: 'var(--text-primary)',
       }}
     >
+      <input
+        type="file"
+        ref={recordingFileInputRef}
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleImportFiles(e.target.files);
+            e.target.value = '';
+          }
+        }}
+        accept=".json"
+        style={{ display: 'none' }}
+        aria-label="Open recording file input"
+      />
       {importError && (
         <div
           role="alert"
@@ -735,6 +824,7 @@ export const App: React.FC<AppProps> = ({
         ) : (
           <StartupScreen
             onSelectProject={spectate.startWatching}
+            onOpenRecording={handleOpenRecordingDialog}
             isBusy={spectate.busy}
             hasBridge={spectate.hasBridge}
             statusNote={spectate.statusNote}

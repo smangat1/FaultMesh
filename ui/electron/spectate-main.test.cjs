@@ -177,7 +177,11 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
   });
   const choose = value.ipcMain.handlers.get(CHANNELS.choose);
   const start = value.ipcMain.handlers.get(CHANNELS.start);
-  assert.deepEqual(new Set(value.ipcMain.handlers.keys()), new Set([CHANNELS.choose, CHANNELS.start, CHANNELS.stop]));
+  const openRec = value.ipcMain.handlers.get(CHANNELS.openRecording);
+  assert.deepEqual(
+    new Set(value.ipcMain.handlers.keys()),
+    new Set([CHANNELS.choose, CHANNELS.start, CHANNELS.stop, CHANNELS.openRecording])
+  );
   const project = await choose(value.event);
   assert.equal(project.displayName, path.basename(value.root));
   assert.equal('root' in project, false);
@@ -222,4 +226,26 @@ test('stop, window disposal, and child crash leave no active child', async (cont
   assert.equal(value.sent.at(-1)[1].reason, 'child_exit:1');
   value.bridge.dispose('window_closed');
   assert.equal(value.ipcMain.handlers.size, 0);
+});
+
+test('openRecording allows safe selection of recording file and returns text only', async (context) => {
+  const value = harness();
+  const testFile = path.join(value.root, 'recording.json');
+  fs.writeFileSync(testFile, '{"schema_version":"replay-export-1.0"}', 'utf-8');
+  value.bridge.dispose();
+  const bridge = attachSpectateBridge({
+    ipcMain: value.ipcMain,
+    dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [testFile] }) },
+    window: value.window,
+    indexPath: path.join(value.root, 'index.html'),
+  });
+  context.after(() => {
+    bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const openRec = value.ipcMain.handlers.get(CHANNELS.openRecording);
+  const result = await openRec(value.event);
+  assert.equal(result.name, 'recording.json');
+  assert.equal(result.text, '{"schema_version":"replay-export-1.0"}');
+  assert.equal('path' in result, false);
 });

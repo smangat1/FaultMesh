@@ -235,8 +235,100 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
+          {/* Replay Recording Badges */}
+          {activeRun?.isReplay && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span
+                data-testid="replay-origin-badge"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '10px',
+                  fontFamily: 'var(--font-mono)',
+                  color: activeRun.replayOrigin === 'real_recording' ? '#38bdf8' : '#e2e8f0',
+                  backgroundColor:
+                    activeRun.replayOrigin === 'real_recording'
+                      ? 'rgba(56, 189, 248, 0.12)'
+                      : 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  padding: '2px 7px',
+                  borderRadius: 'var(--radius-sm)',
+                  whiteSpace: 'nowrap',
+                  fontWeight: 600,
+                }}
+              >
+                {activeRun.replayOrigin === 'synthetic_fixture'
+                  ? 'SYNTHETIC FIXTURE'
+                  : activeRun.replayOrigin === 'simulated_demo'
+                  ? 'SIMULATED DEMO'
+                  : 'REAL RECORDING'}
+              </span>
+
+              <span
+                data-testid="replay-historical-status"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  fontSize: '10px',
+                  fontFamily: 'var(--font-mono)',
+                  color: '#94a3b8',
+                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  padding: '2px 7px',
+                  borderRadius: 'var(--radius-sm)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                HISTORICAL (STOPPED)
+              </span>
+
+              {activeRun.granularity && (
+                <span
+                  data-testid="replay-granularity-badge"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    fontSize: '10px',
+                    fontFamily: 'var(--font-mono)',
+                    color: '#cbd5e1',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    padding: '2px 7px',
+                    borderRadius: 'var(--radius-sm)',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={
+                    activeRun.granularity === 'tool_boundary'
+                      ? 'Tool boundary: attributed pre/post tool snapshots'
+                      : 'Observed checkpoint without attributed tool boundary'
+                  }
+                >
+                  {activeRun.granularity === 'tool_boundary' ? 'TOOL BOUNDARY' : 'OBSERVED CHECKPOINT'}
+                </span>
+              )}
+
+              {activeRun.codexVersion && activeRun.codexVersion !== 'Not recorded' && (
+                <span
+                  data-testid="replay-agent-version"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    fontSize: '10px',
+                    fontFamily: 'var(--font-mono)',
+                    color: '#94a3b8',
+                    padding: '2px 6px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {activeRun.codexVersion}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Persistent Compact Imported Label */}
-          {activeRun?.isRealImport && !activeRun.isLive && (
+          {activeRun?.isRealImport && !activeRun.isReplay && !activeRun.isLive && (
             <span
               style={{
                 display: 'inline-flex',
@@ -589,7 +681,7 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
-              {(activeRun?.replayProvenance || runs.some((r) => r.replayProvenance)) && (
+              {(activeRun?.isReplay || activeRun?.replayProvenance || runs.some((r) => r.replayProvenance)) && (
                 <button
                   onClick={() => onSelectView('replay')}
                   className={activeView === 'replay' ? 'btn-secondary' : 'btn-ghost'}
@@ -602,7 +694,7 @@ export const Header: React.FC<HeaderProps> = ({
                   aria-current={activeView === 'replay' ? 'page' : undefined}
                 >
                   <RotateCcw size={12} />
-                  Replay Comparison
+                  {activeRun?.isReplay ? 'Replay' : 'Replay Comparison'}
                 </button>
               )}
             </nav>

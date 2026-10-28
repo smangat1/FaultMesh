@@ -9,6 +9,7 @@ interface StartupScreenProps {
   statusNote?: string | null;
   activeRun?: RunSummary | null;
   onReturnToWorkspace?: () => void;
+  onOpenRecording?: () => void;
 }
 
 export const StartupScreen: React.FC<StartupScreenProps> = ({
@@ -18,6 +19,7 @@ export const StartupScreen: React.FC<StartupScreenProps> = ({
   statusNote = null,
   activeRun = null,
   onReturnToWorkspace,
+  onOpenRecording,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -154,6 +156,27 @@ export const StartupScreen: React.FC<StartupScreenProps> = ({
               <FolderOpen size={16} />
               <span>{isBusy ? 'Opening…' : 'Select project'}</span>
             </button>
+
+            {onOpenRecording && (
+              <button
+                onClick={onOpenRecording}
+                className="btn-ghost"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+                aria-label="Open recording"
+              >
+                <span>Open recording (.json)</span>
+              </button>
+            )}
 
             {!hasBridge && (
               <div
