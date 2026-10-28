@@ -35,6 +35,7 @@ export interface SidebarProps {
   onSelectNode?: (nodeId: string | null) => void;
   viewMode?: 'structure' | 'changes' | 'tests' | 'investigation';
   isRealImport?: boolean;
+  isLive?: boolean;
   harnessError?: string | null;
 }
 
@@ -56,6 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectNode,
   viewMode = 'structure',
   isRealImport = false,
+  isLive = false,
   harnessError = null,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -243,6 +245,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }
 
   const renderTestsSection = () => {
+    if (isLive && tests.length === 0) return null;
     const isHarnessFailed = Boolean(harnessError);
 
     return (
@@ -457,8 +460,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     );
   };
 
-  const renderShortlistSection = () => (
-    <section style={{ borderBottom: '1px solid var(--border-default)' }}>
+  const renderShortlistSection = () => {
+    if (isLive && pinnedSymbols.length === 0) return null;
+
+    return (
+      <section style={{ borderBottom: '1px solid var(--border-default)' }}>
       <div
         style={{
           padding: '8px 12px',
@@ -582,7 +588,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
     </section>
-  );
+    );
+  };
 
   const renderFilesSection = () => (
     <section style={{ flex: 1 }}>

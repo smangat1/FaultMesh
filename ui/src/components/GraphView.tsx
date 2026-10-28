@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import cytoscape, { type Core, type EventObject } from 'cytoscape';
 import type { GraphData, TestItem, FileCluster, CodeNode } from '../types';
-import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp, Bot } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Search, ChevronsDown, ChevronsUp, Bot, FileText, FileDiff } from 'lucide-react';
 import type { AgentPhase, AgentSimulationStep } from '../agent/agentSimulation';
 import { AGENT_SIMULATION_STEPS } from '../agent/agentSimulation';
 import { InvestigationReplayBar } from './InvestigationReplayBar';
@@ -52,6 +52,9 @@ interface GraphViewProps {
   isExplanationExpanded?: boolean;
   onToggleExplanationExpand?: () => void;
   isRealImport?: boolean;
+  isLive?: boolean;
+  activeMapDrawer?: 'none' | 'files' | 'diff';
+  onToggleMapDrawer?: (drawer: 'none' | 'files' | 'diff') => void;
   onCyReady?: (cy: Core) => void;
 }
 
@@ -109,15 +112,19 @@ export function computeDeterministicPositions(
       // Golden angle spiral distribution for arbitrary repositories / scale fixtures
       const phi = 2.399963229728653; // golden angle in radians
       const angle = fIdx * phi;
-      const radius = 220 + Math.sqrt(fIdx / Math.max(files.length, 1)) * 480;
+      // Scale radius according to number of files so small-to-medium repos stay compact and readable
+      const maxRadius = Math.min(460, Math.max(120, files.length * 28));
+      const radius = files.length <= 8
+        ? 80 + fIdx * 22
+        : 110 + Math.sqrt(fIdx / Math.max(files.length, 1)) * maxRadius;
       let hash = 0;
       for (let i = 0; i < fileCluster.file.length; i++) {
         hash = (hash * 31 + fileCluster.file.charCodeAt(i)) & 0xffffffff;
       }
-      const jitterX = (hash % 30) - 15;
-      const jitterY = ((hash >> 4) % 30) - 15;
+      const jitterX = (hash % 20) - 10;
+      const jitterY = ((hash >> 4) % 20) - 10;
       fileCenterX = Math.round(480 + Math.cos(angle) * radius + jitterX);
-      fileCenterY = Math.round(420 + Math.sin(angle) * radius + jitterY);
+      fileCenterY = Math.round(360 + Math.sin(angle) * radius + jitterY);
     }
 
     // Position file anchor node
@@ -189,12 +196,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
   isExplanationExpanded: propExplanationExpanded,
   onToggleExplanationExpand,
   isRealImport = false,
+  isLive = false,
+  activeMapDrawer = 'none',
+  onToggleMapDrawer,
   onCyReady,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const prevDatasetKeyRef = useRef<string | undefined>(datasetKey);
   const prevSelectedTestIdRef = useRef<string | null>(selectedTestId);
+  const hasFittedRef = useRef<boolean>(false);
 
   const [currentViewMode, setCurrentViewMode] = useState<GraphViewMode>(propViewMode || 'structure');
   const [searchQuery, setSearchQuery] = useState('');
@@ -407,6 +418,55 @@ export const GraphView: React.FC<GraphViewProps> = ({
     const activeNodeIdSet = new Set(nodes.map((n) => n.data.id));
     const addedAggregatedEdges = new Set<string>();
 
+    // In live watch, calm the map edges:
+    // Draw links only for the selected node and for nodes that just changed on disk (plus their immediate neighbors);
+    // leave the rest of the nodes clean.
+    let isEdgeAllowedInLive: ((e: { source: string; target: string; sourceId: string; targetId: string }) => boolean) | null = null;
+    if (isLive) {
+      const focusNodes = new Set<string>();
+      if (selectedNodeId) focusNodes.add(selectedNodeId);
+      if (selectedFile) {
+        focusNodes.add(`file:${selectedFile}`);
+        graphData.nodes.filter((n) => n.file === selectedFile).forEach((n) => focusNodes.add(n.id));
+      }
+      highlightedNodeIds.forEach((id) => {
+        focusNodes.add(id);
+        if (id.startsWith('file:')) {
+          const f = id.slice(5);
+          graphData.nodes.filter((n) => n.file === f).forEach((n) => focusNodes.add(n.id));
+        } else {
+          const n = graphData.nodes.find((node) => node.id === id);
+          if (n) focusNodes.add(`file:${n.file}`);
+        }
+      });
+
+      if (focusNodes.size === 0) {
+        // No node selected and no nodes changed on disk: draw 0 inter-node links
+        isEdgeAllowedInLive = () => false;
+      } else {
+        // Collect immediate neighbors connected to any focus node
+        const neighborSet = new Set<string>(focusNodes);
+        graphData.edges.forEach((e) => {
+          if (focusNodes.has(e.source) || focusNodes.has(`file:${graphData.nodes.find((n) => n.id === e.source)?.file}`)) {
+            neighborSet.add(e.target);
+            const targetNode = graphData.nodes.find((n) => n.id === e.target);
+            if (targetNode) neighborSet.add(`file:${targetNode.file}`);
+          }
+          if (focusNodes.has(e.target) || focusNodes.has(`file:${graphData.nodes.find((n) => n.id === e.target)?.file}`)) {
+            neighborSet.add(e.source);
+            const sourceNode = graphData.nodes.find((n) => n.id === e.source);
+            if (sourceNode) neighborSet.add(`file:${sourceNode.file}`);
+          }
+        });
+
+        isEdgeAllowedInLive = ({ source, target, sourceId, targetId }) => {
+          const touchesFocus = focusNodes.has(source) || focusNodes.has(target) || focusNodes.has(sourceId) || focusNodes.has(targetId);
+          const withinNeighbors = neighborSet.has(source) && neighborSet.has(target);
+          return touchesFocus || withinNeighbors;
+        };
+      }
+    }
+
     // 3. Add Edges (re-routing to collapsed file node if child's file is collapsed)
     graphData.edges.forEach((e) => {
       let sourceId = e.source;
@@ -430,6 +490,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
       // Avoid self-loops when nodes within same collapsed file connect
       if (sourceId === targetId) return;
+
+      if (isEdgeAllowedInLive && !isEdgeAllowedInLive({ source: e.source, target: e.target, sourceId, targetId })) {
+        return;
+      }
 
       if (!activeNodeIdSet.has(sourceId) || !activeNodeIdSet.has(targetId)) return;
 
@@ -488,7 +552,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
     });
 
     return { nodes, edges };
-  }, [graphData, fileClusters, collapsedFiles, tests, includeStaticContext, activeTest]);
+  }, [
+    graphData,
+    fileClusters,
+    collapsedFiles,
+    tests,
+    includeStaticContext,
+    activeTest,
+    isLive,
+    selectedNodeId,
+    selectedFile,
+    highlightedNodeIds,
+  ]);
 
   const structuralEdgeCount = useMemo(
     () => elements.edges.filter((e) => !e.data.isContainment).length,
@@ -1380,6 +1455,21 @@ export const GraphView: React.FC<GraphViewProps> = ({
         setHoverTag(null);
       });
 
+      // On initial creation, fit graph and establish readable zoom
+      if (elements.nodes.length > 0) {
+        hasFittedRef.current = true;
+        cy.fit(cy.elements(), 48);
+        const z = cy.zoom();
+        if (z > 1.15) {
+          cy.zoom(1.05);
+          cy.center();
+        }
+        const finalZ = cy.zoom();
+        if (finalZ < 0.8) setZoomLevel('far');
+        else if (finalZ < 1.3) setZoomLevel('mid');
+        else setZoomLevel('close');
+      }
+
       cyRef.current = cy;
       onCyReady?.(cy);
       return;
@@ -1423,11 +1513,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
-    // Retain exact camera viewport on same-dataset mutations (collapse/expand, mode toggling),
-    // but fit the full graph with padding on dataset/run identity change.
-    if (datasetChanged) {
+    // Retain exact camera viewport on same-dataset mutations (collapse/expand, mode toggling, live updates),
+    // but fit the full graph with comfortable padding and readable zoom on initial snapshot or dataset identity change.
+    const shouldFitCamera = (datasetChanged || !hasFittedRef.current) && cy.elements().length > 0;
+    if (shouldFitCamera) {
       prevDatasetKeyRef.current = datasetKey;
-      cy.fit(cy.elements(), 50);
+      hasFittedRef.current = true;
+      cy.fit(cy.elements(), 48);
+      const z = cy.zoom();
+      if (z > 1.15) {
+        cy.zoom(1.05);
+        cy.center();
+      }
+      const finalZ = cy.zoom();
+      if (finalZ < 0.8) setZoomLevel('far');
+      else if (finalZ < 1.3) setZoomLevel('mid');
+      else setZoomLevel('close');
     } else {
       cy.viewport({ zoom: currentZoom, pan: currentPan });
     }
@@ -2176,8 +2277,57 @@ export const GraphView: React.FC<GraphViewProps> = ({
             </button>
           </div>
 
-          {/* Autonomous Agent Simulation Toggle or Gated Notice */}
-          {isRealImport ? (
+          {/* In Live Watch: Drawer unfold buttons; In Demo/Import: Agent Auto-Repair */}
+          {isLive ? (
+            onToggleMapDrawer && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                <button
+                  onClick={() => onToggleMapDrawer(activeMapDrawer === 'files' ? 'none' : 'files')}
+                  className={activeMapDrawer === 'files' ? 'btn-secondary btn-sm' : 'btn-ghost btn-sm'}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    color: activeMapDrawer === 'files' ? '#38bdf8' : 'var(--text-secondary)',
+                    backgroundColor: activeMapDrawer === 'files' ? 'rgba(56, 189, 248, 0.15)' : undefined,
+                    border: activeMapDrawer === 'files' ? '1px solid rgba(56, 189, 248, 0.35)' : undefined,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title="Unfold watched files drawer over map"
+                  aria-label="Toggle Files drawer"
+                >
+                  <FileText size={12} />
+                  <span>Files</span>
+                </button>
+                <button
+                  onClick={() => onToggleMapDrawer(activeMapDrawer === 'diff' ? 'none' : 'diff')}
+                  className={activeMapDrawer === 'diff' ? 'btn-secondary btn-sm' : 'btn-ghost btn-sm'}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    color: activeMapDrawer === 'diff' ? '#38bdf8' : 'var(--text-secondary)',
+                    backgroundColor: activeMapDrawer === 'diff' ? 'rgba(56, 189, 248, 0.15)' : undefined,
+                    border: activeMapDrawer === 'diff' ? '1px solid rgba(56, 189, 248, 0.35)' : undefined,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title="Unfold source & diff drawer over map"
+                  aria-label="Toggle Diff drawer"
+                >
+                  <FileDiff size={12} />
+                  <span>Diff / Source</span>
+                </button>
+              </div>
+            )
+          ) : isRealImport ? (
             <span
               style={{
                 fontSize: '11px',
