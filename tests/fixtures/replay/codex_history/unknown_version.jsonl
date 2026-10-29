@@ -1,0 +1,2 @@
+{"timestamp":"2026-10-28T12:00:00Z","type":"session_meta","payload":{"id":"synthetic-session-unknown","session_id":"synthetic-session-unknown","timestamp":"2026-10-28T12:00:00Z","cwd":"/synthetic/unknown-project","cli_version":"99.0.0"},"ordinal":0}
+{"timestamp":"2026-10-28T12:00:01Z","type":"response_item","payload":{"type":"message","role":"user","id":"prompt-unknown","content":[{"type":"input_text","text":"This version must not be guessed."}]},"ordinal":1}

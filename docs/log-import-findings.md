@@ -2,8 +2,8 @@
 
 ## Gate and revert point
 
-Status: P0 complete on 2026-10-28; P1 additive schema complete on 2026-10-28; parser phases
-remain pending.
+Status: P0 complete on 2026-10-28; P1 additive schema and P2 Codex parser complete on
+2026-10-28; later phases remain pending.
 
 Revert point: `957aa27d70ec305f25c5fcd3ffe6b09f0808f406`
 
@@ -204,6 +204,29 @@ Two resolved limitations remain important:
 
 No code, schema, fixture or UI file changed in P0. P1 adds optional Python model fields only and
 does not change `ui/` or any existing fixture.
+
+## P2 Codex parser boundary
+
+P2 implements a read-only parser for the two observed Codex versions. It uses response-item user
+messages as the canonical prompt stream, prefers completed `CommandExecution`, `FileChange` and
+`McpToolCall` evidence over low-level orchestration calls, falls back to paired low-level calls and
+results when a file has no completed tool items, and retains an unmatched in-progress low-level
+call. Repeated stable item IDs are deduplicated.
+
+The parser stores the source log digest, never its path. Project grouping hashes
+`session_meta.cwd` and exposes only its final display component in the parse result. Imported
+records reuse existing kinds, attribution `unknown`, and partial/unsupported completeness. Command
+and patch evidence is retained with `file_state: unknown`; no historical bytes are reconstructed.
+
+For `.jsonl.zst`, the parser runs the local `zstd` executable directly without a shell, dependency
+or network access. Output is bounded. A missing executable, decompression failure or oversized
+source yields one visible unsupported result with a stable reason.
+
+Only sanitized synthetic fixtures are committed for normal, resumed, compressed, unknown-version,
+corrupt and empty sessions. The compressed bytes are stored as base64 so the fixture remains
+reviewable. No real history content or machine path is included. P2 has no discovery, persistence
+or CLI surface; P4 must complete the full typed redaction policy before user-requested imports are
+persisted.
 
 ## P0 validation
 
