@@ -9,8 +9,7 @@ const __dirname = path.dirname(__filename);
 const SCREENSHOTS_DIR = path.resolve(__dirname, '../../docs/screenshots/replay');
 const DIST_INDEX_PATH = path.resolve(__dirname, '../dist/index.html');
 
-const FIXTURE_V2 = path.resolve(__dirname, '../../tests/fixtures/replay/fixture_replay_v2_enriched.json');
-const FIXTURE_V1 = path.resolve(__dirname, '../../tests/fixtures/replay/fixture_replay_v1_nomodel.json');
+const FIXTURE_HERO = path.resolve(__dirname, '../src/fixtures/fixture_replay_timeline_hero.json');
 
 async function captureState(page, filename, width, height) {
   console.log(`Capturing ${filename} (${width}x${height})...`);
@@ -54,78 +53,59 @@ async function main() {
     await page.goto(fileUrl, { waitUntil: 'networkidle0' });
     await new Promise((r) => setTimeout(r, 600));
 
-    // Upload V2 Enriched Fixture
-    console.log('Uploading V2 enriched fixture...');
+    // Upload synthetic hero fixture with real 15m idle stretch, mid-run gap, and deterministic + model chapters
+    console.log('Uploading synthetic timeline hero fixture...');
     const fileInput = (await page.$('input[aria-label="Open recording file input"]')) ||
                       (await page.$('input[aria-label="Open JSON file input"]'));
     if (!fileInput) {
       throw new Error('Could not find file input in UI');
     }
-    await fileInput.uploadFile(FIXTURE_V2);
+    await fileInput.uploadFile(FIXTURE_HERO);
     await new Promise((r) => setTimeout(r, 800));
 
     // View 1: Normal run (hero bar, diff view, chapters, summary audit)
+    console.log('Capturing Scenario 1: Normal run overview at step 3...');
     await page.evaluate(() => {
-      const cp2 = document.querySelector('div[data-testid="replay-checkpoint-row-2"]');
-      if (cp2) cp2.click();
+      const cp3 = document.querySelector('div[data-testid="replay-checkpoint-row-3"]');
+      if (cp3) cp3.click();
       const summaryTab = document.querySelector('button[data-testid="replay-tab-summary"]');
       if (summaryTab) summaryTab.click();
     });
     await new Promise((r) => setTimeout(r, 600));
-    await captureState(page, `01_whole_recording_chapters_diff_${vp.name}.png`, vp.width, vp.height);
     await captureState(page, `01_normal_run_${vp.name}.png`, vp.width, vp.height);
 
-    // View 2: Idle break with axis-break label + failed test marker
-    console.log('Activating axis-break on hero timeline bar and navigating to failed test...');
+    // View 2: Idle break with axis-break squiggle + real label computed from timestamps (15m idle) + failed test marker
+    console.log('Capturing Scenario 2: Idle break axis label (15m idle) and failed test at step 6...');
     await page.evaluate(() => {
-      window.__FAULTMESH_TIMELINE_OPTIONS__ = { idleThresholdMs: 0.5, idleLabel: '15m idle' };
-      window.dispatchEvent(new Event('timeline-options-changed'));
-
-      const cp4 = document.querySelector('div[data-testid="replay-checkpoint-row-4"]');
-      if (cp4) cp4.click();
-
+      const cp6 = document.querySelector('div[data-testid="replay-checkpoint-row-6"]');
+      if (cp6) cp6.click();
       const testsTab = document.querySelector('button[data-testid="replay-tab-tests"]');
       if (testsTab) testsTab.click();
     });
     await new Promise((r) => setTimeout(r, 600));
-    await captureState(page, `02_failed_test_state_match_${vp.name}.png`, vp.width, vp.height);
     await captureState(page, `02_idle_break_axis_label_${vp.name}.png`, vp.width, vp.height);
 
-    // View 3: Chapter segments including a model-interpretation chapter + claims reasoning
-    console.log('Capturing model-interpretation chapter segment on hero bar...');
+    // View 3: Mid-run Gap region on hero bar with warning hatch pattern and GAP badge at step 4
+    console.log('Capturing Scenario 3: Mid-run gap region at step 4...');
     await page.evaluate(() => {
-      window.__FAULTMESH_TIMELINE_OPTIONS__ = undefined;
-      window.dispatchEvent(new Event('timeline-options-changed'));
+      const cp4 = document.querySelector('div[data-testid="replay-checkpoint-row-4"]');
+      if (cp4) cp4.click();
+      const summaryTab = document.querySelector('button[data-testid="replay-tab-summary"]');
+      if (summaryTab) summaryTab.click();
+    });
+    await new Promise((r) => setTimeout(r, 600));
+    await captureState(page, `03_gap_region_${vp.name}.png`, vp.width, vp.height);
 
-      const cp2 = document.querySelector('div[data-testid="replay-checkpoint-row-2"]');
-      if (cp2) cp2.click();
-
+    // View 4: Model-interpretation chapter segment on hero bar with dashed bracket and [model] badge at step 7
+    console.log('Capturing Scenario 4: Model-interpretation chapter segment with claims reasoning at step 7...');
+    await page.evaluate(() => {
+      const cp7 = document.querySelector('div[data-testid="replay-checkpoint-row-7"]');
+      if (cp7) cp7.click();
       const claimsTab = document.querySelector('button[data-testid="replay-tab-claims"]');
       if (claimsTab) claimsTab.click();
     });
     await new Promise((r) => setTimeout(r, 600));
-    await captureState(page, `03_evidence_inspector_verdicts_reason_${vp.name}.png`, vp.width, vp.height);
     await captureState(page, `04_model_interpretation_chapter_${vp.name}.png`, vp.width, vp.height);
-
-    // View 4: Gap region on hero bar + no-model missing evidence
-    console.log('Uploading V1 no-model fixture to demonstrate gap regions on hero bar...');
-    await page.goto(fileUrl, { waitUntil: 'networkidle0' });
-    await new Promise((r) => setTimeout(r, 600));
-    const fileInputV1 = (await page.$('input[aria-label="Open recording file input"]')) ||
-                        (await page.$('input[aria-label="Open JSON file input"]'));
-    if (fileInputV1) {
-      await fileInputV1.uploadFile(FIXTURE_V1);
-      await new Promise((r) => setTimeout(r, 800));
-    }
-
-    // Go to checkpoint #2 to highlight the gap region with hatch pattern and warning state
-    await page.evaluate(() => {
-      const nextBtn = document.querySelector('button[data-testid="replay-next-btn"]');
-      if (nextBtn && !nextBtn.disabled) nextBtn.click();
-    });
-    await new Promise((r) => setTimeout(r, 600));
-    await captureState(page, `04_nomodel_partial_missing_evidence_${vp.name}.png`, vp.width, vp.height);
-    await captureState(page, `03_gap_region_${vp.name}.png`, vp.width, vp.height);
   }
 
   await browser.close();

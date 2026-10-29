@@ -53,27 +53,6 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     return adapter.getAllTests ? adapter.getAllTests() : [];
   }, [adapter]);
 
-  const [effectiveTimelineOptions, setEffectiveTimelineOptions] = useState<TimeModelOptions | undefined>(() => {
-    if (timelineOptions) return timelineOptions;
-    if (typeof window !== 'undefined' && (window as any).__FAULTMESH_TIMELINE_OPTIONS__) {
-      return (window as any).__FAULTMESH_TIMELINE_OPTIONS__;
-    }
-    return undefined;
-  });
-
-  useEffect(() => {
-    const updateOptions = () => {
-      if (timelineOptions) {
-        setEffectiveTimelineOptions(timelineOptions);
-      } else if (typeof window !== 'undefined' && (window as any).__FAULTMESH_TIMELINE_OPTIONS__) {
-        setEffectiveTimelineOptions({ ...(window as any).__FAULTMESH_TIMELINE_OPTIONS__ });
-      }
-    };
-    updateOptions();
-    window.addEventListener('timeline-options-changed', updateOptions);
-    return () => window.removeEventListener('timeline-options-changed', updateOptions);
-  }, [timelineOptions]);
-
   // Set sequence and update adapter
   const handleSelectSequence = useCallback(
     (seq: number) => {
@@ -397,7 +376,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           onSelectSequence={handleSelectSequence}
           chapters={chapters}
           tests={allTests}
-          options={effectiveTimelineOptions}
+          options={timelineOptions}
         />
       </div>
 

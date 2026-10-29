@@ -42,12 +42,6 @@ export interface TimeModelOptions {
    * If omitted, formats in the user's local runtime time zone.
    */
   timeZone?: string;
-
-  /**
-   * Optional custom label for idle breaks (e.g. '15m idle').
-   * If omitted, calculated from idleDurationMs via formatIdleDuration.
-   */
-  idleLabel?: string;
 }
 
 export interface StepPosition {
@@ -382,7 +376,7 @@ export function computeTimelineBarGeometry(params: {
         endRatio,
         centerRatio,
         durationMs: it.idleDurationMs,
-        label: options.idleLabel ?? formatIdleDuration(it.idleDurationMs),
+        label: formatIdleDuration(it.idleDurationMs),
         startCapturedAt: steps[i].captured_at,
         endCapturedAt: steps[i + 1].captured_at,
       });

@@ -232,16 +232,40 @@ Status: complete. Hero scrubber component implemented with pure time geometry, c
   9. Boundary protection: preventing overshoots before first step or beyond last step.
   10. Hover tooltips: chapters (deterministic vs discontinuous model), gap reasons, axis breaks, test results, and mouse leave dismissal.
 
-### Real Screenshot Capture (`docs/screenshots/replay/`)
-- Captured fresh, distinct screenshots using the headless Chrome harness (`capture_replay_screenshots.js`) against the real fixtures (`fixture_replay_v2_enriched.json` and `fixture_replay_v1_nomodel.json`) at 1440x900 and 1024x700:
-  - **Normal Run**: `01_normal_run_${vp.name}.png` & `01_whole_recording_chapters_diff_${vp.name}.png` (hero timeline bar spanning full width, diff viewer, chapter list, summary audit).
-  - **Idle Break with Axis-Break Label**: `02_idle_break_axis_label_${vp.name}.png` & `02_failed_test_state_match_${vp.name}.png` (hero bar showing axis-break squiggle with `15m idle` label + test markers with failed test state match).
-  - **Gap Region**: `03_gap_region_${vp.name}.png` & `04_nomodel_partial_missing_evidence_${vp.name}.png` (hero bar showing diagonal warning hatch pattern, warning border, and `GAP` badge for unrecorded gap record with partial/missing evidence).
-  - **Model Interpretation Chapter**: `04_model_interpretation_chapter_${vp.name}.png` & `03_evidence_inspector_verdicts_reason_${vp.name}.png` (hero bar showing chapter bracket with dashed border and `model` pill tag + evidence claims and likelihood reasoning).
+### Real Screenshot Capture & Data Honesty (`docs/screenshots/replay/`)
+- **Strict Data Honesty (Rule 2 Enforcement)**:
+  - Completely removed test harness backdoor from production code:
+    - Deleted `window.__FAULTMESH_TIMELINE_OPTIONS__` global and its event listener in `ReplayWorkspace.tsx`.
+    - Deleted `idleLabel` override from `TimeModelOptions` in `timeModel.ts`.
+    - Every visual element and label on `ReplayTimelineBar` is derived strictly from recorded fixture data (`formatIdleDuration` calculates idle label from real timestamps).
+  - Added dedicated synthetic replay export fixture `ui/src/fixtures/fixture_replay_timeline_hero.json` (`replay-export-2.0`):
+    - Contains 7 chronological records with real timestamps.
+    - Honest 15-minute idle stretch between step 5 (`12:03:00Z`) and step 6 (`12:18:00Z`), naturally producing `15m idle` via `formatIdleDuration(900000)` without overrides.
+    - Honest mid-run gap record at step 4 (`record_type: "gap"`, `gap_reason: "corrupt input: sequence loss during agent tool execution"`).
+    - Chapter 1 (steps 1–3) as deterministic template and Chapter 2 (steps 4–7) as model interpretation.
+    - Structured test evidence with 1 passing test at step 3 and 1 failing test (`test_negative_input_raises`) at step 6.
+- **Genuine, Distinct Screenshot Scenarios**:
+  - Re-captured each scenario as a distinct page state with unique viewport layout and sequence position:
+    1. `01_normal_run_${vp.name}.png`: Selected step 3 (`post_tool`), showing diff viewer with `calc.py` changes, deterministic Chapter 1, and Summary Audit tab.
+    2. `02_idle_break_axis_label_${vp.name}.png`: Selected step 6, showing honest `15m idle` axis-break squiggle and label on hero bar, red diamond test marker, and failing test in Tests tab.
+    3. `03_gap_region_${vp.name}.png`: Selected step 4, showing mid-run gap region on hero bar with diagonal warning hatch pattern, `GAP` badge, and gap reason.
+    4. `04_model_interpretation_chapter_${vp.name}.png`: Selected step 7, showing Chapter 2 on hero bar with dashed bracket and `[model]` tag, plus Claims tab with verified/unverified assertions.
+  - Eliminated all duplicate captures and redundant alias filenames.
+  - Verified 100% unique SHA-256 hashes across all 8 files (zero duplicates):
+    | File | SHA-256 Checksum |
+    |---|---|
+    | `01_normal_run_1024x700.png` | `77e756dc361531637cfc76cd8ed04408bf30ec06b6f32086f81c00a1594cadcb` |
+    | `01_normal_run_1440x900.png` | `b163d21bb72c13aca90ef03ae522ef3275267a9be8ccb727b27f64e7f4a3ccdd` |
+    | `02_idle_break_axis_label_1024x700.png` | `60856de2e91e19228a35fc91c93f041b155afbe84f77d9baef9ad2b24d7a48d7` |
+    | `02_idle_break_axis_label_1440x900.png` | `2083bf87e8251c0331b3d1dfaccff5346b446115bf102215b833d5225e8e8b89` |
+    | `03_gap_region_1024x700.png` | `6dee5376337ecacbf72a54503252e08d05616bc8eb09b329896b232e158627c3` |
+    | `03_gap_region_1440x900.png` | `8a8d29ece9093d1aefa3dd1b76ad9f0480813ce378286c180603f340811f9960` |
+    | `04_model_interpretation_chapter_1024x700.png` | `08c5aa244427344c4e39e40ae41cb232674bf5a7bb1a9d85bf9cc59c1e16c6ed` |
+    | `04_model_interpretation_chapter_1440x900.png` | `3c5f2c02970db82b21191e36209644f2a4137ba97e228c3574b3baae0154ed2b` |
 
 ### Quality & Verification Results
-- `npm test`: 26/26 test files passed (212 Vitest tests, 8 Electron node tests).
-- `npm run build`: `tsc && vite build` passed cleanly in 1.64s with zero errors.
+- `npm test`: 26/26 test files passed (213 Vitest tests including fixture verification, 8 Electron node tests).
+- `npm run build`: `tsc && vite build` passed cleanly in 1.75s with zero errors.
 
 ---
 

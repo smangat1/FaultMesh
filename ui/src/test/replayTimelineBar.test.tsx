@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ReplayTimelineBar } from '../components/replay/ReplayTimelineBar';
 import type { TimelineEntry, ReplayChapter, StructuredTestEvidence } from '../replay/types';
+import heroFixture from '../fixtures/fixture_replay_timeline_hero.json';
 
 function createMockTimeline(): TimelineEntry[] {
   return [
@@ -623,5 +624,44 @@ describe('ReplayTimelineBar Component', () => {
     const bar = screen.getByTestId('replay-timeline-bar');
     fireEvent.mouseLeave(bar);
     expect(screen.queryByTestId('timeline-tooltip')).toBeNull();
+  });
+
+  it('correctly derives 15m idle break, mid-run gap, and model chapter from synthetic hero fixture without overrides', () => {
+    const onSelect = vi.fn();
+
+    render(
+      <ReplayTimelineBar
+        timeline={heroFixture.timeline as unknown as TimelineEntry[]}
+        currentSequence={6}
+        onSelectSequence={onSelect}
+        chapters={heroFixture.chapters as unknown as ReplayChapter[]}
+        tests={heroFixture.tests as unknown as StructuredTestEvidence[]}
+        options={{ timeZone: 'UTC' }}
+      />
+    );
+
+    // 1. Verify Axis Break has real computed "15m idle" label
+    const axisBreaks = screen.getAllByTestId('timeline-axis-break');
+    expect(axisBreaks.length).toBe(1);
+    expect(axisBreaks[0].textContent).toContain('15m idle');
+
+    // 2. Verify Mid-run Gap region is present with GAP badge and warning state
+    const gapRegions = screen.getAllByTestId('timeline-gap-region');
+    expect(gapRegions.length).toBe(2);
+    expect(gapRegions[0].textContent).toContain('GAP');
+
+    // 3. Verify Chapters: Chapter 1 is deterministic, Chapter 2 is model interpretation
+    const chapterSegments = screen.getAllByTestId('timeline-chapter-segment');
+    expect(chapterSegments.length).toBe(2);
+    expect(chapterSegments[0].textContent).toContain('Configure initial workspace and apply patch');
+    expect(chapterSegments[0].textContent).not.toContain('model');
+    expect(chapterSegments[1].textContent).toContain('Refactor core logic and verify tests');
+    expect(chapterSegments[1].textContent).toContain('model');
+
+    // 4. Verify test markers: 1 pass and 1 fail
+    const testMarkers = screen.getAllByTestId('timeline-test-marker');
+    expect(testMarkers.length).toBe(2);
+    expect(testMarkers.some((m) => m.classList.contains('test-fail'))).toBe(true);
+    expect(testMarkers.some((m) => m.classList.contains('test-pass'))).toBe(true);
   });
 });
