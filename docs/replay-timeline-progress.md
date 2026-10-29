@@ -3,11 +3,13 @@
 ## Reference Baseline
 
 - Phase P0 branch: `replay-timeline-bar` (PR #21 merged into main)
-- Phase P1 branch: `replay-timeline-p1`
+- Phase P1 branch: `replay-timeline-p1` (PR #22 merged into main)
+- Phase P2 branch: `replay-timeline-p2`
 - Branched from `origin/main` commit SHA:
-  `f3530fe6e9d64dc17cef679e4aa84eb9030fb230`
-- Base commit description: `Merge pull request #21 from smangat1/replay-timeline-bar` (Phase P0 time-field gate investigation doc).
-- This SHA is the strict revert baseline for all work in Phase P1.
+  `2088754a38727af76a8750873182c0a62cdbb753`
+- Base commit description: `Merge pull request #22 from smangat1/replay-timeline-p1` (Phase P1 pure time model and bar geometry tests).
+- Pre-P2 commit: `e48cf03` — `fix(replay-ui): local timezone formatting for hover labels and canon association in tests`.
+- This SHA is the strict revert baseline for all work in Phase P2.
 
 ---
 
@@ -128,9 +130,67 @@ Status: complete. 18/18 unit tests passed, full suite 24/24 files (197 tests + 8
 
 ---
 
-## Next Phase: P2 — Visual Foundation & Tokens
-- Introduce calm black/gray/dark-blue tokens in `ui/src/index.css` (layered blue-gray surfaces, 1px low-contrast borders, soft shadows, rounded corners, quiet metadata).
-- Apply tokens strictly to the replay workspace scope (`ReplayWorkspace`, `ReplayTimeline`, `ReplayDiffViewer`, `ReplayEvidenceInspector`, replay header elements).
-- Leave entry screens (`StartupScreen`, `ProjectSelectorScreen`, `LiveEntranceScreen`) and live/spectate workspace untouched.
-- Run tests and take real screenshots.
-- How to resume: Run `continue` to proceed to Phase P2 implementation.
+## Phase P2 — Visual Foundation & Tokens
+
+Status: complete. Visual token system implemented, applied across all replay components, WCAG AA verified, zero purple/yellow regressions, 25/25 test files passing (202 vitest tests, 8 electron tests), real fresh screenshots captured.
+
+### Implementation Summary
+- **Token System**: `ui/src/styles/replay.css` (imported via `ui/src/styles/theme.css` and `ui/src/index.css`)
+  - Strict black/gray through dark-blue palette translated from Homeboard iOS design language:
+    - Canvas: `--replay-bg-canvas` (`#07090e`, near-black with dark blue cast)
+    - Surface 1: `--replay-bg-surface-1` (`#0d111a`, deep blue-gray container panes)
+    - Surface 2: `--replay-bg-surface-2` (`#141a26`, raised cards, header, drawers)
+    - Surface 3: `--replay-bg-surface-3` (`#1c2436`, active/hover states)
+    - Code: `--replay-bg-code` (`#090c12`, diff editor background)
+    - Borders: `--replay-border-subtle` (`rgba(255,255,255,0.06)`), `--replay-border-card` (`rgba(255,255,255,0.09)`), `--replay-border-focus` (`rgba(96,140,200,0.45)`)
+    - Text: `--replay-text-primary` (`#e6edf8`, passes WCAG AAA at 16:1), `--replay-text-muted` (`#8b97ad`, passes WCAG AA at 6.5:1), `--replay-text-faint` (`#4d576a`)
+    - Accent: `--replay-accent` (`#4a7bb0`, muted steel blue), `--replay-accent-glow` (`rgba(74,123,176,0.15)`)
+    - Calm status tokens:
+      - Complete/Verified: `--replay-status-complete` (`#4a7bb0` steel blue)
+      - Warning: `--replay-status-warning` (`#946c32` muted amber, only for genuine completeness warnings or gap alerts)
+      - Danger: `--replay-status-danger` (`#9c4444` muted rose, only for test failures or contradicted claims)
+      - Neutral: `--replay-status-neutral` (`#5a6578` quiet gray-blue, for skipped/unmatched/unsupported)
+    - Diff styling: `--replay-diff-add-bg`, `--replay-diff-add-gutter`, `--replay-diff-del-bg`, `--replay-diff-del-gutter`
+    - Radii & Shadows: `--replay-radius-panel` (14px), `--replay-radius-card` (10px), `--replay-radius-control` (7px), `--replay-shadow-ambient`, `--replay-shadow-subtle`
+    - Motion: `--replay-transition-quick` (160ms cubic-bezier ease-out), respecting prefers-reduced-motion.
+- **Component Application**:
+  - `ReplayWorkspace.tsx`: Header, sequence badge, navigation buttons, honesty origin badges, and completeness warnings updated with calm tokens.
+  - `ReplayTimeline.tsx`: Panes, chapter list, checkpoint sequence list, and pass/fail indicators calmed; removed deprecated purple and neon cyan.
+  - `ReplayDiffViewer.tsx`: Diff canvas, empty state cards, file selector tabs, unified diff lines, and stale AST warning badges calmed.
+  - `ReplayEvidenceInspector.tsx`: Inspector tabs, likely-reason cards, atomic claim cards, citation validity badges, test observation cards, and summary audit cards calmed; removed deprecated purple `#c084fc` and neon badges.
+- **Scope Integrity**:
+  - Strictly zero touches to startup/entry screens (`StartupScreen`, `ProjectSelectorScreen`, `LiveEntranceScreen`).
+  - Strictly zero touches to live/spectate workspace screens.
+
+### Testing & Verification (`ui/src/test/replayVisualTokens.test.tsx`)
+- **Suite**: 5 comprehensive visual & contrast tests:
+  1. Primary text passes WCAG AAA contrast (>= 7:1) on all dark surfaces (`#07090e`, `#0d111a`, `#141a26`).
+  2. Muted text passes WCAG AA contrast (>= 4.5:1) on all dark surfaces.
+  3. Accent elements pass WCAG 2.1 graphical & UI component contrast (>= 3.0:1).
+  4. `ReplayWorkspace` renders calm tokens without deprecated purple (`#c084fc`), yellow (`#fbbf24`), bright green (`#10b981`), or bright red (`#ef4444`).
+  5. `ReplayEvidenceInspector` renders calm status tokens for claims, model inference, and tests.
+- **Test Suite Results**:
+  - `npm test`: 25/25 test files passed (202 Vitest tests, 8 Electron node tests).
+  - `npm run build`: `tsc && vite build` passed cleanly with zero errors.
+
+### Real Screenshot Capture
+- Re-captured all 8 distinct screenshots in `docs/screenshots/replay/` against real fixtures (`fixture_replay_v2_enriched.json` and `fixture_replay_v1_nomodel.json`) using headless Chrome at 1440x900 and 1024x700:
+  - `01_whole_recording_chapters_diff_1440x900.png` & `1024x700.png`
+  - `02_failed_test_state_match_1440x900.png` & `1024x700.png`
+  - `03_evidence_inspector_verdicts_reason_1440x900.png` & `1024x700.png`
+  - `04_nomodel_partial_missing_evidence_1440x900.png` & `1024x700.png`
+
+---
+
+## Next Phase: P3 — Hero Timeline Bar Component
+- Build `ui/src/components/replay/ReplayTimelineBar.tsx` (the hero scrubber component).
+- Visual elements:
+  - SVG/Canvas timeline bar track with proportional step ticks.
+  - Chapter segment brackets with sequence ranges, title tooltips, and model interpretation tags.
+  - Axis-break squiggles for idle stretches exceeding threshold with labels (`15m idle`, `2h 14m idle`).
+  - Gap stretches with diagonal hatch pattern, warning border, and gap reason tooltips.
+  - Test markers (dots/diamonds with pass/fail/neutral styling).
+  - Current-step thumb with animated snap to nearest step (Rule 2: never resting in unrecorded space).
+  - Keyboard navigation (Left/Right arrows, j/k, Home/End, PgUp/PgDn).
+  - Accessibility: ARIA slider, role, keyboard focus, screen-reader announcements.
+- How to resume: Run `continue` to proceed to Phase P3 implementation.

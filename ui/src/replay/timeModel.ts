@@ -36,6 +36,12 @@ export interface TimeModelOptions {
    * Default: 5,000ms.
    */
   minIntervalWeightMs?: number;
+
+  /**
+   * Optional IANA time zone identifier for hover formatting (e.g. 'America/New_York').
+   * If omitted, formats in the user's local runtime time zone.
+   */
+  timeZone?: string;
 }
 
 export interface StepPosition {
@@ -121,20 +127,24 @@ export interface TimelineBarGeometry {
 
 /**
  * Formats a timestamp into a strict wall-clock time hover string:
- * "recorded at H:MM:SS AM/PM" (UTC).
+ * "recorded at H:MM:SS AM/PM" in the user's local time zone (or specified IANA time zone).
+ * Preserves the underlying UTC timestamp in the data model while presenting in local wall time.
  */
-export function formatRecordedAt(isoString: string): string {
+export function formatRecordedAt(isoString: string, timeZone?: string): string {
   try {
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return `recorded at ${isoString}`;
-    const hours = d.getUTCHours();
-    const minutes = d.getUTCMinutes();
-    const seconds = d.getUTCSeconds();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const h12 = hours % 12 || 12;
-    const mStr = String(minutes).padStart(2, '0');
-    const sStr = String(seconds).padStart(2, '0');
-    return `recorded at ${h12}:${mStr}:${sStr} ${ampm}`;
+    const options: Intl.DateTimeFormatOptions = {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    };
+    if (timeZone) {
+      options.timeZone = timeZone;
+    }
+    const timeStr = new Intl.DateTimeFormat('en-US', options).format(d);
+    return `recorded at ${timeStr}`;
   } catch {
     return `recorded at ${isoString}`;
   }
@@ -165,6 +175,7 @@ export function computeTimelineBarGeometry(params: {
   const fixedGapWeightMs = options.fixedGapWeightMs ?? 30 * 1000; // 30s visual weight
   const cappedIdleWeightMs = options.cappedIdleWeightMs ?? 30 * 1000; // 30s visual weight
   const minIntervalWeightMs = options.minIntervalWeightMs ?? 5 * 1000; // 5s min visual weight
+  const timeZone = options.timeZone;
 
   // 1. Handle Empty Session
   if (!timeline || timeline.length === 0) {
@@ -215,7 +226,7 @@ export function computeTimelineBarGeometry(params: {
       captured_at: entry.captured_at,
       timestampMs: parsedTimestamps[0],
       positionRatio: 0.0,
-      timeLabel: formatRecordedAt(entry.captured_at),
+      timeLabel: formatRecordedAt(entry.captured_at, timeZone),
       isGap: entry.record_type === 'gap' || entry.record_type === 'unsupported',
       gapReason: entry.gap_reason,
       toolName: entry.tool_name,
@@ -338,7 +349,7 @@ export function computeTimelineBarGeometry(params: {
       captured_at: entry.captured_at,
       timestampMs: parsedTimestamps[i],
       positionRatio: cumulativeRatios[i],
-      timeLabel: formatRecordedAt(entry.captured_at),
+      timeLabel: formatRecordedAt(entry.captured_at, timeZone),
       isGap: entry.record_type === 'gap' || entry.record_type === 'unsupported',
       gapReason: entry.gap_reason,
       toolName: entry.tool_name,
