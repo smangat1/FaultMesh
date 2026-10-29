@@ -53,6 +53,11 @@ class Completeness(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
+class ImportSource(StrEnum):
+    CODEX = "codex"
+    CLAUDE_CODE = "claude_code"
+
+
 class TestState(StrEnum):
     PASSED = "pass"
     FAILED = "fail"
@@ -176,6 +181,19 @@ class ReplaySession(ReplayModel):
     codex_version: str
     raw_logging: bool = False
     limits: CaptureLimits
+    import_source: ImportSource | None = Field(
+        default=None,
+        description="History provider for an imported read-only session.",
+    )
+    format_version: str | None = Field(
+        default=None,
+        description="Source format version reported by the history provider.",
+    )
+    source_file_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Digest of the local source log; its private path is never exported.",
+    )
 
 
 class ReplayRecord(ReplayModel):
@@ -206,6 +224,34 @@ class ReplayRecord(ReplayModel):
     tool_response: object | None = None
     gap_reason: str | None = None
     test_refs: list[str] = Field(default_factory=list)
+    source_item_id: str | None = Field(
+        default=None,
+        description="Stable source-native item identity used for history deduplication.",
+    )
+    prompt_id: str | None = Field(
+        default=None,
+        description="Source-native user prompt identity, when the format provides one.",
+    )
+    prompt_text: str | None = Field(
+        default=None,
+        description="User prompt after typed secret redaction and before persistence.",
+    )
+    file_state: Literal["unknown"] | None = Field(
+        default=None,
+        description="History evidence cannot reconstruct exact before or after file bytes.",
+    )
+    edit_patch: str | None = Field(
+        default=None,
+        description="Source-provided edit patch after typed secret redaction.",
+    )
+    edit_command: str | None = Field(
+        default=None,
+        description="Source-provided file-writing command after typed secret redaction.",
+    )
+    redaction_types: list[str] | None = Field(
+        default=None,
+        description="Typed labels for secret classes redacted from imported evidence.",
+    )
 
 
 class TestCounts(ReplayModel):
@@ -246,10 +292,14 @@ class StructuredTestEvidence(ReplayModel):
             TestState.INCOMPLETE,
         }:
             raise ValueError("command observations cannot claim a test outcome")
-        if self.association in {
-            TestAssociation.CONTENT_IDENTITY,
-            TestAssociation.CONTROLLED_NO_WRITE,
-        } and self.associated_manifest_id is None:
+        if (
+            self.association
+            in {
+                TestAssociation.CONTENT_IDENTITY,
+                TestAssociation.CONTROLLED_NO_WRITE,
+            }
+            and self.associated_manifest_id is None
+        ):
             raise ValueError("verified test association requires a manifest identity")
         return self
 

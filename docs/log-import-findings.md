@@ -2,14 +2,18 @@
 
 ## Gate and revert point
 
-Status: P0 complete on 2026-10-28; implementation phases remain pending.
+Status: P0 complete on 2026-10-28; P1 additive schema complete on 2026-10-28; parser phases
+remain pending.
 
-Revert point: `f3530fe6e9d64dc17cef679e4aa84eb9030fb230`
+Revert point: `957aa27d70ec305f25c5fcd3ffe6b09f0808f406`
 
-This branch was created from a freshly fetched `origin/main`. The inspection was read-only and
-local. It examined record structure and aggregate counts under `~/.codex/sessions` and checked for
-`~/.claude/projects`. It did not copy, quote or commit prompts, commands, outputs, project paths,
-session IDs or raw log records.
+The original P0 branch point was `f3530fe6e9d64dc17cef679e4aa84eb9030fb230`. Before P1, this
+branch was rebased onto freshly fetched `origin/main` at the revert point above. The intervening
+changes were confined to `ui/`, replay UI screenshots and the replay timeline progress document;
+no backend replay contract changed. The inspection was read-only and local. It examined record
+structure and aggregate counts under `~/.codex/sessions` and checked for `~/.claude/projects`. It
+did not copy, quote or commit prompts, commands, outputs, project paths, session IDs or raw log
+records.
 
 ## Real local inventory
 
@@ -22,12 +26,16 @@ JSON. Two `session_meta.cli_version` values were present:
 - `0.165.0-alpha.1.2` in three files.
 
 Neither `~/.claude` nor `~/.claude/projects` existed. Consequently, P0 could not validate a real
-Claude project-folder encoding or Claude JSONL variant on this machine. P3 must remain
-version-gated and synthetic-fixture-tested until a sanitized or local real sample is available.
+Claude project-folder encoding or Claude JSONL variant on this machine. By explicit continuation
+decision, P3 will be built and tested from sanitized synthetic fixtures only. It will remain
+version-gated and will not claim validation against a real Claude log on this machine.
 
 The local `zstd` executable exists, but the repository has no zstandard Python dependency and the
-real inventory contains no compressed sample. Portable `.jsonl.zst` support is therefore not yet
-proven. P2 must not add a dependency without approval.
+real inventory contains no compressed sample. By explicit continuation decision, P2 will invoke
+the local `zstd` executable read-only when it is available and will not add a Python dependency.
+When that executable is absent, compressed sessions will remain discoverable as visible
+`unsupported` entries carrying the reason. Portable `.jsonl.zst` parsing is not proven by a real
+sample on this machine.
 
 ## Codex rollout shape observed
 
@@ -120,14 +128,14 @@ same-session representation issue and cannot be solved by item ID alone for the 
 ## Claude Code gate
 
 The assumed `~/.claude/projects/<encoded-project>/<session>.jsonl` layout could not be checked
-because the root was absent. P3 should therefore:
+because the root was absent. P3 will therefore:
 
 - keep the raw project folder name only in local import metadata;
 - perform a documented best-effort path-style decode without claiming it is canonical;
 - version-gate every accepted synthetic shape;
 - represent unknown versions, records and corrupt lines with visible unsupported/gap records;
 - count sidechain, subagent, meta and system handling explicitly;
-- avoid a real-format support claim until the optional P5 smoke test observes a local sample.
+- state clearly that support is synthetic-fixture-derived and make no real-format validation claim.
 
 ## Evidence boundary
 
@@ -187,15 +195,15 @@ editing `ui/`.
 P0 passes for the observed Codex JSONL versions after adjusting the plan to parse completed
 `CommandExecution`/`FileChange` items rather than assuming direct Bash/apply_patch records.
 
-Two limitations require explicit continuation awareness:
+Two resolved limitations remain important:
 
-1. No real Claude Code log was available. P3 can implement conservative version-gated synthetic
-   support, but P5 cannot claim a real Claude smoke result on this machine unless logs appear.
-2. No real `.jsonl.zst` was available, and Python has no existing zstd dependency. Before P2
-   compressed support, choose either an approved dependency or an optional local `zstd` executable
-   path with a visible unsupported result when unavailable. No dependency will be added silently.
+1. No real Claude Code log was available. P3 will implement conservative, version-gated support
+   from sanitized synthetic fixtures only, and P5 will not claim a real Claude smoke result.
+2. No real `.jsonl.zst` was available. P2 will use the local `zstd` executable without adding a
+   dependency; if it is unavailable, the compressed session will be visibly unsupported.
 
-No code, schema, fixture or UI file changed in P0.
+No code, schema, fixture or UI file changed in P0. P1 adds optional Python model fields only and
+does not change `ui/` or any existing fixture.
 
 ## P0 validation
 
