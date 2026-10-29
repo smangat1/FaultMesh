@@ -57,19 +57,34 @@ function createTestEvidence(
 
 describe('timeModel', () => {
   describe('formatRecordedAt', () => {
-    it('formats UTC ISO timestamp into wall-clock time string', () => {
-      const formatted = formatRecordedAt('2026-10-28T14:03:22.547Z');
-      expect(formatted).toBe('recorded at 2:03:22 PM');
+    it('formats ISO timestamp into local wall-clock time string by default', () => {
+      const iso = '2026-10-28T14:03:22.547Z';
+      const expectedTime = new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      }).format(new Date(iso));
+      expect(formatRecordedAt(iso)).toBe(`recorded at ${expectedTime}`);
     });
 
-    it('formats morning UTC times with AM', () => {
-      const formatted = formatRecordedAt('2026-10-28T09:05:07.000Z');
-      expect(formatted).toBe('recorded at 9:05:07 AM');
+    it('formats timestamp in specified non-UTC time zones', () => {
+      // America/New_York is EDT (UTC-4) in October: 14:03 UTC -> 10:03 AM EDT
+      const ny = formatRecordedAt('2026-10-28T14:03:22.547Z', 'America/New_York');
+      expect(ny).toBe('recorded at 10:03:22 AM');
+
+      // America/Los_Angeles is PDT (UTC-7) in October: 14:03 UTC -> 7:03 AM PDT
+      const la = formatRecordedAt('2026-10-28T14:03:22.547Z', 'America/Los_Angeles');
+      expect(la).toBe('recorded at 7:03:22 AM');
+
+      // Asia/Tokyo is JST (UTC+9): 14:03 UTC -> 23:03 (11:03 PM) JST
+      const tokyo = formatRecordedAt('2026-10-28T14:03:22.547Z', 'Asia/Tokyo');
+      expect(tokyo).toBe('recorded at 11:03:22 PM');
     });
 
-    it('handles midnight correctly as 12 AM', () => {
-      const formatted = formatRecordedAt('2026-10-28T00:15:30.000Z');
-      expect(formatted).toBe('recorded at 12:15:30 AM');
+    it('formats timestamp in UTC when explicitly requested', () => {
+      const utc = formatRecordedAt('2026-10-28T14:03:22.547Z', 'UTC');
+      expect(utc).toBe('recorded at 2:03:22 PM');
     });
 
     it('handles invalid timestamp gracefully', () => {
@@ -131,7 +146,7 @@ describe('timeModel', () => {
       const step = geom.steps[0];
       expect(step.sequence).toBe(1);
       expect(step.positionRatio).toBe(0.0);
-      expect(step.timeLabel).toBe('recorded at 2:00:00 PM');
+      expect(step.timeLabel).toBe(formatRecordedAt(entry.captured_at));
       expect(step.isGap).toBe(false);
 
       expect(geom.chapterSegments).toHaveLength(1);
@@ -453,7 +468,7 @@ describe('timeModel', () => {
           state: 'skipped',
           suite_scope: 'unit',
           source: 'pytest',
-          association: 'unmatched',
+          association: 'none',
         }),
       ];
 
