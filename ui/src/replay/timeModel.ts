@@ -151,6 +151,30 @@ export function formatRecordedAt(isoString: string, timeZone?: string): string {
 }
 
 /**
+ * Formats a timestamp into a strict clock-time string:
+ * "H:MM:SS AM/PM" in the user's local time zone (or specified IANA time zone).
+ * Omits any "recorded at " prefix for minimal end-circle and snap label presentation.
+ */
+export function formatClockTime(isoString: string, timeZone?: string): string {
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const options: Intl.DateTimeFormatOptions = {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    };
+    if (timeZone) {
+      options.timeZone = timeZone;
+    }
+    return new Intl.DateTimeFormat('en-US', options).format(d);
+  } catch {
+    return isoString;
+  }
+}
+
+/**
  * Formats an idle duration in milliseconds into a concise axis-break label:
  * e.g., "2h 14m idle", "15m idle", "45s idle".
  */

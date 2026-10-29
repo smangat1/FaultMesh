@@ -70,3 +70,8 @@ if (typeof window !== 'undefined' && !window.ResizeObserver) {
     disconnect() {}
   };
 }
+
+// Polyfill PointerEvent for jsdom
+if (typeof window !== 'undefined' && !(window as any).PointerEvent) {
+  (window as any).PointerEvent = window.MouseEvent;
+}

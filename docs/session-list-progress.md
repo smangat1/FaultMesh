@@ -53,14 +53,14 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   - [x] Updated screenshot capture script with DOM assertions and verified unique SHA-256 hashes.
   - [x] Phase 1.5 commit: "Phase 1.5: real-data session list fixes".
 
-- [ ] **Phase 2: Timeline Restyle**
-  - [ ] Minimalist white line bar with quiet ticks for snap points and hairline chapter/gap marks.
-  - [ ] Start and end circles displaying only clock times (no "start" / "end" text).
-  - [ ] Clock-time label under cursor at snap points during hover, drag, and keyboard selection.
-  - [ ] Smooth continuous thumb drag with 150-200ms ease-out snapping on release, respecting `prefers-reduced-motion`.
-  - [ ] Maintain data honesty (no resting between steps), keyboard accessibility, and dock resize isolation.
-  - [ ] Tests and screenshots for Phase 2.
-  - [ ] Phase 2 commit: "Phase 2: timeline restyle".
+- [x] **Phase 2: Timeline Restyle**
+  - [x] Minimalist white line bar with quiet ticks for snap points and hairline chapter/gap marks.
+  - [x] Start and end circles displaying only clock times (no "start" / "end" text).
+  - [x] Clock-time label under cursor at snap points during hover, drag, and keyboard selection.
+  - [x] Smooth continuous thumb drag with 150-200ms ease-out snapping on release, respecting `prefers-reduced-motion`.
+  - [x] Maintain data honesty (no resting between steps), keyboard accessibility, and dock resize isolation.
+  - [x] Tests and screenshots for Phase 2.
+  - [x] Phase 2 commit: "Phase 2: timeline restyle".
 
 - [ ] **Phase 3: First-Use Tips**
   - [ ] First-use spotlight tour / tip cards for autodetect home, live entrance, and replay view.
@@ -148,3 +148,39 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   | `02-autodetect-home-folder-collapsed.png` | Codex full-screen view with collapsed project folder (auth-service) showing collapsed chevron and hidden sessions list | `asserted folder-sessions-codex:group-auth is null and aria-expanded="false"` | `7563ee2d430943f47b52cd1783e3af8f623563fe105ba79ca155c5cd6e9a6eec` |
   | `03-autodetect-home-unsupported-row.png` | Claude Code full-screen view displaying honest unsupported status tag with zstd reason | `asserted session-row-claude-sess-2 and session-parse-status-unsupported with zstd decompression title in DOM` | `b6360185a3f1100d1666458c8f341e13ca1125389b5adfe56d030eb0e46b42c0` |
   | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `asserted autodetect-no-bridge-empty-state and startup-open-recording-btn in DOM` | `f09af2ee719b84445bdfddab5610bf0839586bf12772b05bb908245593ae2fd3` |
+
+### Phase 2: timeline restyle
+- **Commit SHA**: `7fd4169`
+- **Files Changed (11 files)**:
+  - `docs/session-list-progress.md`
+  - `docs/screenshots/session-list/04-timeline-resting.png`
+  - `docs/screenshots/session-list/05-timeline-hover-label.png`
+  - `docs/screenshots/session-list/06-timeline-mid-drag.png`
+  - `docs/screenshots/session-list/07-timeline-after-release.png`
+  - `ui/scripts/capture_timeline_screenshots.js`
+  - `ui/src/components/replay/ReplayTimelineBar.tsx`
+  - `ui/src/replay/timeModel.ts`
+  - `ui/src/styles/replay.css`
+  - `ui/src/test/replayTimelineBar.test.tsx`
+  - `ui/src/test/setup.ts`
+- **Verification Commands & Results**:
+  - `npx tsc --noEmit`: Clean (0 errors).
+  - `npm test`: 28 test files passed (249 Vitest tests, 10 Electron node tests, 0 failed). Total: 259 tests passing.
+  - `npm run build`: `tsc && vite build` built cleanly with zero errors in 1.46s.
+- **Visual & Behavioral Restyle Confirmation**:
+  - Clean white line (`2px`, `#ffffff`) streaking across the timeline bar with no heavy track rail background.
+  - Start circle at 0% and end circle at 100% displaying strictly clock times (e.g. `8:00:00 AM` and `8:19:00 AM`), with zero "start" or "end" text.
+  - Subtle hairline ticks (`.replay-timeline-step-tick`) at every snap point along the line.
+  - Current checkpoint displayed as a slightly larger filled circle thumb (`.replay-timeline-thumb`).
+  - Small floating clock-time label under cursor at snap points (`.replay-timeline-cursor-label`) during hover, continuous pointer drag, and keyboard focus without layout shift.
+  - Smooth continuous drag tracking the pointer coordinates, updating the nearest snap clock-time label without advancing the selected step; on release, thumb smoothly eases (180ms ease-out) onto the nearest checkpoint and updates the selected step.
+  - Prefers-reduced-motion enforced via `@media (prefers-reduced-motion: reduce) { .replay-timeline-thumb { transition: none !important; } }`.
+  - Full keyboard accessibility and dock resize isolation preserved.
+- **Screenshots Captured (Headless Chrome against real built bundle with zero duplicate hashes)**:
+  | File | What it shows | DOM Assertion | SHA-256 Checksum |
+  |---|---|---|---|
+  | `04-timeline-resting.png` | Timeline bar at rest: clean white line streaking across the bar, end circles displaying only clock times (no "start"/"end"), subtle hairline ticks at every snap point, and filled circle thumb | `asserted clean 2px line, timeline-circle-start (0%), timeline-circle-end (100%), extent clock times without "start"/"end", 7 ticks, and no cursor label at rest` | `6df290f7a1d8a6910f549bcf74599b3ad323f5283e9e47894a0955a4a9964e63` |
+  | `05-timeline-hover-label.png` | Timeline bar during hover: floating small muted-white clock-time label appears under cursor at nearest snap point without shifting layout | `asserted timeline-cursor-label appears under cursor at snap point displaying valid clock time while thumb remains at initial checkpoint` | `c8ebd675866ab22a3d701ef5b0d0a7f509ad35f1f116022f55171288768a5868` |
+  | `06-timeline-mid-drag.png` | Timeline bar mid-drag: thumb continuously tracks pointer position without jumping, cursor label shows nearest snap clock time, and current selected checkpoint remains strictly unchanged until release | `asserted timeline-thumb has class "dragging", left matches drag pointer (~60%), timeline-cursor-label visible, and header badge strictly remains Checkpoint #1` | `8677f18de5285b03361462e96004e320f6cff5342418379ef4c6c99b3dd22552` |
+  | `07-timeline-after-release.png` | Timeline bar after drag release: thumb smoothly eased onto nearest recorded checkpoint (180ms ease-out), dragging class removed, and current checkpoint updated in workspace | `asserted timeline-thumb lacks "dragging" class, checkpoint advanced to nearest recorded step (#5), and thumb snapped to checkpoint ratio` | `98d13a8517a3c404a4706667fab6f21e5415c8d090190a99012612455bc0b8f3` |
+

@@ -3,7 +3,9 @@ import type { TimelineEntry, ReplayChapter, StructuredTestEvidence } from '../..
 import {
   computeTimelineBarGeometry,
   formatRecordedAt,
+  formatClockTime,
   type TimeModelOptions,
+  type StepPosition,
   type ChapterSegment,
   type AxisBreak,
   type GapRegion,
@@ -39,6 +41,11 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
   const rootRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
+  const [hoveredStep, setHoveredStep] = useState<StepPosition | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const isDraggingRef = useRef(false);
+  const dragRatioRef = useRef<number | null>(null);
   const [hoveredTooltip, setHoveredTooltip] = useState<HoverTooltipState | null>(null);
 
   // Compute geometry using the pure time model
@@ -85,7 +92,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
     return Math.max(0, Math.min(1, isNaN(ratio) ? 0 : ratio));
   }, []);
 
-  // Track click handler
+  // Track click handler: snaps thumb onto nearest step with 180ms ease
   const handleTrackClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -98,7 +105,9 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
     [geometry, getRatioFromClientX, onSelectSequence]
   );
 
-  // Pointer interactions on track (Click & Drag)
+  // Pointer interactions on track:
+  // Continuous smooth drag tracking thumb with pointer, updating nearest clock time label;
+  // Selected step strictly updates only upon pointerup release, click, or keyboard.
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Primary button only (allow undefined for test synthetics)
@@ -106,34 +115,32 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
       e.preventDefault();
 
       const ratio = getRatioFromClientX(e.clientX);
-      const nearest = geometry.findNearestStep(ratio);
-      if (nearest) {
-        onSelectSequence(nearest.sequence);
-      }
-
+      isDraggingRef.current = true;
+      dragRatioRef.current = ratio;
       setIsDragging(true);
+      setDragRatio(ratio);
+
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       } catch {
         // Fallback for jsdom / tests
       }
     },
-    [geometry, getRatioFromClientX, onSelectSequence]
+    [getRatioFromClientX]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       const ratio = getRatioFromClientX(e.clientX);
-      if (isDragging) {
-        const nearest = geometry.findNearestStep(ratio);
-        if (nearest && nearest.sequence !== currentSequence) {
-          onSelectSequence(nearest.sequence);
-        }
+      if (isDraggingRef.current) {
+        dragRatioRef.current = ratio;
+        setDragRatio(ratio);
       } else {
-        // Hovering track without dragging: show step preview tooltip
         const nearest = geometry.findNearestStep(ratio);
-        if (!nearest || !trackRef.current) return;
+        setHoveredStep(nearest);
 
+        // Hovering track without dragging: also show step preview tooltip
+        if (!nearest || !trackRef.current) return;
         const rect = trackRef.current.getBoundingClientRect();
         const width = rect.width > 0 ? rect.width : 800;
         const x = nearest.positionRatio * width;
@@ -164,13 +171,21 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         });
       }
     },
-    [isDragging, getRatioFromClientX, geometry, currentSequence, onSelectSequence]
+    [getRatioFromClientX, geometry]
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
-      if (isDragging) {
+      if (isDraggingRef.current) {
+        const ratio = dragRatioRef.current ?? getRatioFromClientX(e.clientX);
+        const nearest = geometry.findNearestStep(ratio);
+        if (nearest) {
+          onSelectSequence(nearest.sequence);
+        }
+        isDraggingRef.current = false;
+        dragRatioRef.current = null;
         setIsDragging(false);
+        setDragRatio(null);
         try {
           (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
         } catch {
@@ -178,19 +193,33 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         }
       }
     },
-    [isDragging]
+    [geometry, getRatioFromClientX, onSelectSequence]
   );
+
+  const handlePointerLeave = useCallback(() => {
+    if (!isDraggingRef.current) {
+      setHoveredStep(null);
+    }
+  }, []);
 
   // Global pointerup listener in case capture was lost
   useEffect(() => {
-    const handleGlobalPointerUp = () => {
-      if (isDragging) {
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      if (isDraggingRef.current) {
+        const ratio = dragRatioRef.current ?? getRatioFromClientX(e.clientX);
+        const nearest = geometry.findNearestStep(ratio);
+        if (nearest) {
+          onSelectSequence(nearest.sequence);
+        }
+        isDraggingRef.current = false;
+        dragRatioRef.current = null;
         setIsDragging(false);
+        setDragRatio(null);
       }
     };
     window.addEventListener('pointerup', handleGlobalPointerUp);
     return () => window.removeEventListener('pointerup', handleGlobalPointerUp);
-  }, [isDragging]);
+  }, [geometry, getRatioFromClientX, onSelectSequence]);
 
   // Keyboard navigation
   const handleKeyDown = useCallback(
@@ -384,10 +413,25 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
   };
 
   const handleHoverLeave = () => {
-    if (!isDragging) {
+    if (!isDraggingRef.current) {
       setHoveredTooltip(null);
+      setHoveredStep(null);
     }
   };
+
+  // Active label step for floating clock-time snap indicator
+  const activeLabelStep = useMemo(() => {
+    if (isDragging && dragRatio !== null) {
+      return geometry.findNearestStep(dragRatio);
+    }
+    if (hoveredStep) {
+      return hoveredStep;
+    }
+    if (isFocused && currentStep) {
+      return currentStep;
+    }
+    return null;
+  }, [isDragging, dragRatio, hoveredStep, isFocused, currentStep, geometry]);
 
   // Safe Empty State
   if (!timeline || timeline.length === 0) {
@@ -423,7 +467,10 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
     ? `Step ${currentStep.sequence} of ${geometry.steps.length}: ${currentStep.record_type}, ${currentStep.timeLabel}`
     : 'No step selected';
 
-  const thumbLeftPercent = (currentStep?.positionRatio ?? 0) * 100;
+  const thumbLeftPercent =
+    isDragging && dragRatio !== null
+      ? dragRatio * 100
+      : (currentStep?.positionRatio ?? 0) * 100;
 
   return (
     <div
@@ -437,6 +484,8 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
       aria-valuetext={ariaValueText}
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
       onMouseLeave={handleHoverLeave}
       style={style}
       data-testid="replay-timeline-bar"
@@ -504,8 +553,9 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
       >
-        {/* Track Rail Background */}
+        {/* Track Rail Line */}
         <div className="replay-timeline-track-rail">
           {/* Axis Breaks (Idle Stretches) */}
           {geometry.axisBreaks.map((breakItem) => {
@@ -615,6 +665,31 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
           );
         })}
 
+        {/* End Circles showing only clock times */}
+        <div
+          className="replay-timeline-end-circle replay-timeline-end-circle-start"
+          data-testid="timeline-circle-start"
+          style={{ left: '0%' }}
+          title={startTimeStr}
+        />
+        <div
+          className="replay-timeline-end-circle replay-timeline-end-circle-end"
+          data-testid="timeline-circle-end"
+          style={{ left: '100%' }}
+          title={endTimeStr}
+        />
+
+        {/* Floating Clock-Time Label under Cursor at Snap Points */}
+        {activeLabelStep && (
+          <div
+            className="replay-timeline-cursor-label"
+            data-testid="timeline-cursor-label"
+            style={{ left: `${activeLabelStep.positionRatio * 100}%` }}
+          >
+            {formatClockTime(activeLabelStep.captured_at, options?.timeZone)}
+          </div>
+        )}
+
         {/* Scrubber Thumb (Hero Element with Animated Snap) */}
         <div
           className={`replay-timeline-thumb ${isDragging ? 'dragging' : ''}`}
@@ -623,12 +698,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
           }}
           data-testid="timeline-thumb"
           title={`Step #${currentSequence} (${currentStep?.timeLabel ?? ''})`}
-        >
-          <div className="replay-timeline-thumb-grip">
-            <div className="replay-timeline-thumb-line" />
-            <div className="replay-timeline-thumb-line" />
-          </div>
-        </div>
+        />
       </div>
 
       {/* 3. Bottom Status / Extent Strip */}
