@@ -18,6 +18,13 @@ The supported Phase 1 granularity is therefore:
 Phase 1 may proceed at this boundary. Checkpoint-only fallback approval is not needed for the
 tested adapter.
 
+This exact-byte capture path is distinct from read-only history import. History discovery inspects
+only `~/.codex/sessions` and `~/.claude/projects`, then imports a selected session's prompts,
+completed steps and timing as partial source evidence. History import never claims historical file
+bytes: it emits no manifests or content objects, marks edit evidence with `file_state: unknown`,
+and keeps unknown versions or corrupt records visible as unsupported/gap steps. Selecting a project
+folder remains optional and is required only to begin new byte-exact hook capture.
+
 ## Tested implementation
 
 - Installed executable: `codex-cli 0.165.0-alpha.1.2`
@@ -57,7 +64,8 @@ version, command items include the command, aggregated output, exit code and sta
 items identify the changed path and add/delete/update kind, but not full bytes.
 
 FaultMesh's boundary probe does not read the transcript path or scan the Codex home. It starts one
-new session and snapshots only the explicitly created fixture root.
+new session and snapshots only the explicitly created fixture root. This statement describes the
+probe and live-capture adapter, not the separate read-only history importer.
 
 ## Real-run fixture and results
 
@@ -137,6 +145,10 @@ Phase 1 must preserve these distinctions:
   structured pytest result or proof of exact test counts.
 - SDK file-change items do not contain complete patches or historical bytes. Rollout history is
   supporting action evidence, not the byte store.
+- History-import redaction is best effort. A visible marker records the detected secret family but
+  cannot prove that arbitrary imported text contains no undiscovered secret.
+- Claude Code support is provisional and synthetic-contract-only because no real Claude history
+  was available on the development machine.
 - This probe tested one installed Codex build, one selected project and no concurrent writers.
 - Hook configuration is trusted executable code. Production capture must be explicit opt-in,
   visible to the user and version-gated.
@@ -146,4 +158,6 @@ Phase 1 must preserve these distinctions:
 The probe source is `scripts/replay_capture_probe.py`. It creates a new repository and session on
 each run, records only `*.py` under that repository, skips symlinks and tool metadata folders, and
 retains output locally for inspection. It does not use old sessions, recursively inspect the
-Codex home, upload recording data, or commit raw transcripts.
+Codex home, upload recording data, or commit raw transcripts. Separately, history import reads
+existing dotfolder logs without writing them, scans no broad home folders, follows no symlinked
+directories and exports only the explicitly selected session after typed redaction.

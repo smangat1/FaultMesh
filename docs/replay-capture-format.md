@@ -70,8 +70,8 @@ histories from being joined silently.
 ## Capture limits and exclusions
 
 Defaults are one selected project, one writer, 2,000 Python files, 512 KiB per file, 32 MiB per
-snapshot and 512 MiB of stored content. The CLI does not recursively inspect the Codex home or
-reconstruct an old session.
+snapshot and 512 MiB of stored content. Live capture inspects only the explicitly selected project;
+it does not reconstruct an old session.
 
 Capture never imports or executes project code. It records bounded UTF-8 `*.py` bytes and visibly
 skips supported-source candidates it cannot capture. It ignores `.git`, `.faultmesh`, virtual
@@ -87,6 +87,10 @@ general concurrent-writer solution.
 Tool input and output are recursively pattern-redacted and bounded before persistence by default.
 Redacted and truncated values carry markers and cannot verify the missing text. Pattern redaction
 is best effort, not a secrecy guarantee. `--raw-logging` is an explicit local-only opt-in.
+
+History import always applies typed redaction before prompt previews or imported evidence reach an
+index/export. Markers such as `[redacted: api key]` remain visible and the record carries
+`redaction_types`. History import has no raw-logging mode.
 
 FaultMesh does not upload, export or commit recordings automatically. Only the reviewed synthetic
 fixtures above belong in Git.
@@ -105,3 +109,25 @@ faultmesh replay-delete <session-id>
 capture is accepted only while the session is active and only when the hook working directory
 matches the selected root. Storage defaults outside the selected checkout and can be overridden
 with `--store`.
+
+## Read-only history export
+
+History import is a separate producer of the unchanged `replay-export-1.0` envelope. Discovery
+automatically scans only `~/.codex/sessions` and `~/.claude/projects`; absent roots are ordinary
+statuses. Listing performs a light metadata/prompt scan, while full parsing happens only for the
+selected session.
+
+An imported export uses the optional session fields `import_source`, `format_version` and
+`source_file_sha256`. Records may use the optional `source_item_id`, `prompt_id`, `prompt_text`,
+`file_state`, `edit_patch`, `edit_command` and `redaction_types` fields. Existing required fields,
+versions, enums and literals are unchanged. Imported records use existing record kinds,
+`provenance: history_import`, `attribution_status: unknown`, and partial/unsupported completeness.
+
+Because logs do not contain trustworthy historical project bytes, imported exports have empty
+`manifests`, `content_base64_by_sha256` and structured `tests`. Timeline entries preserve prompts,
+tool/edit evidence, ordering, timestamps and visible gaps but have no changed-file or changed-symbol
+claims. The ordinary `load_export` integrity path validates and loads the result.
+
+Codex `.jsonl.zst` input uses a local `zstd` executable when available; there is no added zstd
+dependency. A missing executable leaves the session visible as unsupported. Claude Code parsing is
+limited to the provisional synthetic contract and does not claim real-release compatibility.

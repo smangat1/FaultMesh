@@ -49,6 +49,37 @@ Loading an export verifies that its content keys exactly match referenced manife
 that every base64 object's SHA-256 matches its key. Checkpoint selection verifies size again. A
 corrupt or unsupported document is rejected.
 
+## Optional history-import extension
+
+Both `replay-export-1.0` and `replay-export-2.0` accept the same strictly additive history-import
+fields. Every field is optional, so existing exports and UI fixtures remain valid without changes.
+No existing record kind, completeness value, attribution value or schema-version literal changes.
+
+Optional session fields:
+
+| Field | Meaning |
+| --- | --- |
+| `import_source` | `codex` or `claude_code` for a read-only history import |
+| `format_version` | Exact source format/version label observed by the importer |
+| `source_file_sha256` | SHA-256 identity of the local log; never its private path |
+
+Optional record fields:
+
+| Field | Meaning |
+| --- | --- |
+| `source_item_id` | Stable source-native identity used to deduplicate resumed history |
+| `prompt_id` | Source-native user-prompt identity, when present |
+| `prompt_text` | Full user prompt after typed secret redaction |
+| `file_state` | `unknown` when history cannot establish exact before/after bytes |
+| `edit_patch` | Source-provided patch evidence after typed secret redaction |
+| `edit_command` | Source-provided file-writing command after typed secret redaction |
+| `redaction_types` | Secret-class labels corresponding to visible redaction markers |
+
+The existing optional `turn_id` remains the turn correlation field. Imported records use existing
+record kinds and set attribution to `unknown`; their completeness remains `partial` or
+`unsupported` as appropriate. Patch and command text are action evidence, not reconstructed file
+state or proof of resulting bytes.
+
 ## Record and checkpoint semantics
 
 Session `sequence` is monotonic. `source_identity` plus `source_offset` distinguishes ingestion

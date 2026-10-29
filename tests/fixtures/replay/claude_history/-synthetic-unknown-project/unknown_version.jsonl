@@ -1,0 +1,1 @@
+{"formatVersion":"claude-code-jsonl-unknown-99","version":"99.0.0","uuid":"unknown-user","parentUuid":null,"sessionId":"synthetic-claude-unknown","timestamp":"2026-10-28T17:00:00Z","cwd":"/synthetic/unknown/project","type":"user","isSidechain":false,"isMeta":false,"message":{"role":"user","content":"Do not guess this format."}}
