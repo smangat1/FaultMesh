@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { ReplayAdapter } from '../../adapter/replayAdapter';
+import type { GraphData } from '../../types';
 import { ReplayTimeline } from './ReplayTimeline';
 import { ReplayDiffViewer } from './ReplayDiffViewer';
 import { ReplayEvidenceInspector } from './ReplayEvidenceInspector';
@@ -16,9 +17,9 @@ import {
   X,
 } from 'lucide-react';
 
-interface ReplayWorkspaceProps {
+export interface ReplayWorkspaceProps {
   adapter: ReplayAdapter;
-  onOpenProjectMap?: () => void;
+  graphData?: GraphData | null;
   timelineOptions?: TimeModelOptions;
   defaultChaptersOpen?: boolean;
   defaultEvidenceOpen?: boolean;
@@ -27,14 +28,13 @@ interface ReplayWorkspaceProps {
 
 export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   adapter,
-  onOpenProjectMap,
+  graphData,
   timelineOptions,
   defaultChaptersOpen = false,
   defaultEvidenceOpen = false,
   defaultMiniMapOpen,
 }) => {
   const timeline = useMemo(() => adapter.getTimeline(), [adapter]);
-  const manifests = useMemo(() => adapter.getManifests(), [adapter]);
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
@@ -343,25 +343,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </button>
 
           <button
-            onClick={() => {
-              if (onOpenProjectMap) {
-                onOpenProjectMap();
-              }
-              setIsMiniMapOpen((prev) => !prev);
-            }}
+            onClick={() => setIsMiniMapOpen((prev) => !prev)}
             className={`replay-header-toggle-btn ${isMiniMapOpen ? 'active' : ''}`}
             title="Toggle project structure mini map (Shortcut: M)"
-            aria-label="Open project map"
+            aria-label="Toggle Project Map dock"
             aria-expanded={isMiniMapOpen}
             data-testid="replay-toggle-minimap"
-            id="replay-open-map-btn"
           >
             <Layers size={12} />
             <span>Mini Map</span>
             <span className="replay-shortcut-tag">M</span>
           </button>
-          {/* Legacy anchor for existing test suite compatibility */}
-          <span style={{ display: 'none' }} data-testid="replay-open-map-btn" onClick={onOpenProjectMap} />
         </div>
       </div>
 
@@ -576,10 +568,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
           {/* Graph Mini Map Dock (Resizable, Size-cycling, Honest empty state) */}
           <ReplayMiniMapDock
-            entry={currentEntry}
-            manifests={manifests}
             isOpen={isMiniMapOpen}
             onClose={() => setIsMiniMapOpen(false)}
+            graphData={graphData}
+            tests={adapter.getAllTests() as any}
             onSelectFile={(f) => setSelectedFile(f)}
             selectedFile={selectedFile}
           />

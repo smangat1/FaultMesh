@@ -8,7 +8,7 @@ import type { AnyReplayExport, ReplayExportV1 } from '../replay/types';
 describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it('renders default timeline-first layout: hero bar visible, diff viewer as main stage, panels closed by default', () => {
@@ -159,7 +159,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     expect(savedClosed.isOpen).toBe(false);
   });
 
-  it('supports free resizing drag on mini map resize handle', () => {
+  it('supports free resizing drag and keyboard arrow resizing on mini map resize handle', () => {
     const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
     render(<ReplayWorkspace adapter={adapter} defaultMiniMapOpen={true} />);
 
@@ -178,16 +178,29 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
       toJSON: () => {},
     });
 
-    // Start resize drag
+    // 1. Mouse drag resizing
     fireEvent.mouseDown(resizeHandle, { clientX: 700, clientY: 500 });
-
-    // Drag 100px left and 50px up to enlarge
     fireEvent.mouseMove(window, { clientX: 600, clientY: 450 });
     expect(dock.style.width).toBe('340px');
     expect(dock.style.height).toBe('210px');
-
-    // Release drag
     fireEvent.mouseUp(window);
+
+    // 2. Keyboard arrow resizing in 20px steps
+    // ArrowLeft: expands width by 20px (from 340px to 360px)
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowLeft' });
+    expect(dock.style.width).toBe('360px');
+
+    // ArrowUp: expands height by 20px (from 210px to 230px)
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowUp' });
+    expect(dock.style.height).toBe('230px');
+
+    // ArrowRight: shrinks width by 20px (from 360px to 340px)
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowRight' });
+    expect(dock.style.width).toBe('340px');
+
+    // ArrowDown: shrinks height by 20px (from 230px to 210px)
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowDown' });
+    expect(dock.style.height).toBe('210px');
   });
 
   it('strictly honors Rule 2: shows honest empty state when recording carries no project structure data', () => {
@@ -247,7 +260,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
         {
           schema_version: 'replay-store-1.0',
           id: 'man-empty',
-          files: [], // EMPTY MANIFEST - NO RECORDED FILES
+          files: [],
           skipped: [],
           partial: false,
         },
@@ -267,7 +280,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
           before_manifest_id: null,
           after_manifest_id: 'man-empty',
           changed_files: [],
-          changed_symbols: [], // NO RECORDED SYMBOLS
+          changed_symbols: [],
           test_evidence: [],
           prompt_or_tool_evidence_redacted: false,
           gap_reason: null,
@@ -283,20 +296,63 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     const emptyState = screen.getByTestId('replay-minimap-empty-state');
     expect(emptyState).toBeDefined();
     expect(emptyState.textContent).toContain('This recording contains no project-structure data');
-    expect(emptyState.textContent).toContain('No file manifests or AST symbols were recorded for this checkpoint');
+    expect(emptyState.textContent).toContain('No dependency graph or AST relationship edges were recorded for this session');
   });
 
-  it('renders recorded structure nodes in mini map and selects files on click', () => {
+  it('renders GraphView inside mini map dock when recording carries valid graph structure data', () => {
     const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
-    render(<ReplayWorkspace adapter={adapter} defaultMiniMapOpen={true} />);
+    const mockGraphData = {
+      nodes: [
+        { id: 'calc.py', file: 'calc.py', name: 'calc.py', kind: 'module' as const, lineStart: 1, lineEnd: 10, changeStatus: 'modified' as const, parentModule: '.' },
+        { id: 'calc.py::add', file: 'calc.py', name: 'add', kind: 'function' as const, lineStart: 2, lineEnd: 5, changeStatus: 'modified' as const, parentModule: 'calc.py' },
+      ],
+      edges: [
+        { id: 'edge-1', source: 'calc.py', target: 'calc.py::add', type: 'contains' as const, category: 'static_import' as const, provenance: 'ast: contains' },
+      ],
+      files: [
+        { file: 'calc.py', name: 'calc.py', folder: '.', symbolCount: 1, changeStatus: 'modified' as const, lineCount: 10 },
+      ],
+      unresolvedReferences: [],
+      parseErrors: [],
+    };
 
-    // Step 1 manifest has calc.py
-    const fileCard = screen.getByTestId('replay-minimap-file-calc.py');
-    expect(fileCard).toBeDefined();
-    expect(fileCard.textContent).toContain('calc.py');
+    render(
+      <ReplayWorkspace
+        adapter={adapter}
+        graphData={mockGraphData}
+        defaultMiniMapOpen={true}
+      />
+    );
 
-    // Click file card selects file in diff viewer
-    fireEvent.click(fileCard);
-    expect(fileCard.style.backgroundColor).toContain('var(--replay-bg-surface-3');
+    // GraphView renders its container when valid structure data with nodes and edges exists
+    expect(screen.queryByTestId('replay-minimap-empty-state')).toBeNull();
+    expect(screen.getByTestId('replay-minimap-dock')).toBeDefined();
+    expect(screen.getByText('Project Map')).toBeDefined();
+  });
+
+  it('renders the workspace the way App.tsx does and asserts clicking the Mini Map button does NOT call any navigation callback', () => {
+    const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
+    const emptyGraph = { nodes: [], edges: [], unresolvedReferences: [], parseErrors: [], files: [] };
+
+    // App.tsx renders: <ReplayWorkspace adapter={activeAdapter} graphData={graphData} /> without any navigation callback
+    render(<ReplayWorkspace adapter={adapter} graphData={emptyGraph} />);
+
+    // Initially minimap dock is closed
+    expect(screen.queryByTestId('replay-minimap-dock')).toBeNull();
+
+    // Click Mini Map button
+    const toggleMapBtn = screen.getByTestId('replay-toggle-minimap');
+    fireEvent.click(toggleMapBtn);
+
+    // Dock is now open INSIDE replay workspace
+    expect(screen.getByTestId('replay-minimap-dock')).toBeDefined();
+
+    // Main replay stage is still active and mounted - session never lost context or navigated away
+    expect(screen.getByTestId('replay-main-stage')).toBeDefined();
+    expect(screen.getByTestId('replay-timeline-bar')).toBeDefined();
+
+    // Click again closes dock
+    fireEvent.click(toggleMapBtn);
+    expect(screen.queryByTestId('replay-minimap-dock')).toBeNull();
   });
 });

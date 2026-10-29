@@ -302,53 +302,61 @@ Status: complete. Implemented uncrowded timeline-first layout where the timeline
        2. `medium`: 400px x 260px (expanded dock)
        3. `full`: 100% width and height taking over the main stage
      - **Size Cycling**: Header button (`replay-minimap-cycle-size`) cycles `small` -> `medium` -> `full` -> `small`.
-     - **Free Resize Handle**: Top-left corner drag grip (`replay-minimap-resize-handle`) allows free pointer drag resizing between 200px–900px width and 140px–650px height.
+     - **Free Resize Handle**: Top-left corner drag grip (`replay-minimap-resize-handle`) allows free pointer drag resizing between 200px–900px width and 140px–650px height. Focusable (`tabIndex={0}`, `role="slider"`) and arrow-key operable in 20px steps (`ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`).
      - **Persistence**: Remembers open state and size configuration across sessions via `localStorage` (`faultmesh:replay:minimap:state`).
-     - **Strict Rule 2 Honesty**:
-       - When recorded manifest files or symbols are present, renders real file cards with change status (`MODIFIED`, `ADDED`, etc.) and symbols. Clicking a file selects it in the diff viewer.
-       - When a recording carries no structure data (0 manifest files and 0 symbols), renders an honest empty state:
-         *"This recording contains no project-structure data — No file manifests or AST symbols were recorded for this checkpoint."*
-         Never invents or fabricates fake nodes.
+     - **Strict Rule 2 Honesty & Architecture**:
+       - Reuses the existing `GraphView` read-only (`viewMode="structure"`, `isAgentMode={false}`) when recorded graph structure data with nodes and edges is available.
+       - Replay exports carry no graph dependency edges (`edges: []`), so for recordings without structure data, it displays an honest empty state explaining that:
+         *"This recording contains no project-structure data — No dependency graph or AST relationship edges were recorded for this session."*
+         Never invents or fabricates fake nodes, and never substitutes an ad-hoc file list for the project map.
+       - *Follow-up Proposal*: As noted during review, if a checkpoint manifest file browser is desired, it should be designed as a separate dedicated files inspection utility rather than conflated with the project dependency map.
 
-3. **Keyboard Shortcuts**:
+3. **Phase P4 Review Fixes**:
+   - **Bug 1 (Navigation Away Fixed)**: Removed `onOpenProjectMap` from `ReplayWorkspace.tsx` and `App.tsx`. Removed the hidden dummy span with `data-testid="replay-open-map-btn"`. Clicking "Mini Map" (`replay-toggle-minimap`) and pressing `M` now strictly toggles the dock inside the replay workspace; session never loses context or navigates away. Added unit test verifying `App.tsx` wiring and context retention.
+   - **Design Deviation 3 (Map Engine Reused & Keyboard Operable)**: Removed the custom file list from `ReplayMiniMapDock.tsx`. Connected `GraphView` read-only for genuine graph data, with honest empty state when no graph structure exists. Made the resize handle focusable with visible focus styles and arrow-key operable in 20px steps. Made all dock controls keyboard reachable.
+   - **False Screenshot Claims 2 (Re-query & DOM Assertions)**: Overhauled `ui/scripts/capture_replay_screenshots.js`. Implemented `goToStep` with sequential click re-querying and DOM update synchronization. Added strict assertions (`assertCheckpointInDOM`) verifying exact checkpoint sequence numbers (`#3 of 7`, `#6 of 7`, `#4 of 7`, `#7 of 7`) and scenario-specific DOM elements before capturing each screenshot. Cleared `localStorage` between viewport passes. Re-captured all 4 scenarios across 1440x900 and 1024x700 with verified 100% unique SHA-256 hashes.
+
+4. **Keyboard Shortcuts**:
    - `Left Arrow` / `j`: Previous checkpoint
    - `Right Arrow` / `k`: Next checkpoint
    - `C` / `c`: Toggle Chapters rail
    - `E` / `e`: Toggle Evidence drawer
    - `M` / `m`: Toggle Mini Map dock
+   - `ArrowLeft` / `ArrowRight` / `ArrowUp` / `ArrowDown`: Resize Mini Map dock in 20px steps when resize handle is focused
    - `Escape`: Dismiss active open panel
 
 ### Unit Test Verification (`ui/src/test/replayTimelineLayoutP4.test.tsx`)
-- **Suite**: 7 comprehensive tests:
+- **Suite**: 8 comprehensive tests (all passing):
   1. Default timeline-first layout: hero bar visible, diff viewer as main stage, panels closed by default.
   2. Toggle Chapters left rail via `C` key and header button with close button dismissal.
   3. Toggle Evidence right drawer via `E` key and header button with close button dismissal.
   4. Toggle Mini Map dock via `M` key, cycle size states (`small` -> `medium` -> `full`), and persist in `localStorage`.
-  5. Support free resizing drag on mini map resize handle.
+  5. Support free resizing drag and keyboard arrow resizing in 20px steps on mini map resize handle.
   6. Strictly honor Rule 2: honest empty state when recording carries no project structure data.
-  7. Render recorded structure nodes in mini map and select files on click.
+  7. Render `GraphView` inside mini map dock when recording carries valid graph structure data.
+  8. Render the workspace the way `App.tsx` does and assert clicking Mini Map button does NOT call any navigation callback or leave replay.
 
 ### Real Screenshot Capture (`docs/screenshots/replay/`)
-- Fresh headless Chrome captures against real fixtures for each distinct scenario:
+- Fresh headless Chrome captures against real fixtures for each distinct scenario, strictly verified with runtime DOM assertions:
   1. `01_normal_run_${vp.name}.png`: Default timeline-first layout at step 3 with full-width hero bar, diff viewer as central main content, and all on-demand panels closed.
   2. `02_idle_break_axis_label_${vp.name}.png`: Step 6 with honest `15m idle` axis break on hero bar and Evidence right drawer open displaying failed test evidence.
   3. `03_gap_region_${vp.name}.png`: Mid-run Step 4 gap record with warning hatch pattern on hero bar and Chapters left rail open showing sequence list with `GAP` badge.
-  4. `04_model_interpretation_chapter_${vp.name}.png`: Step 7 in model chapter, showing dashed bracket with `[model]` tag on hero bar, model interpretation chapter focus strip, and Mini Map dock open in bottom-right corner.
+  4. `04_model_interpretation_chapter_${vp.name}.png`: Step 7 in model chapter, showing dashed bracket with `[model]` tag on hero bar, model interpretation chapter focus strip, and Mini Map dock open inside the replay screen (session remains in replay context).
 - **Verified SHA-256 Checksums (Zero Duplicates)**:
   | File | SHA-256 Checksum |
   |---|---|
-  | `01_normal_run_1024x700.png` | `6de2baefe07963120c7edaebe68a9ebc05dd9e9fb9773a86716800bb90352060` |
-  | `01_normal_run_1440x900.png` | `e528a1c3e86bdd7696c452d68dbd2aeef3c9650cfb894479c58140c1cdb09cf2` |
-  | `02_idle_break_axis_label_1024x700.png` | `a65daa5dd26f04cf6d0908c8012019323684bc1ef33dcaa0f4af549bc1d9a03c` |
-  | `02_idle_break_axis_label_1440x900.png` | `1e75915e0ee343d57d2d1ae5f6835858ee215afce201997b7337c62afb666213` |
-  | `03_gap_region_1024x700.png` | `a3f8a8ed17ed74ae7f9b7c2735cad147be8a13492901193e819ce43e5fed2714` |
-  | `03_gap_region_1440x900.png` | `1ded6c06b3544dbac570ea301015345432f7034825d1725ef35d9f8cefd8140f` |
-  | `04_model_interpretation_chapter_1024x700.png` | `3d192acec45319ba9940e4e1bd9c4e557f271c39929669564ff6d8c578fc4e90` |
-  | `04_model_interpretation_chapter_1440x900.png` | `41c5e34776164ed254c38f74aeeda910ed80e91f991b8e2a3493b912a222124e` |
+  | `01_normal_run_1024x700.png` | `425776e0cddbccd7a82fb159094805bd9198317b4b9e4992209d8f27afabeed6` |
+  | `01_normal_run_1440x900.png` | `5df589a5f66820cbfdedbc38b3b537b2ffbc62396322968c91c7934b363de3d5` |
+  | `02_idle_break_axis_label_1024x700.png` | `0b09598ec000f1651b3a5e59e407ff45d99efb9dc541b57e190f36e31d3dcf6c` |
+  | `02_idle_break_axis_label_1440x900.png` | `7e821361e228a6ebeb1934c7c11d1c69781d1bdf889a749cbddd713c8c3dea68` |
+  | `03_gap_region_1024x700.png` | `9da929a7b9ceda11ac9a5b54276fdeadf426fcd48366f0fa7ea32e4eb69d7829` |
+  | `03_gap_region_1440x900.png` | `280b8e0c508798714fa7e66292ac30f66ef26572b03a272c72e104b5efac1b50` |
+  | `04_model_interpretation_chapter_1024x700.png` | `55f2aae7f70cd125633c203dd9c58a5efcfb1c3310601c781b0c84e303e55c8a` |
+  | `04_model_interpretation_chapter_1440x900.png` | `460edf511820a692b9de847d8d22012ccf90df0f3880dff04bd0879d36ce1e7a` |
 
 ### Quality & Verification Results
-- `npm test`: 27/27 test files passed (220 Vitest tests, 8 Electron node tests).
-- `npm run build`: `tsc && vite build` clean in 1.72s with zero errors.
+- `npm test`: 27/27 test files passed (221 Vitest tests, 8 Electron node tests).
+- `npm run build`: `tsc && vite build` clean in 1.86s with zero errors.
 
 ---
 

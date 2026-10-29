@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { TimelineEntry, SnapshotManifest, ChangedSymbolView } from '../../replay/types';
+import type { GraphData, TestItem } from '../../types';
+import { GraphView } from '../GraphView';
 import {
   Layers,
   Maximize2,
   Minimize2,
   X,
   Info,
-  FileCode,
   Move,
-  Code,
 } from 'lucide-react';
 
 export type MiniMapSizeState = 'small' | 'medium' | 'full';
@@ -23,21 +22,25 @@ interface PersistedMiniMapState {
 const STORAGE_KEY = 'faultmesh:replay:minimap:state';
 
 export interface ReplayMiniMapDockProps {
-  entry: TimelineEntry | null;
-  manifests: SnapshotManifest[];
   isOpen: boolean;
   onClose: () => void;
-  onSelectFile?: (filePath: string) => void;
+  graphData?: GraphData | null;
+  tests?: TestItem[];
+  selectedNodeId?: string | null;
+  onSelectNode?: (nodeId: string | null) => void;
   selectedFile?: string | null;
+  onSelectFile?: (file: string | null) => void;
 }
 
 export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
-  entry,
-  manifests,
   isOpen,
   onClose,
-  onSelectFile,
+  graphData,
+  tests,
+  selectedNodeId,
+  onSelectNode,
   selectedFile,
+  onSelectFile,
 }) => {
   // Load persisted size state from localStorage if available
   const [sizeState, setSizeState] = useState<MiniMapSizeState>(() => {
@@ -153,15 +156,47 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
     };
   }, [isDraggingResize]);
 
-  // Derive files and symbols for the active checkpoint
-  const manifestId = entry?.after_manifest_id || entry?.before_manifest_id;
-  const manifest = manifests.find((m) => m.id === manifestId);
-  const files = manifest?.files || [];
-  const changedSymbols: ChangedSymbolView[] = entry?.changed_symbols || [];
-  const changedFiles = entry?.changed_files || [];
+  // Handle keyboard arrow resize in 20px steps
+  const handleResizeKeyDown = (e: React.KeyboardEvent) => {
+    if (sizeState === 'full') return;
+    const step = 20;
+    const curW = customDimensions?.width ?? (sizeState === 'medium' ? 400 : 240);
+    const curH = customDimensions?.height ?? (sizeState === 'medium' ? 260 : 160);
 
-  // Honest Check: If recording carries no project structure data (0 files in manifest and 0 symbols)
-  const hasStructureData = files.length > 0 || changedSymbols.length > 0 || changedFiles.length > 0;
+    let nextW = curW;
+    let nextH = curH;
+
+    if (e.key === 'ArrowLeft') {
+      // Anchored at bottom-right; moving handle left widens the dock
+      nextW = Math.min(900, Math.max(200, curW + step));
+      e.preventDefault();
+    } else if (e.key === 'ArrowRight') {
+      // Moving handle right narrows the dock
+      nextW = Math.min(900, Math.max(200, curW - step));
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp') {
+      // Anchored at bottom-right; moving handle up increases dock height
+      nextH = Math.min(650, Math.max(140, curH + step));
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown') {
+      // Moving handle down decreases dock height
+      nextH = Math.min(650, Math.max(140, curH - step));
+      e.preventDefault();
+    } else {
+      return;
+    }
+
+    setCustomDimensions({ width: nextW, height: nextH });
+  };
+
+  // Replay exports carry no graph edges; honest empty state is shown when no edges or nodes exist
+  const hasStructureData = Boolean(
+    graphData &&
+    graphData.nodes &&
+    graphData.nodes.length > 0 &&
+    graphData.edges &&
+    graphData.edges.length > 0
+  );
 
   if (!isOpen) {
     return null;
@@ -189,7 +224,7 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
     <div
       ref={dockRef}
       style={{
-        position: sizeState === 'full' ? 'absolute' : 'absolute',
+        position: 'absolute',
         bottom: sizeState === 'full' ? 0 : '16px',
         right: sizeState === 'full' ? 0 : '16px',
         top: sizeState === 'full' ? 0 : undefined,
@@ -223,10 +258,17 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
         }}
         data-testid="replay-minimap-header"
       >
-        {/* Left: Drag grip (when floating) + Title */}
+        {/* Left: Drag/Keyboard resize handle + Title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {sizeState !== 'full' && (
             <div
+              tabIndex={0}
+              role="slider"
+              aria-label="Resize project map dock"
+              aria-valuenow={customDimensions?.width ?? (sizeState === 'medium' ? 400 : 240)}
+              aria-valuemin={200}
+              aria-valuemax={900}
+              onKeyDown={handleResizeKeyDown}
               onPointerDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -242,11 +284,13 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
                 display: 'inline-flex',
                 alignItems: 'center',
                 color: 'var(--replay-text-faint, #4d576a)',
-                padding: '1px',
+                padding: '2px',
+                borderRadius: '4px',
+                outline: 'none',
               }}
-              title="Drag to resize mini map freely"
+              className="replay-minimap-resize-handle"
+              title="Drag or use arrow keys to resize mini map freely"
               data-testid="replay-minimap-resize-handle"
-              aria-label="Resize mini map"
             >
               <Move size={11} />
             </div>
@@ -261,15 +305,6 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
             }}
           >
             Project Map
-          </span>
-          <span
-            style={{
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono, monospace)',
-              color: 'var(--replay-text-muted, #8b97ad)',
-            }}
-          >
-            ({files.length} {files.length === 1 ? 'file' : 'files'})
           </span>
         </div>
 
@@ -333,10 +368,9 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
       <div
         style={{
           flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '8px',
+          overflow: 'hidden',
           backgroundColor: 'var(--replay-bg-canvas, #07090e)',
+          position: 'relative',
         }}
         data-testid="replay-minimap-content"
       >
@@ -350,16 +384,16 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
               justifyContent: 'center',
               height: '100%',
               minHeight: '80px',
-              padding: '12px',
+              padding: '16px',
               textAlign: 'center',
-              gap: '6px',
+              gap: '8px',
             }}
             data-testid="replay-minimap-empty-state"
           >
-            <Info size={16} style={{ color: 'var(--replay-text-muted, #8b97ad)' }} />
+            <Info size={18} style={{ color: 'var(--replay-text-muted, #8b97ad)' }} />
             <div
               style={{
-                fontSize: '11px',
+                fontSize: '12px',
                 fontWeight: 600,
                 color: 'var(--replay-text-primary, #e6edf8)',
               }}
@@ -368,126 +402,28 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
             </div>
             <div
               style={{
-                fontSize: '10px',
+                fontSize: '11px',
                 color: 'var(--replay-text-muted, #8b97ad)',
                 lineHeight: 1.4,
+                maxWidth: '280px',
               }}
             >
-              No file manifests or AST symbols were recorded for this checkpoint.
+              No dependency graph or AST relationship edges were recorded for this session.
             </div>
           </div>
         ) : (
-          /* Real Project Structure Nodes */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {files.map((file) => {
-              const changed = changedFiles.find((cf) => cf.path === file.path);
-              const isSelected = selectedFile === file.path;
-              const fileSymbols = changedSymbols.filter((s) => s.path === file.path);
-
-              return (
-                <div
-                  key={file.path}
-                  onClick={() => onSelectFile?.(file.path)}
-                  style={{
-                    padding: '6px 8px',
-                    borderRadius: 'var(--replay-radius-control, 7px)',
-                    backgroundColor: isSelected
-                      ? 'var(--replay-bg-surface-3, #1c2436)'
-                      : 'var(--replay-bg-surface-1, #0d111a)',
-                    border: isSelected
-                      ? '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))'
-                      : '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-                    cursor: onSelectFile ? 'pointer' : 'default',
-                    transition: 'all var(--replay-transition-quick, 160ms ease)',
-                  }}
-                  data-testid={`replay-minimap-file-${file.path}`}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
-                      <FileCode size={12} style={{ color: 'var(--replay-accent, #4a7bb0)', flexShrink: 0 }} />
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono, monospace)',
-                          fontSize: '11px',
-                          color: isSelected ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-primary, #e6edf8)',
-                          fontWeight: isSelected ? 600 : 400,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {file.path}
-                      </span>
-                    </div>
-
-                    {changed && (
-                      <span
-                        style={{
-                          fontSize: '9px',
-                          fontWeight: 600,
-                          fontFamily: 'var(--font-mono, monospace)',
-                          padding: '1px 5px',
-                          borderRadius: 'var(--replay-radius-control, 7px)',
-                          backgroundColor:
-                            changed.change === 'modified'
-                              ? 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))'
-                              : changed.change === 'added'
-                              ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
-                              : 'var(--replay-status-danger-bg, rgba(156, 68, 68, 0.12))',
-                          color:
-                            changed.change === 'modified'
-                              ? 'var(--replay-text-muted, #8b97ad)'
-                              : changed.change === 'added'
-                              ? 'var(--replay-status-complete, #4a7bb0)'
-                              : 'var(--replay-status-danger, #9c4444)',
-                          border:
-                            changed.change === 'modified'
-                              ? '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))'
-                              : changed.change === 'added'
-                              ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
-                              : '1px solid var(--replay-status-danger-border, rgba(156, 68, 68, 0.30))',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {changed.change.toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Recorded Symbols under this file */}
-                  {fileSymbols.length > 0 && (
-                    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '3px', paddingLeft: '14px' }}>
-                      {fileSymbols.map((sym) => (
-                        <div
-                          key={`${sym.path}::${sym.qualified_name}`}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '10px',
-                            fontFamily: 'var(--font-mono, monospace)',
-                            color: 'var(--replay-text-muted, #8b97ad)',
-                          }}
-                        >
-                          <Code size={10} style={{ color: 'var(--replay-text-faint, #4d576a)' }} />
-                          <span>{sym.qualified_name}</span>
-                          <span style={{ fontSize: '9px', color: 'var(--replay-text-faint, #4d576a)' }}>
-                            ({sym.kind})
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <GraphView
+              graphData={graphData!}
+              tests={tests || []}
+              selectedTestId={null}
+              selectedNodeId={selectedNodeId || null}
+              onSelectNode={onSelectNode}
+              selectedFile={selectedFile || null}
+              onSelectFile={onSelectFile}
+              isAgentMode={false}
+              viewMode="structure"
+            />
           </div>
         )}
       </div>

@@ -616,4 +616,10 @@
   background-color: var(--replay-bg-surface-3);
 }
 
+.replay-minimap-resize-handle:focus-visible {
+  outline: 1.5px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45));
+  color: var(--replay-accent, #4a7bb0) !important;
+  background-color: var(--replay-bg-surface-3, #1c2436);
+}
+
 
