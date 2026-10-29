@@ -32,9 +32,9 @@ def test_normal_history_maps_prompts_completed_tools_edits_and_timing() -> None:
     assert prompt.prompt_id == "prompt-1"
     assert prompt.turn_id == "turn-1"
     assert prompt.prompt_text is not None
-    assert "[redacted: secret]" in prompt.prompt_text
+    assert "[redacted: api key]" in prompt.prompt_text
     assert "synthetic_value" not in prompt.prompt_text
-    assert prompt.redaction_types == ["secret"]
+    assert prompt.redaction_types == ["api key"]
 
     commands = [record for record in result.records if record.tool_name == "Bash"]
     assert len(commands) == 2

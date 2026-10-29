@@ -7,6 +7,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -35,6 +36,7 @@ from faultmesh.replay.adapter import capture_hook_event
 from faultmesh.replay.chapters import ChapterProposalBatch, propose_chapters
 from faultmesh.replay.claims import ClaimBatch, ClaimNarrator, build_evidence_packet
 from faultmesh.replay.evaluation import EvaluationInput, EvaluationReport, evaluate_file
+from faultmesh.replay.history_discovery import HistoryWatcher, discover_history
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
@@ -74,9 +76,7 @@ app = typer.Typer(
 @app.command()
 def analyze(
     repository: Annotated[Path, typer.Argument(exists=True, file_okay=False, resolve_path=True)],
-    model: Annotated[
-        str | None, typer.Option(help="llama-server, llama-cli, or heuristic")
-    ] = None,
+    model: Annotated[str | None, typer.Option(help="llama-server, llama-cli, or heuristic")] = None,
     focus: Annotated[Path | None, typer.Option(help="Project-relative path to inspect")] = None,
     allow_local_execution: Annotated[
         bool,
@@ -181,9 +181,7 @@ def report(
 
 @app.command("run-tests")
 def run_tests(
-    config: Annotated[
-        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    config: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
     observe: Annotated[
         bool, typer.Option("--observe", help="Record per-test executed source evidence.")
     ] = False,
@@ -204,9 +202,7 @@ def run_tests(
 @app.command("test-run")
 def test_run(
     run_id: Annotated[str, typer.Argument()],
-    config: Annotated[
-        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    config: Annotated[Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)],
 ) -> None:
     """Print one durable project test run without executing it again."""
     try:
@@ -221,9 +217,7 @@ def test_run(
 @app.command("test-cases")
 def test_cases(
     run_id: Annotated[str, typer.Argument()],
-    config: Annotated[
-        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    config: Annotated[Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)],
 ) -> None:
     """List exact pytest node IDs stored for one run."""
     try:
@@ -255,9 +249,7 @@ def test_cases(
 def test_evidence(
     run_id: Annotated[str, typer.Argument()],
     node_id: Annotated[str, typer.Argument()],
-    config: Annotated[
-        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    config: Annotated[Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)],
 ) -> None:
     """Print one test's failure and observed source evidence without executing it."""
     try:
@@ -271,9 +263,7 @@ def test_evidence(
 @app.command("export-run")
 def export_test_run(
     run_id: Annotated[str, typer.Argument()],
-    config: Annotated[
-        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    config: Annotated[Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)],
 ) -> None:
     """Print deterministic versioned JSON for a future read-only adapter."""
     try:
@@ -288,9 +278,7 @@ def export_test_run(
 def replay_test(
     run_id: Annotated[str, typer.Argument()],
     node_id: Annotated[str, typer.Argument()],
-    config: Annotated[
-        Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    config: Annotated[Path, typer.Option(exists=True, dir_okay=False, resolve_path=True)],
 ) -> None:
     """Rerun exactly one recorded failed pytest node in the original image."""
     try:
@@ -350,9 +338,7 @@ def structure_command(
 
 @app.command("structure-summary")
 def structure_summary(
-    export_file: Annotated[
-        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    export_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
 ) -> None:
     """Read a schema 3.0 export and print counts without touching its project."""
     try:
@@ -476,6 +462,64 @@ def replay_sessions(
     )
 
 
+@app.command("replay-history-list")
+def replay_history_list(
+    codex_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override the Codex history root."),
+    ] = None,
+    claude_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override the Claude history root."),
+    ] = None,
+    max_source_bytes: Annotated[int, typer.Option(min=1)] = 64 * 1024 * 1024,
+) -> None:
+    """List a redacted metadata index from the two local agent-history dotfolders."""
+    try:
+        result = discover_history(
+            codex_root=codex_root,
+            claude_root=claude_root,
+            max_source_bytes=max_source_bytes,
+        )
+    except Exception as exc:
+        typer.secho(f"FaultMesh history discovery failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("replay-history-watch")
+def replay_history_watch(
+    codex_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override the Codex history root."),
+    ] = None,
+    claude_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override the Claude history root."),
+    ] = None,
+    interval_seconds: Annotated[float, typer.Option(min=0.0)] = 1.0,
+    iterations: Annotated[
+        int,
+        typer.Option(min=0, help="Polling iterations; zero watches until interrupted."),
+    ] = 0,
+) -> None:
+    """Emit opaque add/modify/remove events by polling history file metadata."""
+    watcher = HistoryWatcher(codex_root=codex_root, claude_root=claude_root)
+    completed = 0
+    try:
+        while iterations == 0 or completed < iterations:
+            for change in watcher.poll():
+                typer.echo(change.model_dump_json())
+            completed += 1
+            if iterations == 0 or completed < iterations:
+                time.sleep(interval_seconds)
+    except KeyboardInterrupt:
+        return
+    except Exception as exc:
+        typer.secho(f"FaultMesh history watch failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+
 @app.command("replay-ingest")
 def replay_ingest(
     session_id: Annotated[str, typer.Argument()],
@@ -486,9 +530,7 @@ def replay_ingest(
     """Ingest append-only replay-capture-1.0 NDJSON without executing it."""
     try:
         with ReplayStore(_replay_store_path(store)) as replay_store:
-            result = ingest_jsonl(
-                replay_store, session_id, source, source_name=source_name
-            )
+            result = ingest_jsonl(replay_store, session_id, source, source_name=source_name)
     except Exception as exc:
         typer.secho(f"FaultMesh replay ingest failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
@@ -577,9 +619,7 @@ def replay_export(
 
 @app.command("replay-view-export")
 def replay_view_export(
-    export_file: Annotated[
-        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    export_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
     sequence: Annotated[int, typer.Option(min=1)],
 ) -> None:
     """Select historical source from an offline export with no store or checkout."""
@@ -593,9 +633,7 @@ def replay_view_export(
 
 @app.command("replay-model-inventory")
 def replay_model_inventory(
-    search_root: Annotated[
-        list[Path], typer.Argument(exists=True, resolve_path=True)
-    ],
+    search_root: Annotated[list[Path], typer.Argument(exists=True, resolve_path=True)],
     available_memory_bytes: Annotated[
         int | None,
         typer.Option(
@@ -605,21 +643,15 @@ def replay_model_inventory(
     ] = None,
 ) -> None:
     """Hash local GGUF files under explicit roots without loading or downloading them."""
-    inventory = inventory_local_models(
-        search_root, available_memory_bytes=available_memory_bytes
-    )
+    inventory = inventory_local_models(search_root, available_memory_bytes=available_memory_bytes)
     typer.echo(inventory.model_dump_json(indent=2))
 
 
 @app.command("replay-narrate")
 def replay_narrate(
-    export_file: Annotated[
-        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    export_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
     out: Annotated[Path, typer.Option(help="Write replay-export-2.0 JSON here.")],
-    backend: Annotated[
-        str, typer.Option(help="none, llama-cli, or llama-server")
-    ] = "none",
+    backend: Annotated[str, typer.Option(help="none, llama-cli, or llama-server")] = "none",
     preset: Annotated[
         str, typer.Option(help="small-1.5b, medium-3b, or large-7b resource caps")
     ] = "small-1.5b",
@@ -677,9 +709,7 @@ def replay_narrate(
                         sequence=record.sequence,
                         packet=packet,
                         claims=claim_narrator.run(packet),
-                        reason=suggest_likely_reason(
-                            document, record.sequence, inference_backend
-                        ),
+                        reason=suggest_likely_reason(document, record.sequence, inference_backend),
                     )
                 )
             enriched = build_narration_export(
@@ -708,9 +738,7 @@ def replay_narrate(
 
 @app.command("replay-evaluate")
 def replay_evaluate(
-    observations: Annotated[
-        Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)
-    ],
+    observations: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
     out: Annotated[Path, typer.Option(help="Write schema-checked offline report JSON here.")],
 ) -> None:
     """Compare frozen offline observations without calling a model or touching a checkout."""
@@ -780,9 +808,7 @@ def replay_demo() -> None:
         store_root = base / "store"
         export_path = base / "replay.json"
         with ReplayStore(store_root) as replay_store:
-            session = replay_store.create_session(
-                project, codex_version="synthetic-demo-no-agent"
-            )
+            session = replay_store.create_session(project, codex_version="synthetic-demo-no-agent")
             source.write_text("def value() -> int:\n    return 2\n", encoding="utf-8")
             later = replay_store.capture_checkpoint(session.id, provenance="synthetic_demo")
             exported = export_session(replay_store, session.id)
@@ -809,9 +835,7 @@ def replay_demo() -> None:
 
 @app.command("spectate")
 def spectate_command(
-    watch_root: Annotated[
-        Path, typer.Argument(exists=True, file_okay=False, resolve_path=True)
-    ],
+    watch_root: Annotated[Path, typer.Argument(exists=True, file_okay=False, resolve_path=True)],
     max_files: Annotated[int, typer.Option(min=1)] = 2_000,
     max_file_bytes: Annotated[int, typer.Option(min=1)] = 512 * 1024,
     max_diff_lines: Annotated[int, typer.Option(min=1)] = 2_000,
@@ -851,9 +875,7 @@ def spectate_command(
             if case.observation is None:
                 continue
             for observed in case.observation.symbols:
-                evidence_hashes.setdefault(observed.path, set()).add(
-                    observed.content_sha256
-                )
+                evidence_hashes.setdefault(observed.path, set()).add(observed.content_sha256)
     try:
         engine = SpectateEngine(
             watch_root,
@@ -878,4 +900,3 @@ def version() -> None:
 
 if __name__ == "__main__":
     app()
-

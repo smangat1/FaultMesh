@@ -37,9 +37,9 @@ def test_normal_synthetic_history_maps_prompts_tools_edits_flags_and_snapshots()
     prompt = result.records[0]
     assert prompt.prompt_id == "user-1"
     assert prompt.prompt_text is not None
-    assert "[redacted: secret]" in prompt.prompt_text
+    assert "[redacted: api key]" in prompt.prompt_text
     assert "synthetic_value" not in prompt.prompt_text
-    assert prompt.redaction_types == ["secret"]
+    assert prompt.redaction_types == ["api key"]
 
     calls = [record for record in result.records if record.record_type is RecordKind.PRE_TOOL]
     results = [record for record in result.records if record.record_type is RecordKind.POST_TOOL]

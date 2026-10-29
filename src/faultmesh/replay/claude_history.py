@@ -24,7 +24,7 @@ from faultmesh.replay.models import (
     ReplaySession,
     SessionStatus,
 )
-from faultmesh.replay.privacy import REDACTION_MARKER, redact_text, redact_value
+from faultmesh.replay.privacy import redact_history_text, redact_history_value
 
 SYNTHETIC_CLAUDE_FORMAT_VERSION = "claude-code-jsonl-synthetic-1"
 KNOWN_CLAUDE_FORMAT_VERSIONS = frozenset({SYNTHETIC_CLAUDE_FORMAT_VERSION})
@@ -82,29 +82,14 @@ def _parse_datetime(value: object) -> datetime | None:
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
-def _replace_redaction_marker(value: object) -> object:
-    if isinstance(value, str):
-        return value.replace(REDACTION_MARKER, "[redacted: secret]")
-    if isinstance(value, list):
-        return [_replace_redaction_marker(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _replace_redaction_marker(item) for key, item in value.items()}
-    return value
-
-
 def _clean_text(value: str, max_bytes: int) -> tuple[str, list[str] | None, bool]:
-    cleaned, redacted, truncated = redact_text(value, max_bytes)
-    cleaned = cleaned.replace(REDACTION_MARKER, "[redacted: secret]")
-    return cleaned, ["secret"] if redacted else None, truncated
+    result = redact_history_text(value, max_bytes)
+    return str(result.value), list(result.redaction_types) or None, result.truncated
 
 
 def _clean_value(value: object, max_bytes: int) -> tuple[object, list[str] | None, bool]:
-    cleaned, redacted, truncated = redact_value(value, max_bytes)
-    return (
-        _replace_redaction_marker(cleaned),
-        ["secret"] if redacted else None,
-        truncated,
-    )
+    result = redact_history_value(value, max_bytes)
+    return result.value, list(result.redaction_types) or None, result.truncated
 
 
 def _merge_redaction_types(*values: list[str] | None) -> list[str] | None:

@@ -259,3 +259,36 @@ was 85%. Mypy reported no issues in 58 source files, and Ruff lint passed. There
 Python files to format-check in this documentation-only phase. A separate repository-wide Ruff
 format audit identified 71 pre-existing unformatted files; P0 does not rewrite those unrelated
 files.
+
+## P4 privacy, discovery and watch boundary
+
+P4 applies typed redaction before prompts, tool inputs, tool outputs, edit evidence or previews can
+reach an import/export or index surface. Visible markers retain the secret family (for example,
+`[redacted: api key]`) and records retain their redaction-type list. The policy covers OpenAI,
+GitHub, AWS and Slack credential forms, JWT-like values, bearer credentials, private-key blocks,
+environment-style secret assignments, URL passwords and values stored under structurally
+sensitive keys. It remains best-effort: the importer never represents redaction as proof that
+arbitrary text is secret-free.
+
+Automatic discovery is limited to `~/.codex/sessions` and `~/.claude/projects`. An absent root is
+reported as an ordinary empty/missing status, and unreadable traversal is reported without asking
+macOS for broader access. Discovery does not inspect Desktop, Documents, Downloads or the rest of
+the home directory, does not follow symlinked directories, does not write source logs and does not
+serialize source paths.
+
+The session list is a lightweight JSONL metadata scan rather than a full replay import. It exposes
+session/tool identity, hashed project grouping, a final-component display name, time bounds,
+prompt count, a bounded redacted first-prompt preview, format version and parse status. Compressed
+Codex logs use the local `zstd` executable when present. No zstd package is added; without the
+executable the session remains visible as `unsupported` with `zstd_executable_not_found`.
+
+`replay-history-list` exposes this redacted index. `replay-history-watch` polls only file mtime and
+size and emits opaque add/modify/remove identifiers; it does not open files during polling. Root
+overrides are explicit CLI options for testing or deliberate user selection and do not broaden the
+automatic scan. Claude entries remain governed by the P3 synthetic-only provisional contract: no
+real Claude Code logs were available on this machine, so P4 discovery does not imply real-format
+compatibility.
+
+P4 validation passed 237 non-container Python tests with 86% aggregate coverage, 202 UI tests and
+8 Electron tests. Ruff passed for every changed Python file, and strict mypy passed for all 61
+source files. P4 changes no file under `ui/` and adds no dependency.
