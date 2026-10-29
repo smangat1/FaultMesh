@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 
@@ -36,7 +36,8 @@ from faultmesh.replay.adapter import capture_hook_event
 from faultmesh.replay.chapters import ChapterProposalBatch, propose_chapters
 from faultmesh.replay.claims import ClaimBatch, ClaimNarrator, build_evidence_packet
 from faultmesh.replay.evaluation import EvaluationInput, EvaluationReport, evaluate_file
-from faultmesh.replay.history_discovery import HistoryWatcher, discover_history
+from faultmesh.replay.history_discovery import HistoryTool, HistoryWatcher, discover_history
+from faultmesh.replay.history_import import import_history_session
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
@@ -518,6 +519,52 @@ def replay_history_watch(
     except Exception as exc:
         typer.secho(f"FaultMesh history watch failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
+
+
+@app.command("replay-history-import")
+def replay_history_import(
+    session_id: Annotated[str, typer.Argument(help="Session id returned by replay-history-list.")],
+    out: Annotated[Path, typer.Option(help="Write a validated replay-export-1.0 JSON file here.")],
+    tool: Annotated[
+        str | None,
+        typer.Option(help="Optional disambiguator: codex or claude_code."),
+    ] = None,
+    codex_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override the Codex history root."),
+    ] = None,
+    claude_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override the Claude history root."),
+    ] = None,
+    max_source_bytes: Annotated[int, typer.Option(min=1)] = 64 * 1024 * 1024,
+) -> None:
+    """Import one selected local history session without reconstructing file bytes."""
+    if tool not in {None, "codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    try:
+        exported = import_history_session(
+            session_id,
+            tool=cast(HistoryTool, tool) if tool is not None else None,
+            codex_root=codex_root,
+            claude_root=claude_root,
+            max_source_bytes=max_source_bytes,
+        )
+        out.write_text(exported.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    except Exception as exc:
+        typer.secho(f"FaultMesh history import failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "schema_version": exported.schema_version,
+                "session_id": exported.session.id,
+                "records": len(exported.records),
+                "path": str(out.resolve()),
+            },
+            sort_keys=True,
+        )
+    )
 
 
 @app.command("replay-ingest")

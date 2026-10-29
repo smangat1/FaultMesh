@@ -292,3 +292,25 @@ compatibility.
 P4 validation passed 237 non-container Python tests with 86% aggregate coverage, 202 UI tests and
 8 Electron tests. Ruff passed for every changed Python file, and strict mypy passed for all 61
 source files. P4 changes no file under `ui/` and adds no dependency.
+
+## P5 export and local smoke boundary
+
+P5 converts only the selected indexed session into the existing `replay-export-1.0` envelope. The
+export is schema-validated and loads through the ordinary offline `load_export` path. History
+exports contain ordered records and timeline entries but deliberately have no manifests, content
+objects, structured tests, changed-file claims or changed-symbol claims because historical bytes
+are unknown. Unsupported source versions still produce valid exports with visible unsupported
+records.
+
+The opt-in, read-only real-log smoke found 4 Codex sessions: 4 `ok`, 0 `partial`, 0 `unsupported`.
+All 4 imports validated and none failed. Aggregate record-level redaction labels were present for
+API keys (13 records), AWS access keys (1), bearer tokens (7), GitHub tokens (5), JWT-like values
+(3), private keys (3), Slack tokens (5), generic tokens (16) and URL passwords (3). The smoke output
+contained counts and statuses only; it emitted no prompt, command, session id, source path or raw
+record content. No Claude smoke was possible because there are no Claude Code logs on this machine.
+
+P5 validation passed 243 non-container Python tests with one opt-in real-log test skipped by default,
+5 container tests deselected and 86% aggregate coverage. The opt-in real-log test passed separately.
+All 202 UI tests and 8 Electron tests passed unchanged. Ruff and format checks passed for every P5
+Python file, and strict mypy passed for all 62 source files. P5 changes no file under `ui/` and adds
+no dependency.

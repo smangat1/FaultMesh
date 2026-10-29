@@ -3,8 +3,9 @@
 ## Defaults
 
 FaultMesh replay is explicit opt-in and local-only. Storage defaults to
-`~/.faultmesh/replay`, outside the selected checkout. Override it with `--store`. FaultMesh does
-not scan old Codex sessions, the Codex home or unrelated repositories.
+`~/.faultmesh/replay`, outside the selected checkout. Override it with `--store`. Starting a live
+recording inspects only its selected project. Separately, read-only history discovery scans only
+`~/.codex/sessions` and `~/.claude/projects`; it never scans unrelated home directories.
 
 Default capture bounds are 2,000 UTF-8 Python files, 512 KiB per file, 32 MiB per snapshot and
 512 MiB of stored unique content. `.git`, `.faultmesh`, model/dependency/build/artifact folders,
@@ -18,6 +19,42 @@ contain private source and evidence, so review them before sharing.
 Retention is manual. Records and content are append-only during a session. `replay-delete` deletes
 one whole selected recording and garbage-collects content not referenced by another recording.
 There is no automatic cloud upload, telemetry or cloud model fallback.
+
+## List and import existing agent history
+
+List the lightweight redacted index without importing every session:
+
+```console
+faultmesh replay-history-list
+```
+
+The JSON result reports each root's status and each session's id, tool, hashed project group,
+display name, time range, prompt count, bounded redacted first-prompt preview, format version and
+parse status. Missing roots are not errors. Automatic discovery is limited to the two dotfolders;
+explicit `--codex-root` and `--claude-root` overrides exist for deliberate local testing.
+
+Import one selected session into the existing replay export shape:
+
+```console
+faultmesh replay-history-import <session-id> --out history-replay.json
+```
+
+Use `--tool codex` or `--tool claude_code` only to disambiguate a repeated id. Import is read-only
+with respect to the source log and project. Prompts, tool evidence and edit evidence are typed-
+redacted before export. Historical file bytes remain unknown, so the export contains no manifests
+or source content and edit records carry `file_state: unknown`. The resulting file is validated by
+the same `replay-export-1.0` model and can be opened through the ordinary export loader.
+
+Poll for newly added, changed or removed history files without reading their contents:
+
+```console
+faultmesh replay-history-watch
+```
+
+Watch events contain only an opaque source key, tool, change kind, mtime and size. Codex compressed
+logs require a locally installed `zstd` executable; otherwise they remain visible as unsupported.
+Claude parsing currently recognizes only the documented synthetic provisional format because no
+real Claude Code log was available during development.
 
 ## Record a new selected project
 
@@ -118,3 +155,5 @@ whole selected session. It is local and irreversible unless the store has been b
   version-tested parser.
 - Existing investigator, spectate and isolated failed-test rerun features remain separate legacy
   capabilities and are not prerequisites for playback.
+- History replay has prompts, ordered steps and timings but no exact before/after file bytes,
+  trustworthy changed-file reconstruction or verified causal attribution.

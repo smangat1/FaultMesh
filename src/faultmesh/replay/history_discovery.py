@@ -478,6 +478,52 @@ def discover_history(
     return HistoryDiscoveryResult(roots=roots, sessions=sessions)
 
 
+def find_history_source(
+    session_id: str,
+    *,
+    tool: HistoryTool | None = None,
+    codex_root: Path | None = None,
+    claude_root: Path | None = None,
+    max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
+    zstd_executable: Path | str | None = None,
+    allow_zstd_lookup: bool = True,
+) -> tuple[HistoryTool, Path]:
+    """Resolve one indexed session to an internal source path without exposing it in output."""
+    configured: list[tuple[HistoryTool, Path]] = [
+        ("codex", codex_root or default_codex_history_root()),
+        ("claude_code", claude_root or default_claude_history_root()),
+    ]
+    matches: list[tuple[HistoryTool, Path]] = []
+    for candidate_tool, root in configured:
+        if tool is not None and candidate_tool != tool:
+            continue
+        if not root.is_dir():
+            continue
+        files, _unreadable = _history_files(root, candidate_tool)
+        for path in files:
+            if candidate_tool == "codex":
+                indexed = _index_codex(
+                    path,
+                    max_source_bytes=max_source_bytes,
+                    preview_characters=DEFAULT_PREVIEW_CHARACTERS,
+                    zstd_executable=zstd_executable,
+                    allow_zstd_lookup=allow_zstd_lookup,
+                )
+            else:
+                indexed = _index_claude(
+                    path,
+                    max_source_bytes=max_source_bytes,
+                    preview_characters=DEFAULT_PREVIEW_CHARACTERS,
+                )
+            if indexed.session_id == session_id:
+                matches.append((candidate_tool, path))
+    if not matches:
+        raise KeyError(f"unknown history session: {session_id}")
+    if len(matches) > 1:
+        raise ValueError("history session id is ambiguous within the selected source")
+    return matches[0]
+
+
 def _source_key(tool: HistoryTool, root: Path, path: Path) -> str:
     try:
         relative = path.relative_to(root).as_posix()
