@@ -130,6 +130,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         return;
       }
 
+      // Ignore keydown events whose target or activeElement is inside the mini map dock
+      const target = e.target as HTMLElement | null;
+      if (
+        (target && typeof target.closest === 'function' && target.closest('[data-testid="replay-minimap-dock"]')) ||
+        (document.activeElement &&
+          typeof document.activeElement.closest === 'function' &&
+          document.activeElement.closest('[data-testid="replay-minimap-dock"]'))
+      ) {
+        return;
+      }
+
       if (e.key === 'ArrowLeft' || e.key === 'j') {
         e.preventDefault();
         handlePrevCheckpoint();

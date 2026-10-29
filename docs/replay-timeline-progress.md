@@ -311,9 +311,10 @@ Status: complete. Implemented uncrowded timeline-first layout where the timeline
          Never invents or fabricates fake nodes, and never substitutes an ad-hoc file list for the project map.
        - *Follow-up Proposal*: As noted during review, if a checkpoint manifest file browser is desired, it should be designed as a separate dedicated files inspection utility rather than conflated with the project dependency map.
 
-3. **Phase P4 Review Fixes**:
+3. **Phase P4 Review Fixes & Keyboard Resize Isolation**:
    - **Bug 1 (Navigation Away Fixed)**: Removed `onOpenProjectMap` from `ReplayWorkspace.tsx` and `App.tsx`. Removed the hidden dummy span with `data-testid="replay-open-map-btn"`. Clicking "Mini Map" (`replay-toggle-minimap`) and pressing `M` now strictly toggles the dock inside the replay workspace; session never loses context or navigates away. Added unit test verifying `App.tsx` wiring and context retention.
    - **Design Deviation 3 (Map Engine Reused & Keyboard Operable)**: Removed the custom file list from `ReplayMiniMapDock.tsx`. Connected `GraphView` read-only for genuine graph data, with honest empty state when no graph structure exists. Made the resize handle focusable with visible focus styles and arrow-key operable in 20px steps. Made all dock controls keyboard reachable.
+   - **Keyboard Arrow Isolation (Follow-up)**: In `ReplayMiniMapDock.tsx`'s `handleResizeKeyDown`, called `e.stopPropagation()` (while preserving `e.preventDefault()`). In `ReplayWorkspace.tsx`, added a guard to ignore window keydowns when `e.target` or `document.activeElement` is inside `[data-testid="replay-minimap-dock"]`. This ensures resizing the mini map dock with ArrowLeft/ArrowRight never changes the active checkpoint sequence.
    - **False Screenshot Claims 2 (Re-query & DOM Assertions)**: Overhauled `ui/scripts/capture_replay_screenshots.js`. Implemented `goToStep` with sequential click re-querying and DOM update synchronization. Added strict assertions (`assertCheckpointInDOM`) verifying exact checkpoint sequence numbers (`#3 of 7`, `#6 of 7`, `#4 of 7`, `#7 of 7`) and scenario-specific DOM elements before capturing each screenshot. Cleared `localStorage` between viewport passes. Re-captured all 4 scenarios across 1440x900 and 1024x700 with verified 100% unique SHA-256 hashes.
 
 4. **Keyboard Shortcuts**:
@@ -322,11 +323,11 @@ Status: complete. Implemented uncrowded timeline-first layout where the timeline
    - `C` / `c`: Toggle Chapters rail
    - `E` / `e`: Toggle Evidence drawer
    - `M` / `m`: Toggle Mini Map dock
-   - `ArrowLeft` / `ArrowRight` / `ArrowUp` / `ArrowDown`: Resize Mini Map dock in 20px steps when resize handle is focused
+   - `ArrowLeft` / `ArrowRight` / `ArrowUp` / `ArrowDown`: Resize Mini Map dock in 20px steps when resize handle is focused (isolated from checkpoint navigation)
    - `Escape`: Dismiss active open panel
 
 ### Unit Test Verification (`ui/src/test/replayTimelineLayoutP4.test.tsx`)
-- **Suite**: 8 comprehensive tests (all passing):
+- **Suite**: 9 comprehensive tests (all passing):
   1. Default timeline-first layout: hero bar visible, diff viewer as main stage, panels closed by default.
   2. Toggle Chapters left rail via `C` key and header button with close button dismissal.
   3. Toggle Evidence right drawer via `E` key and header button with close button dismissal.
@@ -335,6 +336,7 @@ Status: complete. Implemented uncrowded timeline-first layout where the timeline
   6. Strictly honor Rule 2: honest empty state when recording carries no project structure data.
   7. Render `GraphView` inside mini map dock when recording carries valid graph structure data.
   8. Render the workspace the way `App.tsx` does and assert clicking Mini Map button does NOT call any navigation callback or leave replay.
+  9. Prevent keyboard arrow resizing on mini map resize handle from leaking through to global replay checkpoint navigation.
 
 ### Real Screenshot Capture (`docs/screenshots/replay/`)
 - Fresh headless Chrome captures against real fixtures for each distinct scenario, strictly verified with runtime DOM assertions:
@@ -355,8 +357,8 @@ Status: complete. Implemented uncrowded timeline-first layout where the timeline
   | `04_model_interpretation_chapter_1440x900.png` | `460edf511820a692b9de847d8d22012ccf90df0f3880dff04bd0879d36ce1e7a` |
 
 ### Quality & Verification Results
-- `npm test`: 27/27 test files passed (221 Vitest tests, 8 Electron node tests).
-- `npm run build`: `tsc && vite build` clean in 1.86s with zero errors.
+- `npm test`: 27/27 test files passed (222 Vitest tests, 8 Electron node tests).
+- `npm run build`: `tsc && vite build` clean in 1.52s with zero errors.
 
 ---
 

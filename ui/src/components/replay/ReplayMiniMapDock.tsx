@@ -170,18 +170,22 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
       // Anchored at bottom-right; moving handle left widens the dock
       nextW = Math.min(900, Math.max(200, curW + step));
       e.preventDefault();
+      e.stopPropagation();
     } else if (e.key === 'ArrowRight') {
       // Moving handle right narrows the dock
       nextW = Math.min(900, Math.max(200, curW - step));
       e.preventDefault();
+      e.stopPropagation();
     } else if (e.key === 'ArrowUp') {
       // Anchored at bottom-right; moving handle up increases dock height
       nextH = Math.min(650, Math.max(140, curH + step));
       e.preventDefault();
+      e.stopPropagation();
     } else if (e.key === 'ArrowDown') {
       // Moving handle down decreases dock height
       nextH = Math.min(650, Math.max(140, curH - step));
       e.preventDefault();
+      e.stopPropagation();
     } else {
       return;
     }

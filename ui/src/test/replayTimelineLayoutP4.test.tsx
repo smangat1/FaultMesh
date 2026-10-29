@@ -355,4 +355,37 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     fireEvent.click(toggleMapBtn);
     expect(screen.queryByTestId('replay-minimap-dock')).toBeNull();
   });
+
+  it('prevents keyboard arrow resizing from leaking through to global replay checkpoint navigation', () => {
+    const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
+    render(<ReplayWorkspace adapter={adapter} defaultMiniMapOpen={true} />);
+
+    // Move to checkpoint 3
+    const nextBtn = screen.getByTestId('replay-next-btn');
+    fireEvent.click(nextBtn); // step 2
+    fireEvent.click(nextBtn); // step 3
+
+    const seqBadge = screen.getByTestId('replay-current-seq-badge');
+    expect(seqBadge.textContent).toContain('Checkpoint #3 of 7');
+
+    const dock = screen.getByTestId('replay-minimap-dock');
+    const resizeHandle = screen.getByTestId('replay-minimap-resize-handle');
+    expect(dock.style.width).toBe('240px');
+
+    // Focus the resize handle
+    resizeHandle.focus();
+    expect(document.activeElement).toBe(resizeHandle);
+
+    // Fire ArrowLeft: widens dock by 20px (from 240px to 260px)
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowLeft' });
+    expect(dock.style.width).toBe('260px');
+    // Assert checkpoint badge is unchanged (does NOT move to checkpoint 2)
+    expect(seqBadge.textContent).toContain('Checkpoint #3 of 7');
+
+    // Fire ArrowRight: narrows dock by 20px (from 260px to 240px)
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowRight' });
+    expect(dock.style.width).toBe('240px');
+    // Assert checkpoint badge is still unchanged (does NOT move to checkpoint 4)
+    expect(seqBadge.textContent).toContain('Checkpoint #3 of 7');
+  });
 });
