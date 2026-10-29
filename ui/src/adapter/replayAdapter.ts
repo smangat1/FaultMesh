@@ -13,6 +13,7 @@ import type {
   AnyReplayExport,
   ReplayOrigin,
   ReplaySession,
+  ReplayRecord,
   TimelineEntry,
   ReplayChapter,
   ChapterRunRecord,
@@ -76,6 +77,10 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public getTimelineEntry(sequence: number): TimelineEntry | null {
     return this.exported.timeline.find((t) => t.sequence === sequence) || null;
+  }
+
+  public getRecordForSequence(sequence: number): ReplayRecord | null {
+    return this.exported.records.find((record) => record.sequence === sequence) || null;
   }
 
   public setUseBaselineChapters(useBaseline: boolean): void {

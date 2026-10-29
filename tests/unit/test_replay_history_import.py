@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,25 @@ def test_selected_history_round_trips_through_existing_ui_export_loader(
     tmp_path: Path,
 ) -> None:
     codex_root, claude_root = _history_roots(tmp_path)
-    shutil.copy(FIXTURE_ROOT / "codex_history" / "normal.jsonl", codex_root / "normal.jsonl")
+    source = codex_root / "normal.jsonl"
+    shutil.copy(FIXTURE_ROOT / "codex_history" / "normal.jsonl", source)
+    connection = sqlite3.connect(codex_root.parent / "state_5.sqlite")
+    try:
+        connection.execute(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, title TEXT, archived INTEGER)"
+        )
+        connection.execute(
+            "INSERT INTO threads VALUES (?, ?, ?, ?)",
+            (
+                "synthetic-session-normal",
+                str(source),
+                "Synthetic title token=TITLE_SENTINEL",
+                0,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
     export_path = tmp_path / "history-replay.json"
 
     exported = import_history_session(
@@ -45,6 +64,10 @@ def test_selected_history_round_trips_through_existing_ui_export_loader(
     assert loaded.schema_version == "replay-export-1.0"
     assert loaded.session.import_source is not None
     assert loaded.session.import_source.value == "codex"
+    assert loaded.session.history_state == "active"
+    assert loaded.session.source_title is not None
+    assert "TITLE_SENTINEL" not in loaded.session.source_title
+    assert "[redacted: token]" in loaded.session.source_title
     assert loaded.manifests == []
     assert loaded.content_base64_by_sha256 == {}
     assert loaded.tests == []
@@ -95,6 +118,70 @@ def test_selected_claude_history_uses_the_same_additive_export(tmp_path: Path) -
     assert len(exported.records) == 15
     assert exported.manifests == []
     assert ReplayExport.model_validate_json(exported.model_dump_json()) == exported
+
+
+def test_archived_import_preserves_source_order_and_exports_monotonic_extents(
+    tmp_path: Path,
+) -> None:
+    codex_root, claude_root = _history_roots(tmp_path)
+    archived = codex_root.parent / "archived_sessions" / "2026" / "10" / "29"
+    archived.mkdir(parents=True)
+    source = archived / "nonmonotonic.jsonl"
+    records = [
+        {
+            "timestamp": "2026-10-29T12:00:00Z",
+            "type": "session_meta",
+            "payload": {
+                "id": "synthetic-archived-nonmonotonic",
+                "timestamp": "2026-10-29T12:00:00Z",
+                "cwd": "/synthetic/archived",
+                "cli_version": "0.165.0-alpha.1.2",
+            },
+        },
+        {
+            "timestamp": "2026-10-29T12:10:00Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "id": "later-prompt",
+                "content": [{"type": "input_text", "text": "Synthetic later prompt"}],
+            },
+        },
+        {
+            "timestamp": "2026-10-29T12:05:00Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "CommandExecution",
+                    "id": "earlier-command",
+                    "command": ["python -m pytest -q"],
+                    "aggregated_output": "synthetic output",
+                    "status": "completed",
+                },
+            },
+        },
+    ]
+    source.write_text(
+        "".join(json.dumps(record, separators=(",", ":")) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    exported = import_history_session(
+        "synthetic-archived-nonmonotonic",
+        tool="codex",
+        codex_root=codex_root,
+        claude_root=claude_root,
+    )
+
+    assert exported.session.history_state == "archived"
+    assert exported.records[0].captured_at > exported.records[1].captured_at
+    assert exported.session.timeline_started_at == exported.records[1].captured_at
+    assert exported.session.timeline_ended_at == exported.records[0].captured_at
+    assert exported.session.timeline_started_at <= exported.session.timeline_ended_at
+    assert exported.timeline[0].sequence == 1
+    assert exported.timeline[1].sequence == 2
 
 
 def test_smoke_summary_is_aggregate_only_for_synthetic_roots(tmp_path: Path) -> None:

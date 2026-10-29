@@ -248,6 +248,25 @@ describe('ReplayTimelineBar Component', () => {
     expect(screen.getByText('Step #1 of 1')).toBeDefined();
   });
 
+  it('uses minimum and maximum captured times for nonmonotonic extent labels', () => {
+    const timeline = createMockTimeline().slice(0, 3);
+    timeline[0] = { ...timeline[0], captured_at: '2026-10-28T14:10:00.000Z' };
+    timeline[1] = { ...timeline[1], captured_at: '2026-10-28T14:02:00.000Z' };
+    timeline[2] = { ...timeline[2], captured_at: '2026-10-28T14:05:00.000Z' };
+
+    render(
+      <ReplayTimelineBar
+        timeline={timeline}
+        currentSequence={1}
+        onSelectSequence={() => undefined}
+        options={{ timeZone: 'UTC' }}
+      />
+    );
+
+    expect(screen.getByTestId('timeline-extent-start').textContent).toContain('2:02:00 PM');
+    expect(screen.getByTestId('timeline-extent-end').textContent).toContain('2:10:00 PM');
+  });
+
   it('renders all hero bar visual elements for multi-step session', () => {
     const timeline = createMockTimeline();
     const chapters = createMockChapters();

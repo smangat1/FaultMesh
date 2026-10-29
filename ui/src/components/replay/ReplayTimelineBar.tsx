@@ -61,15 +61,18 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
     geometry.steps.length > 0 ? geometry.steps[geometry.steps.length - 1].sequence : 1;
 
   // Extent time strings for footer
-  const startTimeStr = useMemo(() => {
-    if (geometry.steps.length === 0) return '';
-    return geometry.steps[0].timeLabel.replace(/^recorded at /, '');
-  }, [geometry.steps]);
-
-  const endTimeStr = useMemo(() => {
-    if (geometry.steps.length === 0) return '';
-    return geometry.steps[geometry.steps.length - 1].timeLabel.replace(/^recorded at /, '');
-  }, [geometry.steps]);
+  const [startTimeStr, endTimeStr] = useMemo(() => {
+    const valid = timeline
+      .map((entry) => ({ entry, time: Date.parse(entry.captured_at) }))
+      .filter((item) => Number.isFinite(item.time));
+    if (valid.length === 0) return ['', ''];
+    const earliest = valid.reduce((left, right) => (left.time <= right.time ? left : right));
+    const latest = valid.reduce((left, right) => (left.time >= right.time ? left : right));
+    return [
+      formatRecordedAt(earliest.entry.captured_at, options?.timeZone).replace(/^recorded at /, ''),
+      formatRecordedAt(latest.entry.captured_at, options?.timeZone).replace(/^recorded at /, ''),
+    ];
+  }, [timeline, options?.timeZone]);
 
   // Ratio helper from client coordinate
   const getRatioFromClientX = useCallback((clientX?: number): number => {

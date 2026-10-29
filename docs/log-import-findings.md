@@ -369,3 +369,57 @@ Validation passed 257 non-container Python tests with one opt-in real-log smoke 
 23 tests, including all 11 table-driven hardening cases. Ruff and format checks passed for the
 changed Python files, and strict mypy passed for all 62 source files. No real logs were imported or
 inspected during this hardening pass; it changes no `ui/` file and adds no dependency.
+
+## 2026-10-29 real-data discovery and replay follow-up
+
+Real use exposed five gaps in the original import boundary: injected Codex context could become the
+session title and first checkpoint; only the active sessions tree was scanned; temporary test
+working directories appeared as ordinary projects; SQLite catalog-only threads disappeared
+silently; and imported checkpoint cards did not render the prompt/tool/edit evidence already in the
+export. Source-order timestamps could also make first/last sequence labels look reversed.
+
+Codex prompt extraction now applies a shared, version-gated best-effort rule. Complete
+`environment_context` and `user_instructions` blocks are excluded from prompt counts and records;
+when recognized blocks are mixed with user text, only the blocks are removed and the remaining text
+is retained. The count is visible as `injected_context_messages`. This is intentionally limited to
+the two known block tags and does not claim to recognize every future injected-message format.
+
+Discovery now scans both the active `sessions` tree and its `archived_sessions` sibling, prefers an
+active copy when a move briefly leaves both, classifies known system temporary roots as
+`system_temp`, and enriches matching sessions from `state_5.sqlite`. The catalog is opened using
+SQLite read-only immutable mode, its `threads` columns are probed before querying, and only available
+known columns are selected. Titles and corroborating previews are bounded and pass through the same
+best-effort redaction policy as prompts. SQLite never supplies import content. A catalog row whose
+rollout file is gone remains visible as unsupported with `rollout_file_missing`; raw catalog and
+rollout paths are never serialized.
+
+Imported Codex records still preserve source order. A record without a usable source timestamp now
+uses the nearest timestamped source event (preferring the preceding event on an equal-distance tie),
+keeps `source_timestamp` null, and sets `timestamp_inferred`. Session timeline extents carry the
+minimum and maximum captured times independently of sequence order, and the timeline footer renders
+those extents. The replay checkpoint overview now shows redacted prompt, tool command/input, bounded
+output and edit evidence before generic status text while continuing to label historical file state
+as unknown. The fixture and screenshot harness are fully synthetic.
+
+The read-only aggregate smoke found 97 Codex catalog sessions: 4 parseable and 93 visible
+unsupported entries whose rollout files were missing. All 4 readable imports validated; the 93
+catalog-only entries correctly failed import rather than reading SQLite as history. Aggregate counts
+were 97 catalog matches, 9 recognized injected-context messages, 2 system-temp sessions, 0
+out-of-order imported steps and 0 missing-timestamp fallbacks in the four readable rollouts. The
+imported time extent was 2026-10-27T00:20:17.471000+00:00 through
+2026-10-29T21:07:25.363000+00:00. The smoke emitted no prompt, title, path or session identifier.
+
+Remaining limitations are explicit. No real archived rollout file was present, so archived-tree
+parsing and active/archive deduplication are verified only with sanitized synthetic tests. Catalog
+schemas without a usable thread id cannot be enriched; missing optional columns simply reduce
+metadata. Catalog entries without files remain list-only. Claude Code remains synthetic-contract
+only, including its older missing-time behavior. Injected-context recognition and secret redaction
+remain best effort, and real private exports still require review before sharing.
+
+Validation passed 266 non-container Python tests with one opt-in real-log smoke skipped by default,
+5 container tests deselected and 86% aggregate coverage. The focused discovery/parser/import suite
+passed 43 tests, and the opt-in aggregate-only real-log smoke passed separately. Ruff and format
+checks passed for all changed Python files; strict mypy passed for 63 source files. The UI passed 224
+Vitest tests and 8 Electron tests, and the production build succeeded. The capture harness produced
+and DOM-verified four new imported-history screenshots across 1440x900 and 1024x700. No dependency
+was added, and neither `ui/src/components/AutodetectHomeScreen.tsx` nor timeline styling changed.

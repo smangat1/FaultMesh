@@ -217,15 +217,14 @@ def timeline(store: ReplayStore, session_id: str) -> list[TimelineEntry]:
             item
             for item in explicit_tests
             if item.command_record_id == record.id
-            or item.associated_manifest_id in {
+            or item.associated_manifest_id
+            in {
                 record.before_manifest_id,
                 record.after_manifest_id,
             }
         ]
         derived = _derived_test_observation(record)
-        if derived is not None and not any(
-            item.command_record_id == record.id for item in tests
-        ):
+        if derived is not None and not any(item.command_record_id == record.id for item in tests):
             tests.append(derived)
         output.append(
             TimelineEntry(
@@ -233,6 +232,7 @@ def timeline(store: ReplayStore, session_id: str) -> list[TimelineEntry]:
                 record_id=record.id,
                 record_type=record.record_type,
                 captured_at=record.captured_at,
+                timestamp_inferred=record.timestamp_inferred,
                 completeness=record.completeness,
                 attribution_status=record.attribution_status,
                 tool_name=record.tool_name,
@@ -309,9 +309,7 @@ def export_session(store: ReplayStore, session_id: str) -> ReplayExport:
         for item in entry.test_evidence:
             tests_by_id.setdefault(item.id, item)
     return ReplayExport(
-        exported_at=max(
-            (record.captured_at for record in records), default=session.created_at
-        ),
+        exported_at=max((record.captured_at for record in records), default=session.created_at),
         session=session,
         records=records,
         manifests=manifests,

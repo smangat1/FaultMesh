@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from faultmesh.replay.history_context import strip_injected_context
 from faultmesh.replay.models import (
     AttributionStatus,
     CaptureLimits,
@@ -76,6 +77,9 @@ class CodexHistoryParseResult:
     duplicate_items: int
     gaps: int
     unsupported: int
+    injected_context_messages: int
+    missing_timestamp_fallbacks: int
+    out_of_order_steps: int
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,8 @@ class _RecordBuilder:
     session_id: str
     source_digest: str
     max_text_bytes: int
+    inferred_times: dict[int, datetime]
+    default_time: datetime
     records: list[ReplayRecord] = field(default_factory=list)
 
     def add(
@@ -191,8 +197,11 @@ class _RecordBuilder:
         tool_input: object | None = None,
         tool_response: object | None = None,
         gap_reason: str | None = None,
+        force_timestamp_inferred: bool = False,
     ) -> None:
-        captured_at = _event_datetime(value) or datetime.fromtimestamp(0, tz=UTC)
+        source_timestamp = None if force_timestamp_inferred else _event_datetime(value)
+        timestamp_inferred = source_timestamp is None
+        captured_at = source_timestamp or self.inferred_times.get(line.offset, self.default_time)
         self.records.append(
             ReplayRecord(
                 id=_record_id(self.source_digest, line.offset, source_item_id, record_type),
@@ -203,7 +212,8 @@ class _RecordBuilder:
                 source_sequence=_source_sequence(value),
                 record_type=record_type,
                 captured_at=captured_at,
-                source_timestamp=captured_at,
+                source_timestamp=source_timestamp,
+                timestamp_inferred=timestamp_inferred,
                 provenance=HISTORY_PROVENANCE,
                 completeness=completeness,
                 attribution_status=AttributionStatus.UNKNOWN,
@@ -325,6 +335,65 @@ def _session_times(
     return min(values), max(values)
 
 
+def _nearest_event_times(lines: list[_Line], fallback: datetime) -> dict[int, datetime]:
+    """Map offsets to nearest known event time, preferring the preceding event on ties."""
+    known = [
+        (index, parsed)
+        for index, line in enumerate(lines)
+        if line.value is not None
+        for parsed in [_event_datetime(line.value)]
+        if parsed is not None
+    ]
+    if not known:
+        return {line.offset: fallback for line in lines}
+    output: dict[int, datetime] = {}
+    for index, line in enumerate(lines):
+        _nearest_index, nearest_time = min(
+            known,
+            key=lambda item: (abs(item[0] - index), item[0] > index, item[0]),
+        )
+        output[line.offset] = nearest_time
+    return output
+
+
+def _user_message_texts(lines: list[_Line]) -> tuple[dict[int, str | None], int]:
+    """Return real prompt text by offset and count messages containing injected context."""
+    prompts: dict[int, str | None] = {}
+    injected_count = 0
+    for line in lines:
+        value = line.value
+        if value is None:
+            continue
+        payload = value.get("payload")
+        candidate: dict[str, object] | None = None
+        if (
+            value.get("type") == "response_item"
+            and isinstance(payload, dict)
+            and payload.get("type") == "message"
+            and payload.get("role") == "user"
+        ):
+            candidate = payload
+        elif (
+            value.get("type") == "event_msg"
+            and isinstance(payload, dict)
+            and payload.get("type") == "item_completed"
+        ):
+            item = payload.get("item")
+            if isinstance(item, dict) and item.get("type") == "UserMessage":
+                candidate = item
+        if candidate is None:
+            continue
+        raw_text = _text_content(candidate)
+        if raw_text is None:
+            prompts[line.offset] = None
+            continue
+        prompt, injected = strip_injected_context(raw_text)
+        prompts[line.offset] = prompt
+        if injected:
+            injected_count += 1
+    return prompts, injected_count
+
+
 def _unsupported_result(
     path: Path,
     *,
@@ -351,7 +420,13 @@ def _unsupported_result(
     )
     synthetic_value: dict[str, object] = {"timestamp": timestamp.isoformat()}
     line = _Line(offset=0, value=synthetic_value)
-    builder = _RecordBuilder(identity, source_digest, session.limits.max_text_field_bytes)
+    builder = _RecordBuilder(
+        identity,
+        source_digest,
+        session.limits.max_text_field_bytes,
+        {0: timestamp},
+        timestamp,
+    )
     builder.add(
         line=line,
         value=synthetic_value,
@@ -368,6 +443,9 @@ def _unsupported_result(
         duplicate_items=0,
         gaps=0,
         unsupported=1,
+        injected_context_messages=0,
+        missing_timestamp_fallbacks=0,
+        out_of_order_steps=0,
     )
 
 
@@ -531,22 +609,26 @@ def parse_codex_history(
         format_version=format_version,
         source_file_sha256=source_digest,
     )
-    builder = _RecordBuilder(session_id, source_digest, session.limits.max_text_field_bytes)
+    inferred_times = _nearest_event_times(lines, fallback_time)
+    builder = _RecordBuilder(
+        session_id,
+        source_digest,
+        session.limits.max_text_field_bytes,
+        inferred_times,
+        fallback_time,
+    )
     seen_item_ids: set[str] = set()
     duplicate_items = 0
     gaps = 0
     unsupported = 0
     next_turn_ids = _next_turn_ids(lines)
     completed_tool_call_ids = _completed_tool_call_ids(lines)
+    user_message_texts, injected_context_messages = _user_message_texts(lines)
     canonical_prompt_texts = {
         text
         for line in lines
         if line.value is not None and line.value.get("type") == "response_item"
-        for payload in [line.value.get("payload")]
-        if isinstance(payload, dict)
-        and payload.get("type") == "message"
-        and payload.get("role") == "user"
-        for text in [_text_content(payload)]
+        for text in [user_message_texts.get(line.offset)]
         if text is not None
     }
     current_turn_id: str | None = None
@@ -564,6 +646,7 @@ def parse_codex_history(
                     if line.error == "corrupt"
                     else "jsonl_record_is_not_an_object"
                 ),
+                force_timestamp_inferred=True,
             )
             gaps += 1
             continue
@@ -617,17 +700,18 @@ def parse_codex_history(
                 duplicate_items += 1
                 continue
             if response_type == "message" and payload.get("role") == "user":
-                text = _text_content(payload)
+                text = user_message_texts.get(line.offset)
                 if text is None:
-                    builder.add(
-                        line=line,
-                        value=value,
-                        record_type=RecordKind.GAP,
-                        completeness=Completeness.MISSING,
-                        source_item_id=item_id,
-                        gap_reason="user_message_text_missing",
-                    )
-                    gaps += 1
+                    if line.offset not in user_message_texts:
+                        builder.add(
+                            line=line,
+                            value=value,
+                            record_type=RecordKind.GAP,
+                            completeness=Completeness.MISSING,
+                            source_item_id=item_id,
+                            gap_reason="user_message_text_missing",
+                        )
+                        gaps += 1
                 else:
                     clean_text, redaction_types, truncated = _clean_text(
                         text, session.limits.max_text_field_bytes
@@ -740,7 +824,7 @@ def parse_codex_history(
         turn_id = _turn_id(payload) or current_turn_id
 
         if item_type == "UserMessage":
-            text = _text_content(item)
+            text = user_message_texts.get(line.offset)
             if text is not None and text in canonical_prompt_texts:
                 duplicate_items += 1
             elif text is not None:
@@ -760,7 +844,7 @@ def parse_codex_history(
                     redaction_applied=redaction_types is not None,
                     truncated=truncated,
                 )
-            else:
+            elif line.offset not in user_message_texts:
                 builder.add(
                     line=line,
                     value=value,
@@ -919,6 +1003,18 @@ def parse_codex_history(
         record.record_type == RecordKind.UNSUPPORTED for record in builder.records
     ):
         parse_status = "unsupported"
+    missing_timestamp_fallbacks = sum(record.timestamp_inferred for record in builder.records)
+    out_of_order_steps = sum(
+        current.captured_at < previous.captured_at
+        for previous, current in zip(builder.records, builder.records[1:], strict=False)
+    )
+    session = session.model_copy(
+        update={
+            "injected_context_messages": injected_context_messages,
+            "missing_timestamp_fallbacks": missing_timestamp_fallbacks,
+            "out_of_order_steps": out_of_order_steps,
+        }
+    )
     return CodexHistoryParseResult(
         session=session,
         records=tuple(builder.records),
@@ -928,4 +1024,7 @@ def parse_codex_history(
         duplicate_items=duplicate_items,
         gaps=gaps,
         unsupported=unsupported,
+        injected_context_messages=injected_context_messages,
+        missing_timestamp_fallbacks=missing_timestamp_fallbacks,
+        out_of_order_steps=out_of_order_steps,
     )

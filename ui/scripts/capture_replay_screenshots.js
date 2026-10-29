@@ -10,6 +10,7 @@ const SCREENSHOTS_DIR = path.resolve(__dirname, '../../docs/screenshots/replay')
 const DIST_INDEX_PATH = path.resolve(__dirname, '../dist/index.html');
 
 const FIXTURE_HERO = path.resolve(__dirname, '../src/fixtures/fixture_replay_timeline_hero.json');
+const FIXTURE_HISTORY = path.resolve(__dirname, '../src/fixtures/fixture_replay_history_import.json');
 
 async function captureState(page, filename, width, height) {
   console.log(`Capturing ${filename} (${width}x${height})...`);
@@ -270,6 +271,43 @@ async function main() {
       throw new Error('Scenario 4 assertion failed: Mini Map dock inside replay workspace not found at step 7');
     }
     await captureState(page, `04_model_interpretation_chapter_${vp.name}.png`, vp.width, vp.height);
+
+    // Scenario 5/6: sanitized imported-history prompt and tool evidence cards.
+    console.log('Uploading sanitized imported-history fixture...');
+    await page.goto(fileUrl, { waitUntil: 'networkidle0' });
+    await page.evaluate(() => localStorage.clear());
+    await new Promise((r) => setTimeout(r, 400));
+    const historyInput = (await page.$('input[aria-label="Open recording file input"]')) ||
+                         (await page.$('input[aria-label="Open JSON file input"]'));
+    if (!historyInput) {
+      throw new Error('Could not find file input for imported-history fixture');
+    }
+    await historyInput.uploadFile(FIXTURE_HISTORY);
+    await new Promise((r) => setTimeout(r, 700));
+
+    await assertCheckpointInDOM(page, 1, 2);
+    const historyPromptCheck = await page.evaluate(() => {
+      const prompt = document.querySelector('[data-testid="replay-history-prompt"]');
+      const fileState = document.querySelector('[data-testid="replay-history-file-state"]');
+      return Boolean(prompt && fileState && prompt.textContent.includes('[redacted: api key]'));
+    });
+    if (!historyPromptCheck) {
+      throw new Error('Scenario 5 assertion failed: imported prompt evidence card is incomplete');
+    }
+    await captureState(page, `05_history_import_prompt_${vp.name}.png`, vp.width, vp.height);
+
+    await goToStep(page, 2);
+    await assertCheckpointInDOM(page, 2, 2);
+    const historyToolCheck = await page.evaluate(() => {
+      const command = document.querySelector('[data-testid="replay-history-command"]');
+      const output = document.querySelector('[data-testid="replay-history-tool-output"]');
+      const edit = document.querySelector('[data-testid="replay-history-edit"]');
+      return Boolean(command && output && edit && command.textContent.includes('[redacted: token]'));
+    });
+    if (!historyToolCheck) {
+      throw new Error('Scenario 6 assertion failed: imported tool evidence card is incomplete');
+    }
+    await captureState(page, `06_history_import_tool_${vp.name}.png`, vp.width, vp.height);
   }
 
   await browser.close();

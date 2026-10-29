@@ -98,6 +98,16 @@ export interface ReplaySession {
   codex_version: string | null;
   raw_logging: boolean;
   limits: CaptureLimits;
+  import_source?: 'codex' | 'claude_code' | null;
+  format_version?: string | null;
+  source_file_sha256?: string | null;
+  history_state?: 'active' | 'archived' | null;
+  source_title?: string | null;
+  timeline_started_at?: string | null;
+  timeline_ended_at?: string | null;
+  injected_context_messages?: number | null;
+  missing_timestamp_fallbacks?: number | null;
+  out_of_order_steps?: number | null;
 }
 
 export interface ReplayRecord {
@@ -111,6 +121,7 @@ export interface ReplayRecord {
   record_type: RecordKind;
   captured_at: string;
   source_timestamp: string | null;
+  timestamp_inferred?: boolean;
   provenance: string;
   completeness: Completeness;
   attribution_status: AttributionStatus;
@@ -124,10 +135,17 @@ export interface ReplayRecord {
   partial: boolean;
   truncated: boolean;
   redaction_applied: boolean;
-  tool_input: Record<string, unknown> | null;
-  tool_response: Record<string, unknown> | null;
+  tool_input: unknown | null;
+  tool_response: unknown | null;
   gap_reason: string | null;
   test_refs: string[];
+  source_item_id?: string | null;
+  prompt_id?: string | null;
+  prompt_text?: string | null;
+  file_state?: 'unknown' | null;
+  edit_patch?: string | null;
+  edit_command?: string | null;
+  redaction_types?: string[] | null;
 }
 
 export interface CapturedFile {
@@ -202,6 +220,7 @@ export interface TimelineEntry {
   record_id: string;
   record_type: RecordKind;
   captured_at: string;
+  timestamp_inferred?: boolean;
   completeness: Completeness;
   attribution_status: AttributionStatus;
   tool_name: string | null;

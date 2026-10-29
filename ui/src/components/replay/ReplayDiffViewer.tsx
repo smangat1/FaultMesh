@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import type { ChangedFileView, ChangedSymbolView, TimelineEntry, Completeness } from '../../replay/types';
+import type {
+  ChangedFileView,
+  ChangedSymbolView,
+  TimelineEntry,
+  Completeness,
+  ReplayRecord,
+} from '../../replay/types';
 import { FileDiff, AlertTriangle, Hash } from 'lucide-react';
 import { formatReplayTime } from '../../replay/utils';
 
@@ -10,9 +16,36 @@ interface ReplayDiffViewerProps {
   onSelectFile: (path: string) => void;
   getHistoricalContent: (path: string) => { content: string | null; sha256: string | null };
   entry?: TimelineEntry | null;
+  record?: ReplayRecord | null;
   completenessInfo?: { completeness: Completeness; gaps: string[] };
   isModelNarrationAvailable?: boolean;
 }
+
+const EvidenceBlock: React.FC<{ label: string; value: string; testId: string }> = ({
+  label,
+  value,
+  testId,
+}) => (
+  <div>
+    <div style={{ color: 'var(--replay-text-muted, #8b97ad)', marginBottom: '4px' }}>{label}</div>
+    <pre
+      data-testid={testId}
+      style={{
+        margin: 0,
+        padding: '8px',
+        whiteSpace: 'pre-wrap',
+        overflowWrap: 'anywhere',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: '10px',
+        color: 'var(--replay-text-primary, #e6edf8)',
+        backgroundColor: 'var(--replay-bg-canvas, #07090e)',
+        borderRadius: 'var(--replay-radius-control, 7px)',
+      }}
+    >
+      {value}
+    </pre>
+  </div>
+);
 
 export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   selectedFile,
@@ -21,6 +54,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   onSelectFile,
   getHistoricalContent,
   entry,
+  record,
   completenessInfo,
   isModelNarrationAvailable,
 }) => {
@@ -35,6 +69,26 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
     : [];
 
   const hasStaleAst = symbolsForFile.some((s) => !s.verified);
+
+  const evidenceText = (value: unknown): string | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    if (!serialized) return null;
+    const bounded = serialized.length > 4000 ? `${serialized.slice(0, 4000)}\n… [truncated in viewer]` : serialized;
+    return record?.truncated && !bounded.includes('[truncated') ? `${bounded}\n… [source truncated]` : bounded;
+  };
+
+  const commandText = (() => {
+    if (record?.edit_command) return record.edit_command;
+    if (record?.tool_input && typeof record.tool_input === 'object') {
+      const command = (record.tool_input as Record<string, unknown>).command;
+      if (typeof command === 'string') return command;
+    }
+    return null;
+  })();
+  const toolInputText = commandText ? null : evidenceText(record?.tool_input);
+  const toolOutputText = evidenceText(record?.tool_response);
+  const isHistoryImport = record?.provenance === 'history_import';
 
   if (!currentPath && changedFiles.length === 0) {
     const isPartial = entry?.completeness === 'partial' || completenessInfo?.completeness === 'partial';
@@ -97,6 +151,54 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
+            {isHistoryImport && (
+              <div
+                data-testid="replay-history-step-evidence"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  padding: '12px',
+                  borderRadius: 'var(--replay-radius-control, 7px)',
+                  backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                  border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>Recorded history step</div>
+                {record?.prompt_text && (
+                  <EvidenceBlock label="Prompt" value={record.prompt_text} testId="replay-history-prompt" />
+                )}
+                {record?.tool_name && (
+                  <div data-testid="replay-history-tool-name">
+                    <span style={{ color: 'var(--replay-text-muted, #8b97ad)' }}>Tool: </span>
+                    <strong>{record.tool_name}</strong>
+                  </div>
+                )}
+                {commandText && (
+                  <EvidenceBlock label="Command" value={commandText} testId="replay-history-command" />
+                )}
+                {toolInputText && (
+                  <EvidenceBlock label="Tool input" value={toolInputText} testId="replay-history-tool-input" />
+                )}
+                {toolOutputText && (
+                  <EvidenceBlock label="Recorded output" value={toolOutputText} testId="replay-history-tool-output" />
+                )}
+                {record?.edit_patch && (
+                  <EvidenceBlock label="Recorded edit" value={record.edit_patch} testId="replay-history-edit" />
+                )}
+                {record?.file_state === 'unknown' && (
+                  <div data-testid="replay-history-file-state" style={{ color: 'var(--replay-status-warning, #946c32)' }}>
+                    Historical file state: unknown — action evidence only; source bytes were not reconstructed.
+                  </div>
+                )}
+                {record?.timestamp_inferred && (
+                  <div data-testid="replay-history-inferred-time" style={{ color: 'var(--replay-text-muted, #8b97ad)' }}>
+                    Recorded time inferred from the nearest timestamped source event.
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Step Boundary & Attribution */}
             <div
               style={{
