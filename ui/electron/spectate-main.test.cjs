@@ -180,7 +180,14 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
   const openRec = value.ipcMain.handlers.get(CHANNELS.openRecording);
   assert.deepEqual(
     new Set(value.ipcMain.handlers.keys()),
-    new Set([CHANNELS.choose, CHANNELS.start, CHANNELS.stop, CHANNELS.openRecording])
+    new Set([
+      CHANNELS.choose,
+      CHANNELS.start,
+      CHANNELS.stop,
+      CHANNELS.openRecording,
+      CHANNELS.listHistory,
+      CHANNELS.importSession,
+    ])
   );
   const project = await choose(value.event);
   assert.equal(project.displayName, path.basename(value.root));
@@ -248,4 +255,112 @@ test('openRecording allows safe selection of recording file and returns text onl
   assert.equal(result.name, 'recording.json');
   assert.equal(result.text, '{"schema_version":"replay-export-1.0"}');
   assert.equal('path' in result, false);
+});
+
+test('listHistory spawns replay-history-list with fixed argv, no paths, and bounded output', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const listHistory = value.ipcMain.handlers.get(CHANNELS.listHistory);
+  assert.ok(listHistory);
+
+  // Untrusted args rejection
+  await assert.rejects(() => listHistory(value.event, '--extra-arg'), /does not accept renderer arguments/);
+
+  // Successful listing
+  const listPromise = listHistory(value.event);
+  assert.equal(value.spawns.at(-1)[0], '/fixed/faultmesh');
+  assert.deepEqual(value.spawns.at(-1)[1], ['replay-history-list']);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+
+  const mockPayload = {
+    roots: [
+      { tool: 'codex', status: 'ok', file_count: 12, message: null },
+      { tool: 'claude_code', status: 'missing', file_count: 0, message: 'Not found' },
+    ],
+    sessions: [
+      {
+        session_id: 'sess-1',
+        tool: 'codex',
+        project_group_key: 'proj-group-1',
+        project_display_name: 'test-project',
+        started_at: '2026-10-29T10:00:00Z',
+        ended_at: '2026-10-29T10:15:00Z',
+        prompt_count: 3,
+        first_prompt_preview: 'Fix [redacted: secret] bug',
+        format_version: '1.0',
+        parse_status: 'ok',
+        unsupported_reason: null,
+        redaction_types: ['secret'],
+      },
+    ],
+  };
+
+  const child = value.children.at(-1);
+  child.stdout.emit('data', Buffer.from(JSON.stringify(mockPayload)));
+  child.emit('close', 0, null);
+
+  const result = await listPromise;
+  assert.equal(result.roots.length, 2);
+  assert.equal(result.roots[0].tool, 'codex');
+  assert.equal(result.roots[0].file_count, 12);
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].session_id, 'sess-1');
+  assert.equal(result.sessions[0].first_prompt_preview, 'Fix [redacted: secret] bug');
+  assert.equal('source_file' in result.sessions[0], false);
+  assert.equal('root_path' in result.roots[0], false);
+});
+
+test('importSession validates inputs, spawns fixed argv, cleans up temp file, and returns export text without paths', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const importSession = value.ipcMain.handlers.get(CHANNELS.importSession);
+  assert.ok(importSession);
+
+  // Input validation tests: bad tools, path traversal, bad frame
+  await assert.rejects(() => importSession(value.event), /requires exactly/);
+  await assert.rejects(() => importSession(value.event, 'sess-1', 'unsupported_tool'), /unsupported or invalid tool/);
+  await assert.rejects(() => importSession(value.event, '../traversal', 'codex'), /invalid or unsafe sessionId/);
+  await assert.rejects(() => importSession(value.event, '/absolute/path', 'codex'), /invalid or unsafe sessionId/);
+
+  // Successful import test
+  let tempOutFile = null;
+  const originalSpawn = value.bridge;
+  const importPromise = importSession(value.event, 'valid-session-123', 'codex');
+
+  const lastSpawn = value.spawns.at(-1);
+  assert.equal(lastSpawn[0], '/fixed/faultmesh');
+  assert.equal(lastSpawn[1][0], 'replay-history-import');
+  assert.equal(lastSpawn[1][1], 'valid-session-123');
+  assert.equal(lastSpawn[1][2], '--tool');
+  assert.equal(lastSpawn[1][3], 'codex');
+  assert.equal(lastSpawn[1][4], '--out');
+  tempOutFile = lastSpawn[1][5];
+  assert.ok(tempOutFile.includes('faultmesh-import-'));
+
+  // Simulate writing validated replay-export document to temp file
+  const mockExport = {
+    schema_version: 'replay-export-1.0',
+    session: { id: 'valid-session-123', created_at: '2026-10-29T10:00:00Z' },
+    records: [],
+    timeline: [],
+  };
+  fs.writeFileSync(tempOutFile, JSON.stringify(mockExport), 'utf8');
+
+  const child = value.children.at(-1);
+  child.emit('close', 0, null);
+
+  const result = await importPromise;
+  assert.equal(result.name, 'valid-session-123.json');
+  assert.equal(JSON.parse(result.text).schema_version, 'replay-export-1.0');
+  assert.equal(typeof result.size, 'number');
+  assert.equal('path' in result, false);
+
+  // Verify temp file was cleaned up
+  assert.equal(fs.existsSync(tempOutFile), false);
 });

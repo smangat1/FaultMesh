@@ -40,7 +40,9 @@ describe('Real-project-first Startup Screen', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'FaultMesh' })).toBeDefined();
-    expect(screen.getByText(/Live architectural map and execution tracer for Python codebases/i)).toBeDefined();
+    expect(
+      screen.getByText(/Automatically discovers recorded coding sessions from local tools on this machine/i)
+    ).toBeDefined();
 
     const selectBtn = screen.getByRole('button', { name: /select project/i });
     expect(selectBtn).toBeDefined();

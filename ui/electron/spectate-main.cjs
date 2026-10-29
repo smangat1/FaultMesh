@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawn: spawnProcess } = require('child_process');
@@ -12,6 +13,8 @@ const CHANNELS = Object.freeze({
   stop: 'faultmesh:spectate:stop',
   openRecording: 'faultmesh:spectate:open-recording',
   event: 'faultmesh:spectate:event',
+  listHistory: 'faultmesh:spectate:list-history',
+  importSession: 'faultmesh:spectate:import-session',
 });
 
 const EVENTS = new Set([
@@ -239,15 +242,19 @@ function attachSpectateBridge({
   let stopping = false;
   let disposed = false;
 
-  function assertTrusted(event, args) {
+  function assertTrustedSender(event) {
     if (disposed) throw new Error('spectate bridge is closed');
-    if (args.length !== 0) throw new Error('spectate IPC does not accept renderer arguments');
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
       throw new Error('untrusted spectate IPC sender');
     }
     if (!event.senderFrame || event.senderFrame.url !== expectedUrl) {
       throw new Error('untrusted spectate IPC origin');
     }
+  }
+
+  function assertTrusted(event, args) {
+    if (args.length !== 0) throw new Error('spectate IPC does not accept renderer arguments');
+    assertTrustedSender(event);
   }
 
   function sendRecord(record) {
@@ -407,6 +414,182 @@ function attachSpectateBridge({
     };
   });
 
+  ipcMain.handle(CHANNELS.listHistory, async (event, ...args) => {
+    assertTrusted(event, args);
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let timer = null;
+      let proc = null;
+      try {
+        proc = spawn(command, ['replay-history-list'], {
+          shell: false,
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        return reject(err);
+      }
+
+      timer = setTimeout(() => {
+        try {
+          proc.kill('SIGTERM');
+        } catch (_) {}
+        reject(new Error('replay-history-list timed out'));
+      }, 15000);
+      timer.unref?.();
+
+      proc.stdout.on('data', (chunk) => {
+        stdout += chunk.toString('utf8');
+        if (stdout.length > 64 * 1024 * 1024) {
+          try {
+            proc.kill('SIGTERM');
+          } catch (_) {}
+          clearTimeout(timer);
+          reject(new Error('replay-history-list output exceeded 64 MB limit'));
+        }
+      });
+      proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString('utf8');
+      });
+      proc.once('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      proc.once('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          return reject(new Error(`replay-history-list failed with code ${code}: ${stderr.slice(0, 1000)}`));
+        }
+        try {
+          const parsed = JSON.parse(stdout);
+          if (!parsed || !Array.isArray(parsed.roots) || !Array.isArray(parsed.sessions)) {
+            return reject(new Error('invalid replay-history-list payload structure'));
+          }
+          // Sanitize: ensure no local source paths are ever leaked to renderer
+          const roots = parsed.roots.map((r) => ({
+            tool: String(r.tool || ''),
+            status: r.status === 'ok' || r.status === 'missing' || r.status === 'unreadable' ? r.status : 'unreadable',
+            file_count: Number.isSafeInteger(r.file_count) ? r.file_count : 0,
+            message: r.message ? String(r.message) : null,
+          }));
+          const sessions = parsed.sessions.map((s) => ({
+            session_id: String(s.session_id || ''),
+            tool: String(s.tool || ''),
+            project_group_key: String(s.project_group_key || ''),
+            project_display_name: String(s.project_display_name || ''),
+            started_at: String(s.started_at || ''),
+            ended_at: String(s.ended_at || ''),
+            prompt_count: Number.isSafeInteger(s.prompt_count) ? s.prompt_count : 0,
+            first_prompt_preview: s.first_prompt_preview !== null && s.first_prompt_preview !== undefined ? String(s.first_prompt_preview) : null,
+            format_version: s.format_version ? String(s.format_version) : null,
+            parse_status: s.parse_status === 'ok' || s.parse_status === 'partial' || s.parse_status === 'unsupported' ? s.parse_status : 'unsupported',
+            unsupported_reason: s.unsupported_reason ? String(s.unsupported_reason) : null,
+            source_file_sha256: s.source_file_sha256 ? String(s.source_file_sha256) : undefined,
+            redaction_types: Array.isArray(s.redaction_types) ? s.redaction_types.map(String) : [],
+          }));
+          resolve({ roots, sessions });
+        } catch (err) {
+          reject(new Error(`failed to parse replay-history-list output: ${err.message}`));
+        }
+      });
+    });
+  });
+
+  ipcMain.handle(CHANNELS.importSession, async (event, ...args) => {
+    assertTrustedSender(event);
+    if (args.length !== 2) {
+      throw new Error('importSession requires exactly (sessionId, tool) arguments');
+    }
+    const [sessionId, tool] = args;
+    if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 128 || /[\/\\]/.test(sessionId) || sessionId.includes('..')) {
+      throw new Error('invalid or unsafe sessionId');
+    }
+    const ALLOWED_TOOLS = new Set(['codex', 'claude_code']);
+    if (typeof tool !== 'string' || !ALLOWED_TOOLS.has(tool)) {
+      throw new Error('unsupported or invalid tool');
+    }
+
+    const tempOut = path.join(os.tmpdir(), `faultmesh-import-${crypto.randomUUID()}.json`);
+    const cleanupTemp = () => {
+      try {
+        if (fs.existsSync(tempOut)) {
+          fs.unlinkSync(tempOut);
+        }
+      } catch (_) {}
+    };
+
+    return new Promise((resolve, reject) => {
+      let stderr = '';
+      let timer = null;
+      let proc = null;
+      try {
+        proc = spawn(command, [
+          'replay-history-import',
+          sessionId,
+          '--tool',
+          tool,
+          '--out',
+          tempOut,
+        ], {
+          shell: false,
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        cleanupTemp();
+        return reject(err);
+      }
+
+      timer = setTimeout(() => {
+        try {
+          proc.kill('SIGTERM');
+        } catch (_) {}
+        cleanupTemp();
+        reject(new Error('replay-history-import timed out'));
+      }, 30000);
+      timer.unref?.();
+
+      proc.stderr.on('data', (chunk) => {
+        stderr += chunk.toString('utf8');
+      });
+      proc.once('error', (err) => {
+        clearTimeout(timer);
+        cleanupTemp();
+        reject(err);
+      });
+      proc.once('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          cleanupTemp();
+          return reject(new Error(`replay-history-import failed with code ${code}: ${stderr.slice(0, 1000)}`));
+        }
+        try {
+          if (!fs.existsSync(tempOut)) {
+            cleanupTemp();
+            return reject(new Error('replay-history-import did not produce output file'));
+          }
+          const stat = fs.statSync(tempOut);
+          if (stat.size > 64 * 1024 * 1024) {
+            cleanupTemp();
+            return reject(new Error('imported recording exceeds 64 MB size limit'));
+          }
+          const text = fs.readFileSync(tempOut, 'utf-8');
+          cleanupTemp();
+          // Return name, text, size: no local paths sent to renderer!
+          resolve({
+            name: `${sessionId}.json`,
+            size: stat.size,
+            text,
+          });
+        } catch (err) {
+          cleanupTemp();
+          reject(err);
+        }
+      });
+    });
+  });
+
   return {
     channels: CHANNELS,
     dispose(reason = 'bridge_disposed', immediate = true) {
@@ -417,6 +600,8 @@ function attachSpectateBridge({
       ipcMain.removeHandler(CHANNELS.start);
       ipcMain.removeHandler(CHANNELS.stop);
       ipcMain.removeHandler(CHANNELS.openRecording);
+      ipcMain.removeHandler(CHANNELS.listHistory);
+      ipcMain.removeHandler(CHANNELS.importSession);
       disposed = true;
     },
   };
