@@ -348,3 +348,24 @@ default, 5 container tests deselected and 86% coverage. The opt-in smoke passed 
 unchanged UI suite (202 tests), Electron suite (8 tests), production UI build, Ruff, format check
 and strict mypy over 62 source files all passed. The correction changes no `ui/` file and adds no
 dependency.
+
+## Additional privacy hardening
+
+Before further real-log use, the shared history text redactor was extended for additional common
+credential shapes. Sensitive-key normalization now converts camelCase to snake_case, covering keys
+such as `apiKey` and `clientSecret`, and recognizes secret-key, passphrase, authorization, cookie
+and set-cookie fields. Redaction also covers secret-bearing long CLI flags, curl user/password
+arguments and non-string JSON scalar values. These paths preserve visible typed markers and apply
+before both discovery previews and imported prompt/tool evidence.
+
+A table-driven synthetic regression exercises every added form through `first_prompt_preview`,
+exported `prompt_text` and exported command output. It verifies that the sensitive value is absent
+and that markers and redaction types remain visible. This broadens protection for common formats;
+it does not make redaction exhaustive or prove an export is secret-free. Pattern matching remains
+best effort, and users must still review private exports before sharing them.
+
+Validation passed 257 non-container Python tests with one opt-in real-log smoke skipped by default,
+5 container tests deselected and 86% aggregate coverage. The focused privacy/import suite passed
+23 tests, including all 11 table-driven hardening cases. Ruff and format checks passed for the
+changed Python files, and strict mypy passed for all 62 source files. No real logs were imported or
+inspected during this hardening pass; it changes no `ui/` file and adds no dependency.

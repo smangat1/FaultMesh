@@ -45,6 +45,11 @@ _JSON_SECRET = re.compile(
     r'(?P<prefix>"(?P<key>[^"\r\n]+)"\s*:\s*)'
     r'"(?P<value>(?:\\.|[^"\\])*)"'
 )
+_JSON_SCALAR_SECRET = re.compile(
+    r'(?i)(?P<prefix>"(?P<key>[^"\r\n]+)"\s*:\s*)'
+    r"(?P<value>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)"
+    r"(?=\s*[,}\]])"
+)
 _ESCAPED_JSON_SECRET = re.compile(
     r'(?P<prefix>\\"(?P<key>[^"\\\r\n]+)\\"\s*:\s*\\")'
     r'(?P<value>(?:\\\\.|[^"\\])*)\\"'
@@ -53,6 +58,20 @@ _ASSIGNMENT_SECRET = re.compile(
     r"(?i)(?P<prefix>\b(?P<key>[A-Za-z_][A-Za-z0-9_-]*)\s*[:=]\s*)"
     r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s#;]+)"
 )
+_HEADER_SECRET = re.compile(
+    r"(?im)(?P<prefix>^\s*(?P<key>authorization|cookie|set-cookie)\s*:\s*)"
+    r"(?P<value>[^\r\n]+)"
+)
+_CLI_FLAG_SECRET = re.compile(
+    r"(?i)(?P<prefix>(?<![\w-])--(?P<key>[A-Za-z][A-Za-z0-9-]*)[ \t]+)"
+    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s]+)"
+)
+_CURL_USER = re.compile(
+    r"(?i)(?P<prefix>\bcurl\b(?:(?![\r\n;&|]).)*?[ \t]+(?:-u|--user)[ \t]+)"
+    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s]+)"
+)
+_CAMEL_ACRONYM = re.compile(r"([A-Z]+)([A-Z][a-z])")
+_CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
 
 _TYPED_PATTERNS = (
     ("private key", _PRIVATE_KEY),
@@ -69,8 +88,11 @@ def _marker(label: str) -> str:
 
 
 def _sensitive_key_label(key: str) -> str | None:
-    normalized = key.lower().replace("-", "_")
-    if normalized in {"password", "passwd"} or normalized.endswith(("_password", "_passwd")):
+    normalized = _CAMEL_ACRONYM.sub(r"\1_\2", key)
+    normalized = _CAMEL_BOUNDARY.sub(r"\1_\2", normalized).lower().replace("-", "_")
+    if normalized in {"password", "passwd", "passphrase"} or normalized.endswith(
+        ("_password", "_passwd", "_passphrase")
+    ):
         return "password"
     if normalized == "private_key" or normalized.endswith("_private_key"):
         return "private key"
@@ -78,8 +100,12 @@ def _sensitive_key_label(key: str) -> str | None:
         return "api key"
     if normalized == "token" or normalized.endswith("_token"):
         return "token"
-    if normalized == "secret" or normalized.endswith("_secret"):
+    if normalized in {"secret", "secret_key"} or normalized.endswith(("_secret", "_secret_key")):
         return "secret"
+    if normalized == "authorization" or normalized.endswith("_authorization"):
+        return "authorization"
+    if normalized in {"cookie", "set_cookie"} or normalized.endswith(("_cookie", "_set_cookie")):
+        return "cookie"
     return None
 
 
@@ -118,6 +144,15 @@ def redact_history_text(value: str, max_bytes: int) -> HistoryRedaction:
 
     redacted = _JSON_SECRET.sub(json_replacement, redacted)
 
+    def json_scalar_replacement(match: re.Match[str]) -> str:
+        label = _sensitive_key_label(match.group("key"))
+        if label is None:
+            return match.group(0)
+        _increment(counts, label)
+        return f'{match.group("prefix")}"{_marker(label)}"'
+
+    redacted = _JSON_SCALAR_SECRET.sub(json_scalar_replacement, redacted)
+
     def escaped_json_replacement(match: re.Match[str]) -> str:
         label = _sensitive_key_label(match.group("key"))
         if label is None:
@@ -126,6 +161,15 @@ def redact_history_text(value: str, max_bytes: int) -> HistoryRedaction:
         return f'{match.group("prefix")}{_marker(label)}\\"'
 
     redacted = _ESCAPED_JSON_SECRET.sub(escaped_json_replacement, redacted)
+
+    def header_replacement(match: re.Match[str]) -> str:
+        label = _sensitive_key_label(match.group("key"))
+        if label is None:
+            return match.group(0)
+        _increment(counts, label)
+        return f"{match.group('prefix')}{_marker(label)}"
+
+    redacted = _HEADER_SECRET.sub(header_replacement, redacted)
 
     def assignment_replacement(match: re.Match[str]) -> str:
         label = _sensitive_key_label(match.group("key"))
@@ -142,6 +186,30 @@ def redact_history_text(value: str, max_bytes: int) -> HistoryRedaction:
         return f"{match.group('prefix')}{_marker(label)}{suffix}"
 
     redacted = _ASSIGNMENT_SECRET.sub(assignment_replacement, redacted)
+
+    def cli_flag_replacement(match: re.Match[str]) -> str:
+        label = _sensitive_key_label(match.group("key"))
+        raw_value = match.group("value")
+        if label is None or raw_value.startswith("--"):
+            return match.group(0)
+        _increment(counts, label)
+        if len(raw_value) >= 2 and raw_value[0] in {'"', "'"} and raw_value[-1] == raw_value[0]:
+            return f"{match.group('prefix')}{raw_value[0]}{_marker(label)}{raw_value[0]}"
+        return f"{match.group('prefix')}{_marker(label)}"
+
+    redacted = _CLI_FLAG_SECRET.sub(cli_flag_replacement, redacted)
+
+    def curl_user_replacement(match: re.Match[str]) -> str:
+        raw_value = match.group("value")
+        quote = raw_value[0] if len(raw_value) >= 2 and raw_value[0] in {'"', "'"} else ""
+        credentials = raw_value[1:-1] if quote and raw_value[-1] == quote else raw_value
+        if ":" not in credentials:
+            return match.group(0)
+        username, _password = credentials.split(":", 1)
+        _increment(counts, "password")
+        return f"{match.group('prefix')}{quote}{username}:{_marker('password')}{quote}"
+
+    redacted = _CURL_USER.sub(curl_user_replacement, redacted)
     for label, pattern in _TYPED_PATTERNS:
         redacted, count = pattern.subn(_marker(label), redacted)
         if count:
