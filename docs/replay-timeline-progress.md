@@ -4,12 +4,12 @@
 
 - Phase P0 branch: `replay-timeline-bar` (PR #21 merged into main)
 - Phase P1 branch: `replay-timeline-p1` (PR #22 merged into main)
-- Phase P2 branch: `replay-timeline-p2`
+- Phase P2 branch: `replay-timeline-p2` (PR #23 merged into main)
+- Phase P3 branch: `replay-timeline-p3`
 - Branched from `origin/main` commit SHA:
-  `2088754a38727af76a8750873182c0a62cdbb753`
-- Base commit description: `Merge pull request #22 from smangat1/replay-timeline-p1` (Phase P1 pure time model and bar geometry tests).
-- Pre-P2 commit: `e48cf03` — `fix(replay-ui): local timezone formatting for hover labels and canon association in tests`.
-- This SHA is the strict revert baseline for all work in Phase P2.
+  `957aa27d70ec305f25c5fcd3ffe6b09f0808f406`
+- Base commit description: `Merge pull request #23 from smangat1/replay-timeline-p2` (Phase P2 visual foundation and token system).
+- This SHA is the strict revert baseline for all work in Phase P3.
 
 ---
 
@@ -182,15 +182,97 @@ Status: complete. Visual token system implemented, applied across all replay com
 
 ---
 
-## Next Phase: P3 — Hero Timeline Bar Component
-- Build `ui/src/components/replay/ReplayTimelineBar.tsx` (the hero scrubber component).
-- Visual elements:
-  - SVG/Canvas timeline bar track with proportional step ticks.
-  - Chapter segment brackets with sequence ranges, title tooltips, and model interpretation tags.
-  - Axis-break squiggles for idle stretches exceeding threshold with labels (`15m idle`, `2h 14m idle`).
-  - Gap stretches with diagonal hatch pattern, warning border, and gap reason tooltips.
-  - Test markers (dots/diamonds with pass/fail/neutral styling).
-  - Current-step thumb with animated snap to nearest step (Rule 2: never resting in unrecorded space).
-  - Keyboard navigation (Left/Right arrows, j/k, Home/End, PgUp/PgDn).
-  - Accessibility: ARIA slider, role, keyboard focus, screen-reader announcements.
-- How to resume: Run `continue` to proceed to Phase P3 implementation.
+## Phase P3 — Hero Timeline Bar Component
+
+Status: complete. Hero scrubber component implemented with pure time geometry, calm tokens, animated thumb snap (Rule 2), full keyboard navigation, ARIA slider accessibility, and rich hover tooltips. 10/10 unit tests passed; full UI test suite 26/26 files (212 Vitest tests + 8 Electron tests) passing; production build clean.
+
+### Implementation Summary
+- **Component**: `ui/src/components/replay/ReplayTimelineBar.tsx`
+  - Integrated with pure time model `computeTimelineBarGeometry` from `ui/src/replay/timeModel.ts`.
+  - **Chapter Lane**:
+    - Bracketed spans showing sequence ranges and titles.
+    - Model interpretations labeled with subtle dashed border and `model` pill tag.
+    - Deterministic template chapters rendered with solid accent border.
+    - Clicking any chapter bracket jumps directly to `start_sequence`.
+    - Rich hover tooltip displaying title, sequence range, title status, and duration (flagging `Discontinuous` if gap spanned).
+  - **Main Track Lane**:
+    - Axis breaks rendered with idle labels (e.g. `15m idle`, `32m idle`) and SVG squiggles for stretches over threshold.
+    - Gap stretches rendered with diagonal warning hatch pattern (`var(--replay-status-warning-bg)`) and `GAP` badge; hover reveals `gapReason` with "elapsed wall-clock time unknown".
+    - Step ticks along track with dedicated styles for tools (`.tick-tool`), gaps (`.tick-gap`), and active selection (`.tick-selected`).
+    - Test markers along track showing pass (`.test-pass` circle), fail/error (`.test-fail` diamond), and neutral states; clicking jumps to associated sequence.
+    - **Hero Scrubber Thumb (Rule 2 Compliance)**:
+      - Thumb pill with calm steel-blue fill (`var(--replay-accent)`), subtle white border, centered grip lines, and ambient shadow.
+      - Animated snap transition (`160ms cubic-bezier(0.16, 1, 0.3, 1)`) respecting `prefers-reduced-motion`.
+      - **Rule 2 Strictly Enforced**: On click and drag, thumb position is strictly derived from `nearestStep.positionRatio`. Thumb never rests in unrecorded floating space between steps.
+  - **Footer Strip**:
+    - Left: local start time (`timeline[0].captured_at`).
+    - Center: active step indicator (`Step #X of Y`, `record_type`, local wall time, tool duration for pre/post pairs, gap reason).
+    - Right: local end time.
+  - **Accessibility**:
+    - `role="slider"`, `tabIndex={0}`, `aria-label="Timeline scrubber"`.
+    - `aria-valuenow`, `aria-valuemin`, `aria-valuemax`, and descriptive `aria-valuetext`.
+    - Keyboard navigation: Left/Right arrows or j/k (step prev/next), Home/End (first/last step), PgUp/PgDn (prev/next chapter start).
+- **Workspace Integration**: `ui/src/components/replay/ReplayWorkspace.tsx`
+  - Wired `ReplayTimelineBar` as the hero element directly below the header spanning full workspace width.
+  - Connected two-way to session step navigation (`currentSeq`, `handleSelectSequence`, timeline ticks, diff viewer, evidence inspector, and header sequence badge).
+  - Wired `adapter.getAllTests()` and dynamic timeline options (`timeline-options-changed`).
+- **Styles**: `ui/src/styles/replay.css`
+  - Added dedicated classes for `.replay-timeline-bar-root`, chapter lane/segments, track lane/rail, axis breaks, gap hatch pattern, ticks, test markers, and thumb scrubber using calm `--replay-*` tokens.
+
+### Unit Test Verification (`ui/src/test/replayTimelineBar.test.tsx`)
+- **Suite**: 10 comprehensive tests:
+  1. Safe, clean empty state when `timeline: []` (`aria-valuenow="0"`).
+  2. Single-step session boundary render with thumb at 0%.
+  3. Multi-step session visual elements (accessibility slider, chapters, model tag, ticks, axis break, gap hatch, test markers, thumb, footer).
+  4. Rule 2 click snapping: clicking track calculates ratio and snaps strictly to nearest recorded step.
+  5. Rule 2 drag snapping: pointer drag across track snaps sequentially to nearest steps.
+  6. Chapter click: clicking chapter navigates to `start_sequence`.
+  7. Test marker click: clicking test navigates to associated sequence.
+  8. Full keyboard navigation: Left/Right, j/k, Home/End, PgUp/PgDn.
+  9. Boundary protection: preventing overshoots before first step or beyond last step.
+  10. Hover tooltips: chapters (deterministic vs discontinuous model), gap reasons, axis breaks, test results, and mouse leave dismissal.
+
+### Real Screenshot Capture & Data Honesty (`docs/screenshots/replay/`)
+- **Strict Data Honesty (Rule 2 Enforcement)**:
+  - Completely removed test harness backdoor from production code:
+    - Deleted `window.__FAULTMESH_TIMELINE_OPTIONS__` global and its event listener in `ReplayWorkspace.tsx`.
+    - Deleted `idleLabel` override from `TimeModelOptions` in `timeModel.ts`.
+    - Every visual element and label on `ReplayTimelineBar` is derived strictly from recorded fixture data (`formatIdleDuration` calculates idle label from real timestamps).
+  - Added dedicated synthetic replay export fixture `ui/src/fixtures/fixture_replay_timeline_hero.json` (`replay-export-2.0`):
+    - Contains 7 chronological records with real timestamps.
+    - Honest 15-minute idle stretch between step 5 (`12:03:00Z`) and step 6 (`12:18:00Z`), naturally producing `15m idle` via `formatIdleDuration(900000)` without overrides.
+    - Honest mid-run gap record at step 4 (`record_type: "gap"`, `gap_reason: "corrupt input: sequence loss during agent tool execution"`).
+    - Chapter 1 (steps 1–3) as deterministic template and Chapter 2 (steps 4–7) as model interpretation.
+    - Structured test evidence with 1 passing test at step 3 and 1 failing test (`test_negative_input_raises`) at step 6.
+- **Genuine, Distinct Screenshot Scenarios**:
+  - Re-captured each scenario as a distinct page state with unique viewport layout and sequence position:
+    1. `01_normal_run_${vp.name}.png`: Selected step 3 (`post_tool`), showing diff viewer with `calc.py` changes, deterministic Chapter 1, and Summary Audit tab.
+    2. `02_idle_break_axis_label_${vp.name}.png`: Selected step 6, showing honest `15m idle` axis-break squiggle and label on hero bar, red diamond test marker, and failing test in Tests tab.
+    3. `03_gap_region_${vp.name}.png`: Selected step 4, showing mid-run gap region on hero bar with diagonal warning hatch pattern, `GAP` badge, and gap reason.
+    4. `04_model_interpretation_chapter_${vp.name}.png`: Selected step 7, showing Chapter 2 on hero bar with dashed bracket and `[model]` tag, plus Claims tab with verified/unverified assertions.
+  - Eliminated all duplicate captures and redundant alias filenames.
+  - Verified 100% unique SHA-256 hashes across all 8 files (zero duplicates):
+    | File | SHA-256 Checksum |
+    |---|---|
+    | `01_normal_run_1024x700.png` | `77e756dc361531637cfc76cd8ed04408bf30ec06b6f32086f81c00a1594cadcb` |
+    | `01_normal_run_1440x900.png` | `b163d21bb72c13aca90ef03ae522ef3275267a9be8ccb727b27f64e7f4a3ccdd` |
+    | `02_idle_break_axis_label_1024x700.png` | `60856de2e91e19228a35fc91c93f041b155afbe84f77d9baef9ad2b24d7a48d7` |
+    | `02_idle_break_axis_label_1440x900.png` | `2083bf87e8251c0331b3d1dfaccff5346b446115bf102215b833d5225e8e8b89` |
+    | `03_gap_region_1024x700.png` | `6dee5376337ecacbf72a54503252e08d05616bc8eb09b329896b232e158627c3` |
+    | `03_gap_region_1440x900.png` | `8a8d29ece9093d1aefa3dd1b76ad9f0480813ce378286c180603f340811f9960` |
+    | `04_model_interpretation_chapter_1024x700.png` | `08c5aa244427344c4e39e40ae41cb232674bf5a7bb1a9d85bf9cc59c1e16c6ed` |
+    | `04_model_interpretation_chapter_1440x900.png` | `3c5f2c02970db82b21191e36209644f2a4137ba97e228c3574b3baae0154ed2b` |
+
+### Quality & Verification Results
+- `npm test`: 26/26 test files passed (213 Vitest tests including fixture verification, 8 Electron node tests).
+- `npm run build`: `tsc && vite build` passed cleanly in 1.75s with zero errors.
+
+---
+
+## Next Phase: P4 — Layout Restructure + Mini-Map Dock
+- Restructure `ReplayWorkspace.tsx`:
+  - Timeline bar as full-width hero across top of replay workspace.
+  - Diff view below as the primary default focus.
+  - Chapters accordion and evidence inspector become on-demand panels (left rail and right drawer), closed by default.
+  - Project map becomes resizable mini-map dock (persists size and open state in localStorage, shortcut `M` to toggle, drag handle to resize, honest empty state when recording carries no structure data).
+- How to resume: Run `continue` to proceed to Phase P4 implementation.

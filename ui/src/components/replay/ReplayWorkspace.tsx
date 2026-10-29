@@ -3,6 +3,8 @@ import type { ReplayAdapter } from '../../adapter/replayAdapter';
 import { ReplayTimeline } from './ReplayTimeline';
 import { ReplayDiffViewer } from './ReplayDiffViewer';
 import { ReplayEvidenceInspector } from './ReplayEvidenceInspector';
+import { ReplayTimelineBar } from './ReplayTimelineBar';
+import type { TimeModelOptions } from '../../replay/timeModel';
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,11 +14,13 @@ import {
 interface ReplayWorkspaceProps {
   adapter: ReplayAdapter;
   onOpenProjectMap?: () => void;
+  timelineOptions?: TimeModelOptions;
 }
 
 export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   adapter,
   onOpenProjectMap,
+  timelineOptions,
 }) => {
   const timeline = useMemo(() => adapter.getTimeline(), [adapter]);
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
@@ -44,6 +48,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const testsForCurrentSeq = useMemo(() => {
     return adapter.getTestsForSequence(currentSeq);
   }, [adapter, currentSeq]);
+
+  const allTests = useMemo(() => {
+    return adapter.getAllTests ? adapter.getAllTests() : [];
+  }, [adapter]);
 
   // Set sequence and update adapter
   const handleSelectSequence = useCallback(
@@ -350,6 +358,26 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             </button>
           )}
         </div>
+      </div>
+
+      {/* Hero Timeline Bar */}
+      <div
+        style={{
+          padding: '8px 16px 10px 16px',
+          borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+          backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
+          flexShrink: 0,
+        }}
+        data-testid="replay-hero-bar-container"
+      >
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={currentSeq}
+          onSelectSequence={handleSelectSequence}
+          chapters={chapters}
+          tests={allTests}
+          options={timelineOptions}
+        />
       </div>
 
       {/* Main 3-Column Obsidian-Style Layout */}

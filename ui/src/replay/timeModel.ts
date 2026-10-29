@@ -281,8 +281,8 @@ export function computeTimelineBarGeometry(params: {
     const curTs = parsedTimestamps[i];
     const nextTs = parsedTimestamps[i + 1];
 
-    const isCurGap = cur.record_type === 'gap';
-    const isNextGap = next.record_type === 'gap';
+    const isCurGap = cur.record_type === 'gap' || cur.record_type === 'unsupported';
+    const isNextGap = next.record_type === 'gap' || next.record_type === 'unsupported';
 
     if (isCurGap || isNextGap) {
       // Gap stretch: elapsed time is UNKNOWN. Assign fixed gap weight.
@@ -553,7 +553,8 @@ export function computeTimelineBarGeometry(params: {
   // 8. Snap to Nearest Step Helper
   const findNearestStep = (ratio: number): StepPosition | null => {
     if (steps.length === 0) return null;
-    const clampedRatio = Math.max(0, Math.min(1, ratio));
+    const safeRatio = typeof ratio === 'number' && !isNaN(ratio) ? ratio : 0;
+    const clampedRatio = Math.max(0, Math.min(1, safeRatio));
 
     let closest = steps[0];
     let minDiff = Math.abs(steps[0].positionRatio - clampedRatio);
