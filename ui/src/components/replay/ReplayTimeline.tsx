@@ -45,12 +45,12 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: '#13151b',
-        borderRight: '1px solid #232730',
+        backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
+        borderRight: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
         width: '320px',
         flexShrink: 0,
         overflow: 'hidden',
-        color: '#f8fafc',
+        color: 'var(--replay-text-primary, #e6edf8)',
       }}
       data-testid="replay-timeline-pane"
     >
@@ -58,8 +58,8 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
       <div
         style={{
           padding: '8px 12px',
-          borderBottom: '1px solid #232730',
-          backgroundColor: '#161920',
+          borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+          backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
@@ -67,10 +67,10 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
             REPLAY TIMELINE
           </span>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono, monospace)' }}>
+          <span style={{ fontSize: '10px', color: 'var(--replay-text-faint, #4d576a)', fontFamily: 'var(--font-mono, monospace)' }}>
             {timeline.length} checkpoint{timeline.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -84,11 +84,12 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
               style={{
                 fontSize: '10px',
                 padding: '2px 6px',
-                borderRadius: '3px',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                backgroundColor: isNarrationOn ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
-                color: isNarrationOn ? '#38bdf8' : 'var(--text-muted)',
+                borderRadius: 'var(--replay-radius-control, 7px)',
+                border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                backgroundColor: isNarrationOn ? 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))' : 'transparent',
+                color: isNarrationOn ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
                 cursor: 'pointer',
+                transition: 'background-color var(--replay-transition-quick, 160ms ease)',
               }}
               aria-label="Toggle narration"
               data-testid="replay-narration-toggle"
@@ -103,11 +104,12 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                 style={{
                   fontSize: '10px',
                   padding: '2px 6px',
-                  borderRadius: '3px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  backgroundColor: isBaselineMode ? 'rgba(148, 163, 184, 0.2)' : 'transparent',
-                  color: isBaselineMode ? '#e2e8f0' : 'var(--text-muted)',
+                  borderRadius: 'var(--replay-radius-control, 7px)',
+                  border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                  backgroundColor: isBaselineMode ? 'var(--replay-bg-surface-3, #1c2436)' : 'transparent',
+                  color: isBaselineMode ? 'var(--replay-text-primary, #e6edf8)' : 'var(--replay-text-muted, #8b97ad)',
                   cursor: 'pointer',
+                  transition: 'background-color var(--replay-transition-quick, 160ms ease)',
                 }}
                 aria-label="Toggle baseline comparison"
                 data-testid="replay-baseline-toggle"
@@ -125,8 +127,8 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
           style={{
             maxHeight: '180px',
             overflowY: 'auto',
-            borderBottom: '1px solid #232730',
-            backgroundColor: '#0f1115',
+            borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+            backgroundColor: 'var(--replay-bg-canvas, #07090e)',
             padding: '4px',
             flexShrink: 0,
           }}
@@ -136,7 +138,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
             style={{
               padding: '2px 8px',
               fontSize: '10px',
-              color: 'var(--text-muted)',
+              color: 'var(--replay-text-muted, #8b97ad)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -149,7 +151,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#38bdf8',
+                  color: 'var(--replay-accent, #4a7bb0)',
                   fontSize: '9px',
                   cursor: 'pointer',
                   padding: 0,
@@ -180,12 +182,14 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                 }}
                 style={{
                   padding: '6px 8px',
-                  borderRadius: '4px',
-                  backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
-                  border: isSelected ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
+                  borderRadius: 'var(--replay-radius-control, 7px)',
+                  backgroundColor: isSelected ? 'var(--replay-bg-surface-2, #141a26)' : 'transparent',
+                  border: isSelected ? '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))' : '1px solid transparent',
                   cursor: 'pointer',
                   marginBottom: '2px',
                   fontSize: '11px',
+                  boxShadow: isSelected ? 'var(--replay-shadow-subtle)' : 'none',
+                  transition: 'background-color var(--replay-transition-quick, 160ms ease)',
                 }}
                 data-testid={`replay-chapter-item-${ch.id}`}
               >
@@ -193,7 +197,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                   <span
                     style={{
                       fontWeight: isSelected ? 600 : 400,
-                      color: isSelected ? '#38bdf8' : '#f8fafc',
+                      color: isSelected ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-primary, #e6edf8)',
                       flex: 1,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -206,7 +210,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                   <span
                     style={{
                       fontSize: '9px',
-                      color: 'var(--text-muted)',
+                      color: 'var(--replay-text-faint, #4d576a)',
                       fontFamily: 'var(--font-mono, monospace)',
                       flexShrink: 0,
                     }}
@@ -220,10 +224,10 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                     style={{
                       fontSize: '9px',
                       padding: '1px 5px',
-                      borderRadius: '2px',
-                      backgroundColor: isInterpretation ? 'rgba(168, 85, 247, 0.15)' : 'rgba(148, 163, 184, 0.15)',
-                      color: isInterpretation ? '#c084fc' : '#94a3b8',
-                      border: isInterpretation ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid rgba(148, 163, 184, 0.2)',
+                      borderRadius: 'var(--replay-radius-control, 7px)',
+                      backgroundColor: 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
+                      color: 'var(--replay-text-muted, #8b97ad)',
+                      border: '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
                     }}
                     data-testid="replay-chapter-title-status"
                   >
@@ -260,12 +264,13 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                 flexDirection: 'column',
                 gap: '4px',
                 padding: '8px 10px',
-                borderRadius: '4px',
-                backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.02)',
-                border: isSelected ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid rgba(255, 255, 255, 0.05)',
+                borderRadius: 'var(--replay-radius-control, 7px)',
+                backgroundColor: isSelected ? 'var(--replay-bg-surface-2, #141a26)' : 'rgba(255, 255, 255, 0.02)',
+                border: isSelected ? '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))' : '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                boxShadow: isSelected ? 'var(--replay-shadow-subtle)' : 'none',
                 cursor: 'pointer',
                 marginBottom: '4px',
-                transition: 'background-color 0.15s ease',
+                transition: 'background-color var(--replay-transition-quick, 160ms ease)',
               }}
               data-testid={`replay-checkpoint-row-${entry.sequence}`}
               aria-selected={isSelected}
@@ -274,9 +279,9 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                 <span
                   style={{
                     fontFamily: 'var(--font-mono, monospace)',
-                    fontWeight: 700,
+                    fontWeight: 600,
                     fontSize: '11px',
-                    color: isSelected ? '#38bdf8' : '#e2e8f0',
+                    color: isSelected ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-primary, #e6edf8)',
                   }}
                 >
                   #{entry.sequence}
@@ -285,7 +290,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                 <span
                   style={{
                     fontSize: '10px',
-                    color: 'var(--text-muted)',
+                    color: 'var(--replay-text-faint, #4d576a)',
                     fontFamily: 'var(--font-mono, monospace)',
                   }}
                 >
@@ -299,7 +304,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                   style={{
                     fontSize: '10px',
                     fontFamily: 'var(--font-mono, monospace)',
-                    color: entry.tool_name ? '#cbd5e1' : '#94a3b8',
+                    color: entry.tool_name ? 'var(--replay-text-primary, #e6edf8)' : 'var(--replay-text-muted, #8b97ad)',
                   }}
                 >
                   {entry.tool_name ? entry.tool_name : entry.record_type}
@@ -310,12 +315,13 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                   style={{
                     fontSize: '9px',
                     padding: '0 4px',
-                    borderRadius: '2px',
+                    borderRadius: 'var(--replay-radius-control, 7px)',
                     backgroundColor:
                       entry.attribution_status === 'tool_boundary'
-                        ? 'rgba(56, 189, 248, 0.1)'
-                        : 'rgba(255, 255, 255, 0.04)',
-                    color: entry.attribution_status === 'tool_boundary' ? '#38bdf8' : 'var(--text-muted)',
+                        ? 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))'
+                        : 'var(--replay-bg-surface-3, #1c2436)',
+                    color: entry.attribution_status === 'tool_boundary' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
+                    border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
                   }}
                 >
                   {entry.attribution_status === 'tool_boundary' ? 'tool step' : 'checkpoint'}
@@ -327,9 +333,10 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                     style={{
                       fontSize: '9px',
                       padding: '0 4px',
-                      borderRadius: '2px',
-                      backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                      color: '#fbbf24',
+                      borderRadius: 'var(--replay-radius-control, 7px)',
+                      backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+                      color: 'var(--replay-status-warning, #946c32)',
+                      border: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                     }}
                     title={entry.gap_reason || 'Incomplete recording data'}
                   >
@@ -341,7 +348,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
               {/* Changes & Tests summaries */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px', marginTop: '2px' }}>
                 {entry.changed_files.length > 0 && (
-                  <span style={{ color: 'var(--text-muted)' }}>
+                  <span style={{ color: 'var(--replay-text-muted, #8b97ad)' }}>
                     {entry.changed_files.length} file{entry.changed_files.length !== 1 ? 's' : ''}
                   </span>
                 )}
@@ -352,7 +359,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '3px',
-                      color: '#f87171',
+                      color: 'var(--replay-status-danger, #9c4444)',
                       fontWeight: 600,
                     }}
                   >
@@ -367,7 +374,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '3px',
-                      color: '#4ade80',
+                      color: 'var(--replay-status-complete, #4a7bb0)',
                       fontWeight: 600,
                     }}
                   >

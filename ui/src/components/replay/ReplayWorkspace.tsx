@@ -118,8 +118,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         flexDirection: 'column',
         height: '100%',
         width: '100%',
-        backgroundColor: '#0e1015',
-        color: '#f8fafc',
+        backgroundColor: 'var(--replay-bg-canvas, #07090e)',
+        color: 'var(--replay-text-primary, #e6edf8)',
         fontFamily: 'var(--font-sans, -apple-system, sans-serif)',
         overflow: 'hidden',
       }}
@@ -132,8 +132,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '8px 16px',
-          borderBottom: '1px solid #232730',
-          backgroundColor: '#14171f',
+          borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+          backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
           flexWrap: 'wrap',
           gap: '12px',
           flexShrink: 0,
@@ -152,11 +152,13 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 alignItems: 'center',
                 padding: '4px 8px',
                 fontSize: '12px',
-                borderRadius: '4px',
-                border: '1px solid #232730',
-                backgroundColor: currentIndex <= 0 ? 'transparent' : 'rgba(255, 255, 255, 0.04)',
+                borderRadius: 'var(--replay-radius-control, 7px)',
+                border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                backgroundColor: currentIndex <= 0 ? 'transparent' : 'var(--replay-bg-surface-2, #141a26)',
+                color: 'var(--replay-text-primary, #e6edf8)',
                 cursor: currentIndex <= 0 ? 'not-allowed' : 'pointer',
-                opacity: currentIndex <= 0 ? 0.4 : 1,
+                opacity: currentIndex <= 0 ? 0.35 : 1,
+                transition: 'background-color var(--replay-transition-quick, 160ms ease)',
               }}
               title="Previous checkpoint (Left arrow or j)"
               aria-label="Previous checkpoint"
@@ -170,12 +172,12 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               style={{
                 fontFamily: 'var(--font-mono, monospace)',
                 fontSize: '12px',
-                fontWeight: 700,
+                fontWeight: 600,
                 padding: '4px 8px',
-                color: '#38bdf8',
-                backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                border: '1px solid rgba(56, 189, 248, 0.25)',
-                borderRadius: '4px',
+                color: 'var(--replay-accent, #4a7bb0)',
+                backgroundColor: 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))',
+                border: '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))',
+                borderRadius: 'var(--replay-radius-control, 7px)',
               }}
               data-testid="replay-current-seq-badge"
             >
@@ -191,11 +193,13 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 alignItems: 'center',
                 padding: '4px 8px',
                 fontSize: '12px',
-                borderRadius: '4px',
-                border: '1px solid #232730',
-                backgroundColor: currentIndex >= timeline.length - 1 ? 'transparent' : 'rgba(255, 255, 255, 0.04)',
+                borderRadius: 'var(--replay-radius-control, 7px)',
+                border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                backgroundColor: currentIndex >= timeline.length - 1 ? 'transparent' : 'var(--replay-bg-surface-2, #141a26)',
+                color: 'var(--replay-text-primary, #e6edf8)',
                 cursor: currentIndex >= timeline.length - 1 ? 'not-allowed' : 'pointer',
-                opacity: currentIndex >= timeline.length - 1 ? 0.4 : 1,
+                opacity: currentIndex >= timeline.length - 1 ? 0.35 : 1,
+                transition: 'background-color var(--replay-transition-quick, 160ms ease)',
               }}
               title="Next checkpoint (Right arrow or k)"
               aria-label="Next checkpoint"
@@ -207,18 +211,19 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </div>
 
           {currentEntry && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
-              <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--replay-text-muted, #8b97ad)' }}>
+              <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--replay-text-faint, #4d576a)' }}>
                 record:{currentEntry.record_id}
               </span>
               {currentEntry.tool_name && (
                 <span
                   style={{
                     fontFamily: 'var(--font-mono, monospace)',
-                    color: '#e2e8f0',
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    color: 'var(--replay-text-primary, #e6edf8)',
+                    backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                    border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
                     padding: '1px 6px',
-                    borderRadius: '3px',
+                    borderRadius: 'var(--replay-radius-control, 7px)',
                   }}
                 >
                   tool: {currentEntry.tool_name}
@@ -237,10 +242,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               fontFamily: 'var(--font-mono, monospace)',
               fontWeight: 600,
               padding: '2px 7px',
-              borderRadius: '3px',
-              backgroundColor: origin === 'real_recording' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: origin === 'real_recording' ? '#38bdf8' : '#e2e8f0',
+              borderRadius: 'var(--replay-radius-control, 7px)',
+              backgroundColor: origin === 'real_recording' ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))' : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
+              border: origin === 'real_recording' ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))' : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
+              color: origin === 'real_recording' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
             }}
             data-testid="replay-header-origin"
           >
@@ -257,10 +262,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               fontSize: '10px',
               fontFamily: 'var(--font-mono, monospace)',
               padding: '2px 7px',
-              borderRadius: '3px',
-              backgroundColor: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              color: '#94a3b8',
+              borderRadius: 'var(--replay-radius-control, 7px)',
+              backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+              border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+              color: 'var(--replay-text-muted, #8b97ad)',
             }}
             data-testid="replay-historical-status"
           >
@@ -273,10 +278,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               fontSize: '10px',
               fontFamily: 'var(--font-mono, monospace)',
               padding: '2px 7px',
-              borderRadius: '3px',
-              backgroundColor: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              color: '#cbd5e1',
+              borderRadius: 'var(--replay-radius-control, 7px)',
+              backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+              border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+              color: 'var(--replay-text-muted, #8b97ad)',
             }}
             data-testid="replay-granularity-badge"
           >
@@ -291,10 +296,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 fontFamily: 'var(--font-mono, monospace)',
                 fontWeight: 600,
                 padding: '2px 7px',
-                borderRadius: '3px',
-                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                color: '#fbbf24',
+                borderRadius: 'var(--replay-radius-control, 7px)',
+                backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+                border: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
+                color: 'var(--replay-status-warning, #946c32)',
               }}
               title={completenessInfo.gaps.join('\n')}
               data-testid="replay-completeness-badge"
@@ -309,7 +314,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               style={{
                 fontSize: '10px',
                 fontFamily: 'var(--font-mono, monospace)',
-                color: '#94a3b8',
+                color: 'var(--replay-text-faint, #4d576a)',
                 padding: '2px 6px',
               }}
               data-testid="replay-agent-version"
@@ -329,10 +334,12 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 gap: '5px',
                 fontSize: '11px',
                 padding: '3px 8px',
-                color: 'var(--text-secondary)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '4px',
+                color: 'var(--replay-text-muted, #8b97ad)',
+                border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                borderRadius: 'var(--replay-radius-control, 7px)',
+                backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
                 cursor: 'pointer',
+                transition: 'background-color var(--replay-transition-quick, 160ms ease)',
               }}
               title="Open full AST project map (optional)"
               aria-label="Open project map"

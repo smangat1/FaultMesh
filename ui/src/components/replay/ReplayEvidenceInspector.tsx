@@ -50,12 +50,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: '#13151b',
-        borderLeft: '1px solid #232730',
+        backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
+        borderLeft: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
         width: '360px',
         flexShrink: 0,
         overflow: 'hidden',
-        color: '#f8fafc',
+        color: 'var(--replay-text-primary, #e6edf8)',
       }}
       data-testid="replay-evidence-inspector-pane"
     >
@@ -63,8 +63,8 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
       <div
         style={{
           display: 'flex',
-          backgroundColor: '#161920',
-          borderBottom: '1px solid #232730',
+          backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+          borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
           padding: '4px',
           gap: '2px',
           flexShrink: 0,
@@ -78,11 +78,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               padding: '6px 4px',
               fontSize: '11px',
               fontWeight: activeTab === 'claims' ? 600 : 400,
-              backgroundColor: activeTab === 'claims' ? '#232730' : 'transparent',
-              color: activeTab === 'claims' ? '#f8fafc' : 'var(--text-muted)',
+              backgroundColor: activeTab === 'claims' ? 'var(--replay-bg-surface-3, #1c2436)' : 'transparent',
+              color: activeTab === 'claims' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
               border: 'none',
-              borderRadius: '3px',
+              borderRadius: 'var(--replay-radius-control, 7px)',
               cursor: 'pointer',
+              transition: 'background-color var(--replay-transition-quick, 160ms ease)',
             }}
             aria-label="View checked claims and inference"
             data-testid="replay-tab-claims"
@@ -98,11 +99,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
             padding: '6px 4px',
             fontSize: '11px',
             fontWeight: activeTab === 'tests' ? 600 : 400,
-            backgroundColor: activeTab === 'tests' ? '#232730' : 'transparent',
-            color: activeTab === 'tests' ? '#f8fafc' : 'var(--text-muted)',
+            backgroundColor: activeTab === 'tests' ? 'var(--replay-bg-surface-3, #1c2436)' : 'transparent',
+            color: activeTab === 'tests' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
             border: 'none',
-            borderRadius: '3px',
+            borderRadius: 'var(--replay-radius-control, 7px)',
             cursor: 'pointer',
+            transition: 'background-color var(--replay-transition-quick, 160ms ease)',
           }}
           aria-label="View nearby tests"
           data-testid="replay-tab-tests"
@@ -118,11 +120,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               padding: '6px 4px',
               fontSize: '11px',
               fontWeight: activeTab === 'summary' ? 600 : 400,
-              backgroundColor: activeTab === 'summary' ? '#232730' : 'transparent',
-              color: activeTab === 'summary' ? '#f8fafc' : 'var(--text-muted)',
+              backgroundColor: activeTab === 'summary' ? 'var(--replay-bg-surface-3, #1c2436)' : 'transparent',
+              color: activeTab === 'summary' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
               border: 'none',
-              borderRadius: '3px',
+              borderRadius: 'var(--replay-radius-control, 7px)',
               cursor: 'pointer',
+              transition: 'background-color var(--replay-transition-quick, 160ms ease)',
             }}
             aria-label="View summary audit"
             data-testid="replay-tab-summary"
@@ -137,11 +140,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
             padding: '6px 8px',
             fontSize: '11px',
             fontWeight: activeTab === 'limitations' ? 600 : 400,
-            backgroundColor: activeTab === 'limitations' ? '#232730' : 'transparent',
-            color: activeTab === 'limitations' ? '#f8fafc' : 'var(--text-muted)',
+            backgroundColor: activeTab === 'limitations' ? 'var(--replay-bg-surface-3, #1c2436)' : 'transparent',
+            color: activeTab === 'limitations' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
             border: 'none',
-            borderRadius: '3px',
+            borderRadius: 'var(--replay-radius-control, 7px)',
             cursor: 'pointer',
+            transition: 'background-color var(--replay-transition-quick, 160ms ease)',
           }}
           aria-label="View limitations"
           data-testid="replay-tab-limitations"
@@ -169,9 +173,10 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
             {reasonRun && (
               <div
                 style={{
-                  backgroundColor: '#181b22',
-                  border: '1px solid #282d38',
-                  borderRadius: '6px',
+                  backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                  border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
+                  borderRadius: 'var(--replay-radius-card, 10px)',
+                  boxShadow: 'var(--replay-shadow-subtle)',
                   padding: '12px',
                   display: 'flex',
                   flexDirection: 'column',
@@ -185,10 +190,10 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       fontSize: '10px',
                       fontWeight: 600,
                       padding: '2px 6px',
-                      borderRadius: '3px',
-                      backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                      border: '1px solid rgba(168, 85, 247, 0.3)',
-                      color: '#c084fc',
+                      borderRadius: 'var(--replay-radius-control, 7px)',
+                      backgroundColor: 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
+                      border: '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
+                      color: 'var(--replay-text-muted, #8b97ad)',
                     }}
                     data-testid="replay-likely-reason-label"
                   >
@@ -198,7 +203,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                   <span
                     style={{
                       fontSize: '9px',
-                      color: 'var(--text-muted)',
+                      color: 'var(--replay-text-faint, #4d576a)',
                       fontFamily: 'var(--font-mono, monospace)',
                     }}
                   >
@@ -208,14 +213,14 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
 
                 {reasonRun.checked_reason ? (
                   <>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#f8fafc', lineHeight: '1.5' }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--replay-text-primary, #e6edf8)', lineHeight: '1.5' }}>
                       {reasonRun.checked_reason.text}
                     </p>
 
                     {/* Citations */}
                     {reasonRun.checked_reason.citations.length > 0 && (
                       <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                        <span style={{ fontSize: '10px', color: 'var(--replay-text-muted, #8b97ad)', fontWeight: 600 }}>
                           CITATIONS
                         </span>
                         {reasonRun.checked_reason.citations.map((c, idx) => (
@@ -224,13 +229,13 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                             style={{
                               fontSize: '10px',
                               padding: '4px 8px',
-                              borderRadius: '3px',
-                              backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                              border: '1px solid rgba(255, 255, 255, 0.08)',
+                              borderRadius: 'var(--replay-radius-control, 7px)',
+                              backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
+                              border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
-                              <span style={{ fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8' }}>
+                              <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--replay-text-muted, #8b97ad)' }}>
                                 source:{c.citation.source_id} [{c.citation.start}..{c.citation.end}]
                               </span>
                               {(() => {
@@ -239,13 +244,17 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                                   <span
                                     style={{
                                       fontSize: '9px',
-                                      padding: '1px 4px',
-                                      borderRadius: '2px',
+                                      padding: '1px 5px',
+                                      borderRadius: 'var(--replay-radius-control, 7px)',
                                       backgroundColor:
                                         isValidQuote
-                                          ? 'rgba(56, 189, 248, 0.15)'
-                                          : 'rgba(245, 158, 11, 0.15)',
-                                      color: isValidQuote ? '#38bdf8' : '#fbbf24',
+                                          ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
+                                          : 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+                                      color: isValidQuote ? 'var(--replay-status-complete, #4a7bb0)' : 'var(--replay-status-warning, #946c32)',
+                                      border:
+                                        isValidQuote
+                                          ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
+                                          : '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                                     }}
                                     data-testid="replay-citation-integrity-label"
                                   >
@@ -254,7 +263,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                                 );
                               })()}
                             </div>
-                            <div style={{ color: '#cbd5e1', fontStyle: 'italic' }}>
+                            <div style={{ color: 'var(--replay-text-primary, #e6edf8)', fontStyle: 'italic' }}>
                               "{c.citation.quote}"
                             </div>
                           </div>
@@ -265,8 +274,8 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                     <div
                       style={{
                         fontSize: '10px',
-                        color: 'var(--text-muted)',
-                        borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                        color: 'var(--replay-text-faint, #4d576a)',
+                        borderTop: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
                         paddingTop: '6px',
                         display: 'flex',
                         alignItems: 'center',
@@ -280,7 +289,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                     </div>
                   </>
                 ) : (
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--replay-text-muted, #8b97ad)' }}>
                     {reasonRun.error || 'Model did not generate a valid reason proposal.'}
                   </div>
                 )}
@@ -290,14 +299,14 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
             {/* Atomic Checked Claims */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
                   CHECKED CLAIMS ({finalClaims.length})
                 </span>
                 {claimRun && (
                   <span
                     style={{
                       fontSize: '9px',
-                      color: 'var(--text-muted)',
+                      color: 'var(--replay-text-faint, #4d576a)',
                       fontFamily: 'var(--font-mono, monospace)',
                     }}
                   >
@@ -307,7 +316,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               </div>
 
               {(!claimRun || finalClaims.length === 0) && (
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '12px 0' }}>
+                <div style={{ fontSize: '11px', color: 'var(--replay-text-muted, #8b97ad)', padding: '12px 0' }}>
                   No atomic claims recorded for this step.
                 </div>
               )}
@@ -322,9 +331,10 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                   <div
                     key={claim.id}
                     style={{
-                      backgroundColor: '#181b22',
-                      border: '1px solid #282d38',
-                      borderRadius: '5px',
+                      backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                      border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
+                      borderRadius: 'var(--replay-radius-card, 10px)',
+                      boxShadow: 'var(--replay-shadow-subtle)',
                       padding: '8px 10px',
                       display: 'flex',
                       flexDirection: 'column',
@@ -337,7 +347,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       <span
                         style={{
                           fontSize: '12px',
-                          color: isContradicted ? '#94a3b8' : '#f8fafc',
+                          color: isContradicted ? 'var(--replay-text-faint, #4d576a)' : 'var(--replay-text-primary, #e6edf8)',
                           textDecoration: isContradicted ? 'line-through' : 'none',
                           lineHeight: '1.4',
                           flex: 1,
@@ -352,23 +362,23 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                           fontSize: '10px',
                           fontWeight: 600,
                           padding: '2px 6px',
-                          borderRadius: '3px',
+                          borderRadius: 'var(--replay-radius-control, 7px)',
                           flexShrink: 0,
                           backgroundColor: isSupported
-                            ? 'rgba(56, 189, 248, 0.15)'
+                            ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
                             : isContradicted
-                            ? 'rgba(239, 68, 68, 0.15)'
-                            : 'rgba(148, 163, 184, 0.15)',
+                            ? 'var(--replay-status-danger-bg, rgba(156, 68, 68, 0.12))'
+                            : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
                           border: isSupported
-                            ? '1px solid rgba(56, 189, 248, 0.3)'
+                            ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
                             : isContradicted
-                            ? '1px solid rgba(239, 68, 68, 0.3)'
-                            : '1px solid rgba(148, 163, 184, 0.25)',
+                            ? '1px solid var(--replay-status-danger-border, rgba(156, 68, 68, 0.30))'
+                            : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
                           color: isSupported
-                            ? '#38bdf8'
+                            ? 'var(--replay-status-complete, #4a7bb0)'
                             : isContradicted
-                            ? '#f87171'
-                            : '#94a3b8',
+                            ? 'var(--replay-status-danger, #9c4444)'
+                            : 'var(--replay-text-muted, #8b97ad)',
                         }}
                         data-testid={`replay-claim-verdict-${verdict?.verdict || 'unknown'}`}
                       >
@@ -385,7 +395,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       <div
                         style={{
                           fontSize: '10px',
-                          color: isContradicted ? '#fca5a5' : 'var(--text-muted)',
+                          color: isContradicted ? 'var(--replay-status-danger, #9c4444)' : 'var(--replay-text-muted, #8b97ad)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
@@ -400,7 +410,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                           style={{
                             background: 'none',
                             border: 'none',
-                            color: '#38bdf8',
+                            color: 'var(--replay-accent, #4a7bb0)',
                             fontSize: '9px',
                             cursor: 'pointer',
                             display: 'inline-flex',
@@ -420,11 +430,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                         style={{
                           marginTop: '4px',
                           padding: '6px 8px',
-                          backgroundColor: '#111318',
-                          borderRadius: '4px',
+                          backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
+                          border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                          borderRadius: 'var(--replay-radius-control, 7px)',
                           fontSize: '10px',
                           fontFamily: 'var(--font-mono, monospace)',
-                          color: '#cbd5e1',
+                          color: 'var(--replay-text-primary, #e6edf8)',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '4px',
@@ -447,10 +458,10 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
         {activeTab === 'tests' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
                 RECORDED TESTS
               </span>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--replay-text-faint, #4d576a)' }}>
                 {tests.length} observation{tests.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -459,10 +470,11 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               <div
                 style={{
                   fontSize: '11px',
-                  color: 'var(--text-muted)',
+                  color: 'var(--replay-text-muted, #8b97ad)',
                   padding: '16px',
-                  backgroundColor: '#181b22',
-                  borderRadius: '6px',
+                  backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                  border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
+                  borderRadius: 'var(--replay-radius-card, 10px)',
                   textAlign: 'center',
                 }}
                 data-testid="replay-no-tests-label"
@@ -490,9 +502,10 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                   <div
                     key={testItem.id}
                     style={{
-                      backgroundColor: '#181b22',
-                      border: '1px solid #282d38',
-                      borderRadius: '6px',
+                      backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                      border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
+                      borderRadius: 'var(--replay-radius-card, 10px)',
+                      boxShadow: 'var(--replay-shadow-subtle)',
                       padding: '10px 12px',
                       display: 'flex',
                       flexDirection: 'column',
@@ -501,26 +514,26 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                     data-testid={`replay-test-card-${testItem.id}`}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#f8fafc' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--replay-text-primary, #e6edf8)' }}>
                         {testItem.suite_scope}
                       </span>
                       <span
                         style={{
                           fontSize: '10px',
-                          fontWeight: 700,
+                          fontWeight: 600,
                           padding: '2px 6px',
-                          borderRadius: '3px',
+                          borderRadius: 'var(--replay-radius-control, 7px)',
                           backgroundColor: isFail
-                            ? 'rgba(239, 68, 68, 0.15)'
+                            ? 'var(--replay-status-danger-bg, rgba(156, 68, 68, 0.12))'
                             : isPass
-                            ? 'rgba(34, 197, 94, 0.15)'
-                            : 'rgba(148, 163, 184, 0.15)',
+                            ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
+                            : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
                           border: isFail
-                            ? '1px solid rgba(239, 68, 68, 0.3)'
+                            ? '1px solid var(--replay-status-danger-border, rgba(156, 68, 68, 0.30))'
                             : isPass
-                            ? '1px solid rgba(34, 197, 94, 0.3)'
-                            : '1px solid rgba(148, 163, 184, 0.25)',
-                          color: isFail ? '#f87171' : isPass ? '#4ade80' : '#94a3b8',
+                            ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
+                            : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
+                          color: isFail ? 'var(--replay-status-danger, #9c4444)' : isPass ? 'var(--replay-status-complete, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
                         }}
                         data-testid="replay-test-state-badge"
                       >
@@ -534,10 +547,10 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                         style={{
                           fontSize: '10px',
                           padding: '1px 6px',
-                          borderRadius: '3px',
-                          backgroundColor: isMatched ? 'rgba(56, 189, 248, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                          color: isMatched ? '#38bdf8' : '#fbbf24',
-                          border: isMatched ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid rgba(245, 158, 11, 0.25)',
+                          borderRadius: 'var(--replay-radius-control, 7px)',
+                          backgroundColor: isMatched ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))' : 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+                          color: isMatched ? 'var(--replay-status-complete, #4a7bb0)' : 'var(--replay-status-warning, #946c32)',
+                          border: isMatched ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))' : '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                         }}
                         data-testid="replay-state-match-badge"
                       >
@@ -555,14 +568,15 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                           fontSize: '10px',
                           fontFamily: 'var(--font-mono, monospace)',
                           padding: '4px 8px',
-                          backgroundColor: '#111318',
-                          borderRadius: '4px',
+                          backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
+                          border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                          borderRadius: 'var(--replay-radius-control, 7px)',
                         }}
                       >
-                        <span style={{ color: '#4ade80' }}>passed: {testItem.counts.passed ?? 0}</span>
-                        <span style={{ color: '#f87171' }}>failed: {testItem.counts.failed ?? 0}</span>
-                        <span style={{ color: '#fbbf24' }}>errors: {testItem.counts.errors ?? 0}</span>
-                        <span style={{ color: '#94a3b8' }}>skipped: {testItem.counts.skipped ?? 0}</span>
+                        <span style={{ color: 'var(--replay-status-complete, #4a7bb0)' }}>passed: {testItem.counts.passed ?? 0}</span>
+                        <span style={{ color: 'var(--replay-status-danger, #9c4444)' }}>failed: {testItem.counts.failed ?? 0}</span>
+                        <span style={{ color: 'var(--replay-status-warning, #946c32)' }}>errors: {testItem.counts.errors ?? 0}</span>
+                        <span style={{ color: 'var(--replay-text-faint, #4d576a)' }}>skipped: {testItem.counts.skipped ?? 0}</span>
                       </div>
                     )}
 
@@ -576,16 +590,17 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                               fontSize: '10px',
                               fontFamily: 'var(--font-mono, monospace)',
                               padding: '4px 6px',
-                              backgroundColor: '#111318',
-                              borderRadius: '3px',
+                              backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
+                              border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                              borderRadius: 'var(--replay-radius-control, 7px)',
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: ind.state === 'fail' ? '#f87171' : '#4ade80' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: ind.state === 'fail' ? 'var(--replay-status-danger, #9c4444)' : 'var(--replay-status-complete, #4a7bb0)' }}>
                               <span>{ind.node_id}</span>
                               <span>{ind.state}</span>
                             </div>
                             {ind.error_text && (
-                              <div style={{ marginTop: '2px', color: '#fca5a5', whiteSpace: 'pre-wrap' }}>
+                              <div style={{ marginTop: '2px', color: 'var(--replay-status-danger, #9c4444)', whiteSpace: 'pre-wrap' }}>
                                 {ind.error_text}
                               </div>
                             )}
@@ -594,7 +609,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       </div>
                     )}
 
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    <div style={{ fontSize: '9px', color: 'var(--replay-text-faint, #4d576a)', fontStyle: 'italic' }}>
                       Pass/fail is chronological; not verified to be caused or fixed by this edit.
                     </div>
                   </div>
@@ -607,28 +622,29 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
         {/* Tab 3: Summary Audit */}
         {activeTab === 'summary' && summaryAudit && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} data-testid="replay-summary-audit-pane">
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
               SUMMARY AUDIT
             </span>
 
             <div
               style={{
                 padding: '10px',
-                backgroundColor: '#181b22',
-                borderRadius: '5px',
-                border: '1px solid #282d38',
+                backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                borderRadius: 'var(--replay-radius-card, 10px)',
+                border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
+                boxShadow: 'var(--replay-shadow-subtle)',
                 fontSize: '12px',
                 lineHeight: '1.5',
               }}
             >
-              <div style={{ fontWeight: 600, marginBottom: '6px', color: 'var(--text-secondary)', fontSize: '10px' }}>
+              <div style={{ fontWeight: 600, marginBottom: '6px', color: 'var(--replay-text-muted, #8b97ad)', fontSize: '10px' }}>
                 ORIGINAL AGENT SUMMARY
               </div>
-              <p style={{ margin: 0, color: '#f8fafc' }}>{summaryAudit.summary_text}</p>
+              <p style={{ margin: 0, color: 'var(--replay-text-primary, #e6edf8)' }}>{summaryAudit.summary_text}</p>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)' }}>
+              <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
                 AUDITED STATEMENTS ({summaryAudit.statements.length})
               </span>
 
@@ -655,9 +671,10 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                     key={idx}
                     style={{
                       padding: '8px 10px',
-                      backgroundColor: '#181b22',
-                      border: '1px solid #282d38',
-                      borderRadius: '4px',
+                      backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                      border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
+                      borderRadius: 'var(--replay-radius-card, 10px)',
+                      boxShadow: 'var(--replay-shadow-subtle)',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '4px',
@@ -668,7 +685,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       <span
                         style={{
                           fontSize: '11px',
-                          color: isContradicted ? '#94a3b8' : '#f8fafc',
+                          color: isContradicted ? 'var(--replay-text-faint, #4d576a)' : 'var(--replay-text-primary, #e6edf8)',
                           textDecoration: isContradicted ? 'line-through' : 'none',
                           flex: 1,
                         }}
@@ -681,17 +698,22 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                           fontSize: '9px',
                           fontWeight: 600,
                           padding: '1px 5px',
-                          borderRadius: '2px',
+                          borderRadius: 'var(--replay-radius-control, 7px)',
                           backgroundColor: isSupported
-                            ? 'rgba(56, 189, 248, 0.15)'
+                            ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
                             : isContradicted
-                            ? 'rgba(239, 68, 68, 0.15)'
-                            : 'rgba(148, 163, 184, 0.15)',
+                            ? 'var(--replay-status-danger-bg, rgba(156, 68, 68, 0.12))'
+                            : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
+                          border: isSupported
+                            ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
+                            : isContradicted
+                            ? '1px solid var(--replay-status-danger-border, rgba(156, 68, 68, 0.30))'
+                            : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
                           color: isSupported
-                            ? '#38bdf8'
+                            ? 'var(--replay-status-complete, #4a7bb0)'
                             : isContradicted
-                            ? '#f87171'
-                            : '#94a3b8',
+                            ? 'var(--replay-status-danger, #9c4444)'
+                            : 'var(--replay-text-muted, #8b97ad)',
                         }}
                         data-testid={`replay-summary-statement-badge-${s.display_status}`}
                       >
@@ -699,7 +721,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '9px', color: 'var(--replay-text-faint, #4d576a)' }}>
                       Predicate: {s.statement.claim.assertion.predicate} • Atomic boundary: {s.atomic_boundary_valid ? 'valid' : 'invalid'}
                     </div>
                   </div>
@@ -713,29 +735,29 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
         {activeTab === 'limitations' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
                 EVALUATION GATE STATUS
               </span>
               <div
                 style={{
                   padding: '10px 12px',
-                  borderRadius: '5px',
-                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                  borderRadius: 'var(--replay-radius-card, 10px)',
+                  backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+                  border: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                   fontSize: '11px',
-                  color: '#fbbf24',
+                  color: 'var(--replay-status-warning, #946c32)',
                 }}
                 data-testid="replay-eval-status-box"
               >
                 <strong>Evaluation status:</strong> evaluation pending
-                <div style={{ marginTop: '4px', fontSize: '10px', color: '#fde68a' }}>
+                <div style={{ marginTop: '4px', fontSize: '10px', color: 'var(--replay-text-muted, #8b97ad)' }}>
                   Gates are evaluated against frozen evaluation assets. No hardcoded success or fit claims.
                 </div>
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
                 RECORDING LIMITATIONS ({limitations.length})
               </span>
               {limitations.map((lim, idx) => (
@@ -743,11 +765,11 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                   key={idx}
                   style={{
                     padding: '6px 10px',
-                    borderRadius: '4px',
-                    backgroundColor: '#181b22',
-                    border: '1px solid #282d38',
+                    borderRadius: 'var(--replay-radius-control, 7px)',
+                    backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+                    border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
                     fontSize: '11px',
-                    color: 'var(--text-muted)',
+                    color: 'var(--replay-text-muted, #8b97ad)',
                     lineHeight: '1.4',
                   }}
                 >
