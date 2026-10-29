@@ -10,6 +10,7 @@ const CHANNELS = Object.freeze({
   choose: 'faultmesh:spectate:choose-project',
   start: 'faultmesh:spectate:start',
   stop: 'faultmesh:spectate:stop',
+  openRecording: 'faultmesh:spectate:open-recording',
   event: 'faultmesh:spectate:event',
 });
 
@@ -381,6 +382,31 @@ function attachSpectateBridge({
     return { watching: false };
   });
 
+  ipcMain.handle(CHANNELS.openRecording, async (event, ...args) => {
+    assertTrusted(event, args);
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Open FaultMesh Recording Export',
+      filters: [
+        { name: 'FaultMesh Recording JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile', 'dontAddToRecent'],
+    });
+    if (result.canceled || result.filePaths.length !== 1) return null;
+    const chosen = result.filePaths[0];
+    const chosenStat = fs.lstatSync(chosen);
+    if (!chosenStat.isFile()) throw new Error('selected recording must be a file');
+    if (chosenStat.size > 64 * 1024 * 1024) {
+      throw new Error('recording file exceeds 64 MB size limit');
+    }
+    const text = fs.readFileSync(chosen, 'utf-8');
+    return {
+      name: path.basename(chosen),
+      size: chosenStat.size,
+      text,
+    };
+  });
+
   return {
     channels: CHANNELS,
     dispose(reason = 'bridge_disposed', immediate = true) {
@@ -390,6 +416,7 @@ function attachSpectateBridge({
       ipcMain.removeHandler(CHANNELS.choose);
       ipcMain.removeHandler(CHANNELS.start);
       ipcMain.removeHandler(CHANNELS.stop);
+      ipcMain.removeHandler(CHANNELS.openRecording);
       disposed = true;
     },
   };

@@ -11,7 +11,7 @@ import {
   FileText,
   FileDiff,
 } from 'lucide-react';
-import { formatDurationMs } from '../utils/format';
+import { formatDurationMs, formatDuration } from '../utils/format';
 
 export type WorkspaceActiveView = 'map' | 'diagnostics' | 'replay' | 'files' | 'changes';
 
@@ -169,13 +169,17 @@ export const Header: React.FC<HeaderProps> = ({
               title={onBackToSelector ? 'Click to change project or run' : undefined}
             >
               <span style={{ fontWeight: 600 }}>{activeRun.project}</span>
-              <span style={{ color: 'var(--text-muted)' }}>/</span>
-              <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <GitBranch size={11} />
-                {activeRun.gitBranch}
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>@</span>
-              <span style={{ color: 'var(--text-muted)' }}>{activeRun.gitRevision.slice(0, 7)}</span>
+              {!activeRun.isReplay && (
+                <>
+                  <span style={{ color: 'var(--text-muted)' }}>/</span>
+                  <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <GitBranch size={11} />
+                    {activeRun.gitBranch}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>@</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{activeRun.gitRevision.slice(0, 7)}</span>
+                </>
+              )}
             </div>
           )}
 
@@ -211,8 +215,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Sample Data / Fixture Badge */}
-          {activeRun?.isFixture && !activeRun.isLive && (
+          {/* Sample Data / Fixture Badge (hidden in replay to avoid duplicate badge row) */}
+          {activeRun?.isFixture && !activeRun.isLive && !activeRun.isReplay && (
             <span
               className="badge-status sample"
               title={activeRun.fixtureLabel || 'Read-only fixture data: synthetic sample artifacts'}
@@ -235,8 +239,25 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
+          {/* Replay Duration (calm header) */}
+          {activeRun?.isReplay && activeRun.durationMs > 0 && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-muted)',
+                padding: '2px 6px',
+                whiteSpace: 'nowrap',
+              }}
+              title="Recorded session duration"
+              data-testid="replay-duration-badge"
+            >
+              {formatDuration(activeRun.durationMs)}
+            </span>
+          )}
+
           {/* Persistent Compact Imported Label */}
-          {activeRun?.isRealImport && !activeRun.isLive && (
+          {activeRun?.isRealImport && !activeRun.isReplay && !activeRun.isLive && (
             <span
               style={{
                 display: 'inline-flex',
@@ -289,8 +310,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Outcome Summary Pill: Derived explicitly from RunOutcome - hidden in live watch */}
-          {activeRun && !activeRun.isLive && (() => {
+          {/* Outcome Summary Pill: Derived explicitly from RunOutcome - hidden in live watch and replay */}
+          {activeRun && !activeRun.isLive && !activeRun.isReplay && (() => {
             const outcome = activeRun.runOutcome || (activeRun.harnessStatus as any);
             const isStructureOnly = activeRun.isRealImport && (activeRun.v2RunCount === 0 || !outcome);
 
@@ -589,7 +610,7 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
-              {(activeRun?.replayProvenance || runs.some((r) => r.replayProvenance)) && (
+              {(activeRun?.isReplay || activeRun?.replayProvenance || runs.some((r) => r.replayProvenance)) && (
                 <button
                   onClick={() => onSelectView('replay')}
                   className={activeView === 'replay' ? 'btn-secondary' : 'btn-ghost'}
@@ -602,7 +623,7 @@ export const Header: React.FC<HeaderProps> = ({
                   aria-current={activeView === 'replay' ? 'page' : undefined}
                 >
                   <RotateCcw size={12} />
-                  Replay Comparison
+                  {activeRun?.isReplay ? 'Replay' : 'Replay Comparison'}
                 </button>
               )}
             </nav>

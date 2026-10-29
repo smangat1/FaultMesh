@@ -202,6 +202,11 @@ export interface RunSummary {
   harnessError?: string | null;
   isLive?: boolean;
   liveStatus?: 'idle' | 'live' | 'stopped' | 'error';
+  isReplay?: boolean;
+  replayOrigin?: 'real_recording' | 'synthetic_fixture' | 'simulated_demo';
+  codexVersion?: string;
+  granularity?: string;
+  replaySessionStatus?: string;
 }
 
 export interface TestEvidence {

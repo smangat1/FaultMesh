@@ -4,4 +4,5 @@ export { HttpAdapter } from './httpAdapter';
 export { ImportedAdapter } from './importedAdapter';
 export { LiveSpectateAdapter } from '../spectate/liveState';
 export { EmptyAdapter } from './emptyAdapter';
+export { ReplayAdapter } from './replayAdapter';
 

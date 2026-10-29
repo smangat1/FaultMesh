@@ -1,0 +1,1019 @@
+{
+  "schema_version": "replay-export-2.0",
+  "exported_at": "2026-10-28T23:34:43.559132Z",
+  "session": {
+    "schema_version": "replay-store-1.0",
+    "id": "synthetic-session-v2",
+    "created_at": "2026-10-28T23:34:43.546478Z",
+    "stopped_at": "2026-10-28T23:34:43.560072Z",
+    "status": "stopped",
+    "project_root_sha256": "da7d544314807a81e0b4b9f437182edd93e58fb1b00f0c69bccfe5e336ed415d",
+    "codex_version": "codex-cli 0.165.0-alpha.1.2",
+    "raw_logging": false,
+    "limits": {
+      "max_files": 2000,
+      "max_file_bytes": 524288,
+      "max_snapshot_bytes": 33554432,
+      "max_store_bytes": 536870912,
+      "max_text_field_bytes": 65536
+    }
+  },
+  "records": [
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "record-cffe95404af9499b806793e841496f18",
+      "session_id": "synthetic-session-v2",
+      "sequence": 1,
+      "source_identity": "session:replay-4e1c310973ff44ec:initial",
+      "source_offset": 0,
+      "source_sequence": null,
+      "record_type": "initial_snapshot",
+      "captured_at": "2026-10-28T23:34:43.547425Z",
+      "source_timestamp": null,
+      "provenance": "selected_root_snapshot",
+      "completeness": "complete",
+      "attribution_status": "not_applicable",
+      "turn_id": null,
+      "tool_use_id": null,
+      "tool_name": null,
+      "checkpoint_id": "manifest:b9f10b6bb1024b52b577384f29b61726aec8b6f9d5f0b87994804e3dac868245",
+      "manifest_id": "manifest:b9f10b6bb1024b52b577384f29b61726aec8b6f9d5f0b87994804e3dac868245",
+      "before_manifest_id": null,
+      "after_manifest_id": "manifest:b9f10b6bb1024b52b577384f29b61726aec8b6f9d5f0b87994804e3dac868245",
+      "partial": false,
+      "truncated": false,
+      "redaction_applied": false,
+      "tool_input": null,
+      "tool_response": null,
+      "gap_reason": null,
+      "test_refs": []
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "record-a1e6ba97c1624de4bd9cfab19bf5407a",
+      "session_id": "synthetic-session-v2",
+      "sequence": 2,
+      "source_identity": "hook:PreToolUse:tool-init",
+      "source_offset": 0,
+      "source_sequence": null,
+      "record_type": "unsupported",
+      "captured_at": "2026-10-28T23:34:43.548850Z",
+      "source_timestamp": null,
+      "provenance": "codex_hook",
+      "completeness": "unsupported",
+      "attribution_status": "unknown",
+      "turn_id": null,
+      "tool_use_id": null,
+      "tool_name": null,
+      "checkpoint_id": null,
+      "manifest_id": null,
+      "before_manifest_id": null,
+      "after_manifest_id": null,
+      "partial": true,
+      "truncated": false,
+      "redaction_applied": false,
+      "tool_input": null,
+      "tool_response": null,
+      "gap_reason": "unsupported_hook_or_tool:PreToolUse:initial_setup",
+      "test_refs": []
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "record-a47e032cf41e9bae344554162f80bf40bbf6e4264ecedb0b1b89b044fa5a83c3",
+      "session_id": "synthetic-session-v2",
+      "sequence": 3,
+      "source_identity": "hook:PreToolUse:tool-patch-1",
+      "source_offset": 0,
+      "source_sequence": null,
+      "record_type": "pre_tool",
+      "captured_at": "2026-10-28T23:34:43.551850Z",
+      "source_timestamp": null,
+      "provenance": "codex_hook",
+      "completeness": "complete",
+      "attribution_status": "unknown",
+      "turn_id": "turn-1",
+      "tool_use_id": "tool-patch-1",
+      "tool_name": "apply_patch",
+      "checkpoint_id": "manifest:8f20237e8df4407cd951de726f65bc421333ce82604e0735e2ef6a4b456d0b53",
+      "manifest_id": "manifest:8f20237e8df4407cd951de726f65bc421333ce82604e0735e2ef6a4b456d0b53",
+      "before_manifest_id": "manifest:8f20237e8df4407cd951de726f65bc421333ce82604e0735e2ef6a4b456d0b53",
+      "after_manifest_id": null,
+      "partial": false,
+      "truncated": false,
+      "redaction_applied": false,
+      "tool_input": {
+        "path": "calc.py",
+        "prompt": "Handle negative inputs in calculate function"
+      },
+      "tool_response": null,
+      "gap_reason": null,
+      "test_refs": []
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+      "session_id": "synthetic-session-v2",
+      "sequence": 4,
+      "source_identity": "hook:PostToolUse:tool-patch-1",
+      "source_offset": 0,
+      "source_sequence": null,
+      "record_type": "post_tool",
+      "captured_at": "2026-10-28T23:34:43.555018Z",
+      "source_timestamp": null,
+      "provenance": "codex_hook",
+      "completeness": "complete",
+      "attribution_status": "tool_boundary",
+      "turn_id": "turn-1",
+      "tool_use_id": "tool-patch-1",
+      "tool_name": "apply_patch",
+      "checkpoint_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "before_manifest_id": "manifest:8f20237e8df4407cd951de726f65bc421333ce82604e0735e2ef6a4b456d0b53",
+      "after_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "partial": false,
+      "truncated": false,
+      "redaction_applied": false,
+      "tool_input": {
+        "path": "calc.py",
+        "prompt": "Handle negative inputs in calculate function"
+      },
+      "tool_response": {
+        "status": "applied",
+        "explanation": "Added guard against negative numbers to prevent invalid calculation"
+      },
+      "gap_reason": null,
+      "test_refs": []
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "record-8598e873f5aad46631ce9e18192f9e2f6ab6de5d9ae64bb37f65c7f841643d62",
+      "session_id": "synthetic-session-v2",
+      "sequence": 5,
+      "source_identity": "hook:PreToolUse:tool-pytest-1",
+      "source_offset": 0,
+      "source_sequence": null,
+      "record_type": "pre_tool",
+      "captured_at": "2026-10-28T23:34:43.556711Z",
+      "source_timestamp": null,
+      "provenance": "codex_hook",
+      "completeness": "complete",
+      "attribution_status": "unknown",
+      "turn_id": "turn-1",
+      "tool_use_id": "tool-pytest-1",
+      "tool_name": "Bash",
+      "checkpoint_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "before_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "after_manifest_id": null,
+      "partial": false,
+      "truncated": false,
+      "redaction_applied": false,
+      "tool_input": {
+        "command": "pytest"
+      },
+      "tool_response": null,
+      "gap_reason": null,
+      "test_refs": []
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455",
+      "session_id": "synthetic-session-v2",
+      "sequence": 6,
+      "source_identity": "hook:PostToolUse:tool-pytest-1",
+      "source_offset": 0,
+      "source_sequence": null,
+      "record_type": "post_tool",
+      "captured_at": "2026-10-28T23:34:43.559132Z",
+      "source_timestamp": null,
+      "provenance": "codex_hook",
+      "completeness": "complete",
+      "attribution_status": "tool_boundary",
+      "turn_id": "turn-1",
+      "tool_use_id": "tool-pytest-1",
+      "tool_name": "Bash",
+      "checkpoint_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "before_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "after_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "partial": false,
+      "truncated": false,
+      "redaction_applied": false,
+      "tool_input": {
+        "command": "pytest"
+      },
+      "tool_response": {
+        "exit_code": 0,
+        "output": "3 passed in 0.05s"
+      },
+      "gap_reason": null,
+      "test_refs": []
+    }
+  ],
+  "manifests": [
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "manifest:8f20237e8df4407cd951de726f65bc421333ce82604e0735e2ef6a4b456d0b53",
+      "files": [
+        {
+          "path": "calc.py",
+          "content_sha256": "27014717106d8de0d379644637a0f0d90174536c07b5a93a566bdcfa784dc6cb",
+          "size": 62,
+          "mtime_ns": 1793230483548794018,
+          "parse_ok": true,
+          "parse_error": null
+        }
+      ],
+      "skipped": [],
+      "partial": false
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "manifest:b9f10b6bb1024b52b577384f29b61726aec8b6f9d5f0b87994804e3dac868245",
+      "files": [],
+      "skipped": [],
+      "partial": false
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "files": [
+        {
+          "path": "calc.py",
+          "content_sha256": "d9e2fc55ae012429b652b4463fc909d5ce09fab8fe990d8ce2663ca18b0a0f98",
+          "size": 141,
+          "mtime_ns": 1793230483553662036,
+          "parse_ok": true,
+          "parse_error": null
+        }
+      ],
+      "skipped": [],
+      "partial": false
+    }
+  ],
+  "content_base64_by_sha256": {
+    "27014717106d8de0d379644637a0f0d90174536c07b5a93a566bdcfa784dc6cb": "ZGVmIGNhbGN1bGF0ZSh4OiBpbnQpIC0+IGludDoKICAgICMgSW5pdGlhbCBzdHViCiAgICByZXR1cm4gMAo=",
+    "d9e2fc55ae012429b652b4463fc909d5ce09fab8fe990d8ce2663ca18b0a0f98": "ZGVmIGNhbGN1bGF0ZSh4OiBpbnQpIC0+IGludDoKICAgICMgQ29ycmVjdGVkIGNvbXB1dGF0aW9uCiAgICBpZiB4IDwgMDoKICAgICAgICByYWlzZSBWYWx1ZUVycm9yKCd4IG11c3QgYmUgcG9zaXRpdmUnKQogICAgcmV0dXJuIHggKiAyICsgNDIK"
+  },
+  "tests": [
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "test-evidence-failed",
+      "session_id": "replay-4e1c310973ff44ec",
+      "observed_at": "2026-10-28T12:05:00Z",
+      "state": "fail",
+      "suite_scope": "tests/test_calc.py",
+      "source": "structured_fixture",
+      "command_record_id": "record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+      "command_exit_code": 1,
+      "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "association": "content_identity",
+      "counts": {
+        "passed": 3,
+        "failed": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tests": [
+        {
+          "node_id": "tests/test_calc.py::test_negative_input_raises",
+          "state": "fail"
+        }
+      ],
+      "output_missing": false,
+      "partial": false
+    },
+    {
+      "schema_version": "replay-store-1.0",
+      "id": "test-evidence-pass-controlled",
+      "session_id": "replay-4e1c310973ff44ec",
+      "observed_at": "2026-10-28T12:05:30Z",
+      "state": "pass",
+      "suite_scope": "tests/test_calc.py::test_basic",
+      "source": "structured_fixture",
+      "command_record_id": "record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455",
+      "command_exit_code": 0,
+      "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "association": "controlled_no_write",
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "tests": [
+        {
+          "node_id": "tests/test_calc.py::test_basic",
+          "state": "pass"
+        }
+      ],
+      "output_missing": false,
+      "partial": false
+    }
+  ],
+  "timeline": [
+    {
+      "sequence": 1,
+      "record_id": "record-cffe95404af9499b806793e841496f18",
+      "record_type": "initial_snapshot",
+      "captured_at": "2026-10-28T23:34:43.547425Z",
+      "completeness": "complete",
+      "attribution_status": "not_applicable",
+      "tool_name": null,
+      "tool_use_id": null,
+      "before_manifest_id": null,
+      "after_manifest_id": "manifest:b9f10b6bb1024b52b577384f29b61726aec8b6f9d5f0b87994804e3dac868245",
+      "changed_files": [],
+      "changed_symbols": [],
+      "test_evidence": [],
+      "prompt_or_tool_evidence_redacted": false,
+      "gap_reason": null
+    },
+    {
+      "sequence": 2,
+      "record_id": "record-a1e6ba97c1624de4bd9cfab19bf5407a",
+      "record_type": "unsupported",
+      "captured_at": "2026-10-28T23:34:43.548850Z",
+      "completeness": "unsupported",
+      "attribution_status": "unknown",
+      "tool_name": null,
+      "tool_use_id": null,
+      "before_manifest_id": null,
+      "after_manifest_id": null,
+      "changed_files": [],
+      "changed_symbols": [],
+      "test_evidence": [],
+      "prompt_or_tool_evidence_redacted": false,
+      "gap_reason": "unsupported_hook_or_tool:PreToolUse:initial_setup"
+    },
+    {
+      "sequence": 3,
+      "record_id": "record-a47e032cf41e9bae344554162f80bf40bbf6e4264ecedb0b1b89b044fa5a83c3",
+      "record_type": "pre_tool",
+      "captured_at": "2026-10-28T23:34:43.551850Z",
+      "completeness": "complete",
+      "attribution_status": "unknown",
+      "tool_name": "apply_patch",
+      "tool_use_id": "tool-patch-1",
+      "before_manifest_id": "manifest:8f20237e8df4407cd951de726f65bc421333ce82604e0735e2ef6a4b456d0b53",
+      "after_manifest_id": null,
+      "changed_files": [],
+      "changed_symbols": [],
+      "test_evidence": [],
+      "prompt_or_tool_evidence_redacted": false,
+      "gap_reason": null
+    },
+    {
+      "sequence": 4,
+      "record_id": "record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+      "record_type": "post_tool",
+      "captured_at": "2026-10-28T23:34:43.555018Z",
+      "completeness": "complete",
+      "attribution_status": "tool_boundary",
+      "tool_name": "apply_patch",
+      "tool_use_id": "tool-patch-1",
+      "before_manifest_id": "manifest:8f20237e8df4407cd951de726f65bc421333ce82604e0735e2ef6a4b456d0b53",
+      "after_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "changed_files": [
+        {
+          "path": "calc.py",
+          "change": "modified",
+          "before_sha256": "27014717106d8de0d379644637a0f0d90174536c07b5a93a566bdcfa784dc6cb",
+          "after_sha256": "d9e2fc55ae012429b652b4463fc909d5ce09fab8fe990d8ce2663ca18b0a0f98",
+          "unified_diff": "--- a/calc.py\n+++ b/calc.py\n@@ -1,3 +1,5 @@\n def calculate(x: int) -> int:\n-    # Initial stub\n-    return 0\n+    # Corrected computation\n+    if x < 0:\n+        raise ValueError('x must be positive')\n+    return x * 2 + 42\n"
+        }
+      ],
+      "changed_symbols": [
+        {
+          "path": "calc.py",
+          "qualified_name": "calculate",
+          "kind": "function",
+          "change": "modified",
+          "before_content_sha256": "27014717106d8de0d379644637a0f0d90174536c07b5a93a566bdcfa784dc6cb",
+          "after_content_sha256": "d9e2fc55ae012429b652b4463fc909d5ce09fab8fe990d8ce2663ca18b0a0f98",
+          "verified": true
+        }
+      ],
+      "test_evidence": [
+        {
+          "schema_version": "replay-store-1.0",
+          "id": "test-evidence-failed",
+          "session_id": "replay-4e1c310973ff44ec",
+          "observed_at": "2026-10-28T12:05:00Z",
+          "state": "fail",
+          "suite_scope": "tests/test_calc.py",
+          "source": "structured_fixture",
+          "command_record_id": "record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+          "command_exit_code": 1,
+          "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+          "association": "content_identity",
+          "counts": {
+            "passed": 3,
+            "failed": 1,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tests": [
+            {
+              "node_id": "tests/test_calc.py::test_negative_input_raises",
+              "state": "fail"
+            }
+          ],
+          "output_missing": false,
+          "partial": false
+        },
+        {
+          "schema_version": "replay-store-1.0",
+          "id": "test-evidence-pass-controlled",
+          "session_id": "replay-4e1c310973ff44ec",
+          "observed_at": "2026-10-28T12:05:30Z",
+          "state": "pass",
+          "suite_scope": "tests/test_calc.py::test_basic",
+          "source": "structured_fixture",
+          "command_record_id": "record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455",
+          "command_exit_code": 0,
+          "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+          "association": "controlled_no_write",
+          "counts": {
+            "passed": 3,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tests": [
+            {
+              "node_id": "tests/test_calc.py::test_basic",
+              "state": "pass"
+            }
+          ],
+          "output_missing": false,
+          "partial": false
+        }
+      ],
+      "prompt_or_tool_evidence_redacted": false,
+      "gap_reason": null
+    },
+    {
+      "sequence": 5,
+      "record_id": "record-8598e873f5aad46631ce9e18192f9e2f6ab6de5d9ae64bb37f65c7f841643d62",
+      "record_type": "pre_tool",
+      "captured_at": "2026-10-28T23:34:43.556711Z",
+      "completeness": "complete",
+      "attribution_status": "unknown",
+      "tool_name": "Bash",
+      "tool_use_id": "tool-pytest-1",
+      "before_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "after_manifest_id": null,
+      "changed_files": [],
+      "changed_symbols": [],
+      "test_evidence": [
+        {
+          "schema_version": "replay-store-1.0",
+          "id": "test-evidence-failed",
+          "session_id": "replay-4e1c310973ff44ec",
+          "observed_at": "2026-10-28T12:05:00Z",
+          "state": "fail",
+          "suite_scope": "tests/test_calc.py",
+          "source": "structured_fixture",
+          "command_record_id": "record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+          "command_exit_code": 1,
+          "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+          "association": "content_identity",
+          "counts": {
+            "passed": 3,
+            "failed": 1,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tests": [
+            {
+              "node_id": "tests/test_calc.py::test_negative_input_raises",
+              "state": "fail"
+            }
+          ],
+          "output_missing": false,
+          "partial": false
+        },
+        {
+          "schema_version": "replay-store-1.0",
+          "id": "test-evidence-pass-controlled",
+          "session_id": "replay-4e1c310973ff44ec",
+          "observed_at": "2026-10-28T12:05:30Z",
+          "state": "pass",
+          "suite_scope": "tests/test_calc.py::test_basic",
+          "source": "structured_fixture",
+          "command_record_id": "record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455",
+          "command_exit_code": 0,
+          "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+          "association": "controlled_no_write",
+          "counts": {
+            "passed": 3,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tests": [
+            {
+              "node_id": "tests/test_calc.py::test_basic",
+              "state": "pass"
+            }
+          ],
+          "output_missing": false,
+          "partial": false
+        }
+      ],
+      "prompt_or_tool_evidence_redacted": false,
+      "gap_reason": null
+    },
+    {
+      "sequence": 6,
+      "record_id": "record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455",
+      "record_type": "post_tool",
+      "captured_at": "2026-10-28T23:34:43.559132Z",
+      "completeness": "complete",
+      "attribution_status": "tool_boundary",
+      "tool_name": "Bash",
+      "tool_use_id": "tool-pytest-1",
+      "before_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "after_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+      "changed_files": [],
+      "changed_symbols": [],
+      "test_evidence": [
+        {
+          "schema_version": "replay-store-1.0",
+          "id": "test-evidence-failed",
+          "session_id": "replay-4e1c310973ff44ec",
+          "observed_at": "2026-10-28T12:05:00Z",
+          "state": "fail",
+          "suite_scope": "tests/test_calc.py",
+          "source": "structured_fixture",
+          "command_record_id": "record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+          "command_exit_code": 1,
+          "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+          "association": "content_identity",
+          "counts": {
+            "passed": 3,
+            "failed": 1,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tests": [
+            {
+              "node_id": "tests/test_calc.py::test_negative_input_raises",
+              "state": "fail"
+            }
+          ],
+          "output_missing": false,
+          "partial": false
+        },
+        {
+          "schema_version": "replay-store-1.0",
+          "id": "test-evidence-pass-controlled",
+          "session_id": "replay-4e1c310973ff44ec",
+          "observed_at": "2026-10-28T12:05:30Z",
+          "state": "pass",
+          "suite_scope": "tests/test_calc.py::test_basic",
+          "source": "structured_fixture",
+          "command_record_id": "record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455",
+          "command_exit_code": 0,
+          "associated_manifest_id": "manifest:cfc88c43d9d2fb47d3fdad5ddd84e80f18a42c3dec2831fa4eaf0b8b39ede7bd",
+          "association": "controlled_no_write",
+          "counts": {
+            "passed": 3,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "tests": [
+            {
+              "node_id": "tests/test_calc.py::test_basic",
+              "state": "pass"
+            }
+          ],
+          "output_missing": false,
+          "partial": false
+        }
+      ],
+      "prompt_or_tool_evidence_redacted": false,
+      "gap_reason": null
+    }
+  ],
+  "limitations": [
+    "Historical views use stored bytes only and do not inspect or modify the original checkout.",
+    "Selecting a checkpoint does not apply a patch, run a command, launch pytest, install anything, or start Docker.",
+    "Pre/post labels are chronological tool boundaries, not proof that an edit fixed a failure.",
+    "A shell exit observation is not a structured pytest result; missing counts remain unknown.",
+    "Static symbol changes are non-executing AST facts, not observed runtime calls.",
+    "Supported badges apply only to checked atomic fields, never adjacent free text.",
+    "Chapter titles are deterministic templates or explicitly labeled model interpretations.",
+    "Likely reasons remain model inferences even when citation bytes match exactly."
+  ],
+  "narration": [
+    {
+      "sequence": 2,
+      "packet": {
+        "schema_version": "replay-evidence-packet-1.0",
+        "session_id": "replay-4e1c310973ff44ec",
+        "checkpoint_id": "record-a1e6ba97c1624de4bd9cfab19bf5407a",
+        "sequence": 2,
+        "before_manifest_id": null,
+        "after_manifest_id": null,
+        "record_complete": false,
+        "selection_truncated": false,
+        "redaction_present": false,
+        "files": [],
+        "functions": [],
+        "command_exit": null,
+        "pytest_counts": [],
+        "sources": [
+          {
+            "id": "record:record-a1e6ba97c1624de4bd9cfab19bf5407a",
+            "kind": "record",
+            "session_id": "replay-4e1c310973ff44ec",
+            "sequence": 2,
+            "content_sha256": null,
+            "text": null,
+            "redacted": false,
+            "truncated": false
+          }
+        ],
+        "evidence_hash": "0472f8b0ddaa2f2175a89e69c29719da67e0fbb490d585d5f1d1c0e1d98d79af"
+      },
+      "claims": {
+        "schema_version": "replay-claim-run-1.0",
+        "cache_key": "cache-key-1",
+        "evidence_hash": "0472f8b0ddaa2f2175a89e69c29719da67e0fbb490d585d5f1d1c0e1d98d79af",
+        "model_config_id": "model-config-1",
+        "raw_first_output": null,
+        "parsed_first_claims": {
+          "schema_version": "replay-claims-1.0",
+          "claims": [
+            {
+              "id": "claim-calc-modified",
+              "assertion": {
+                "predicate": "file_changed",
+                "path": "calc.py",
+                "before_sha256": null,
+                "after_sha256": null,
+                "change": "modified"
+              },
+              "evidence_refs": [
+                "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+              ],
+              "statement": "File calc.py changed from None to None (modified)."
+            },
+            {
+              "id": "claim-missing-file",
+              "assertion": {
+                "predicate": "file_changed",
+                "path": "missing_util.py",
+                "before_sha256": null,
+                "after_sha256": null,
+                "change": "added"
+              },
+              "evidence_refs": [
+                "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+              ],
+              "statement": "missing_util.py was added to repository."
+            },
+            {
+              "id": "claim-pytest-ten-pass",
+              "assertion": {
+                "predicate": "structured_pytest_counts",
+                "test_evidence_id": "test-evidence-failed",
+                "passed": 10,
+                "failed": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "evidence_refs": [
+                "test:test-evidence-failed"
+              ],
+              "statement": "All 10 tests passed without errors."
+            }
+          ]
+        },
+        "first_error": null,
+        "raw_repaired_output": null,
+        "parsed_repaired_claims": null,
+        "repair_error": null,
+        "final_claims": {
+          "schema_version": "replay-claims-1.0",
+          "claims": [
+            {
+              "id": "claim-calc-modified",
+              "assertion": {
+                "predicate": "file_changed",
+                "path": "calc.py",
+                "before_sha256": null,
+                "after_sha256": null,
+                "change": "modified"
+              },
+              "evidence_refs": [
+                "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+              ],
+              "statement": "File calc.py changed from None to None (modified)."
+            },
+            {
+              "id": "claim-missing-file",
+              "assertion": {
+                "predicate": "file_changed",
+                "path": "missing_util.py",
+                "before_sha256": null,
+                "after_sha256": null,
+                "change": "added"
+              },
+              "evidence_refs": [
+                "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+              ],
+              "statement": "missing_util.py was added to repository."
+            },
+            {
+              "id": "claim-pytest-ten-pass",
+              "assertion": {
+                "predicate": "structured_pytest_counts",
+                "test_evidence_id": "test-evidence-failed",
+                "passed": 10,
+                "failed": 0,
+                "errors": 0,
+                "skipped": 0
+              },
+              "evidence_refs": [
+                "test:test-evidence-failed"
+              ],
+              "statement": "All 10 tests passed without errors."
+            }
+          ]
+        },
+        "final_source": "first",
+        "verdicts": [
+          {
+            "claim_id": "claim-calc-modified",
+            "verdict": "supported",
+            "reason_code": "exact_file_fact",
+            "reason": "calc.py before/after hashes match recorded boundary.",
+            "evidence_refs": [
+              "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+            ],
+            "checker_version": "replay-checker-1.0"
+          },
+          {
+            "claim_id": "claim-missing-file",
+            "verdict": "contradicted",
+            "reason_code": "complete_path_absence",
+            "reason": "Path missing_util.py does not exist in recorded manifest.",
+            "evidence_refs": [
+              "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+            ],
+            "checker_version": "replay-checker-1.0"
+          },
+          {
+            "claim_id": "claim-pytest-ten-pass",
+            "verdict": "unsupported_or_unknown",
+            "reason_code": "structured_test_counts_contradiction",
+            "reason": "Pytest reported 1 failure; 10 passing claim cannot be verified.",
+            "evidence_refs": [
+              "test:test-evidence-failed"
+            ],
+            "checker_version": "replay-checker-1.0"
+          }
+        ],
+        "fallback_used": false,
+        "repair_attempts": 0,
+        "backend": null,
+        "model": "qwen2.5-coder-7b",
+        "latency_ms": 0.0
+      },
+      "reason": {
+        "schema_version": "replay-reason-run-1.0",
+        "raw_model_output": "{\"text\":\"Added guard against negative numbers to prevent invalid calculation\"}",
+        "parsed_reason": null,
+        "checked_reason": {
+          "label": "likely reason (model inference)",
+          "text": "Added guard against negative numbers to prevent invalid calculation",
+          "citations": [
+            {
+              "citation": {
+                "source_id": "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1:tool_input",
+                "start": 0,
+                "end": 44,
+                "quote": "Handle negative inputs in calculate function"
+              },
+              "integrity": "valid_exact_quote",
+              "reason_code": "valid_exact_quote",
+              "source_text": null,
+              "policy_version": "replay-citation-policy-1.0"
+            }
+          ],
+          "citation_status": "valid",
+          "entailment_status": "not_deterministically_assessed",
+          "verified_intent": false
+        },
+        "error": null,
+        "fallback_used": false,
+        "backend": "local",
+        "model": "qwen2.5-coder-7b",
+        "latency_ms": 0.0
+      },
+      "summary_audit": {
+        "schema_version": "replay-summary-audit-1.0",
+        "summary_text": "Added guard against negative numbers to prevent invalid calculation.\nFile calc.py changed from None to None (modified).\nmissing_util.py was added to repository.\nAgent completed all tasks cleanly.",
+        "statements": [
+          {
+            "statement": {
+              "start": 69,
+              "end": 119,
+              "exact_text": "File calc.py changed from None to None (modified).",
+              "claim": {
+                "id": "claim-calc-modified",
+                "assertion": {
+                  "predicate": "file_changed",
+                  "path": "calc.py",
+                  "before_sha256": null,
+                  "after_sha256": null,
+                  "change": "modified"
+                },
+                "evidence_refs": [
+                  "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+                ],
+                "statement": "File calc.py changed from None to None (modified)."
+              }
+            },
+            "span_valid": true,
+            "canonical_mapping_valid": true,
+            "atomic_boundary_valid": true,
+            "claim_verdict": {
+              "claim_id": "claim-calc-modified",
+              "verdict": "supported",
+              "reason_code": "exact_file_fact",
+              "reason": "calc.py before/after hashes match recorded boundary.",
+              "evidence_refs": [
+                "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+              ],
+              "checker_version": "replay-checker-1.0"
+            },
+            "display_status": "supported_recorded_fact"
+          },
+          {
+            "statement": {
+              "start": 120,
+              "end": 160,
+              "exact_text": "missing_util.py was added to repository.",
+              "claim": {
+                "id": "claim-missing-file",
+                "assertion": {
+                  "predicate": "file_changed",
+                  "path": "missing_util.py",
+                  "before_sha256": null,
+                  "after_sha256": null,
+                  "change": "added"
+                },
+                "evidence_refs": [
+                  "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+                ],
+                "statement": "missing_util.py was added to repository."
+              }
+            },
+            "span_valid": true,
+            "canonical_mapping_valid": true,
+            "atomic_boundary_valid": true,
+            "claim_verdict": {
+              "claim_id": "claim-missing-file",
+              "verdict": "contradicted",
+              "reason_code": "complete_path_absence",
+              "reason": "Path missing_util.py does not exist in recorded manifest.",
+              "evidence_refs": [
+                "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+              ],
+              "checker_version": "replay-checker-1.0"
+            },
+            "display_status": "contradicted_by_complete_recording"
+          },
+          {
+            "statement": {
+              "start": 161,
+              "end": 195,
+              "exact_text": "Agent completed all tasks cleanly.",
+              "claim": {
+                "id": "claim-calc-modified",
+                "assertion": {
+                  "predicate": "file_changed",
+                  "path": "calc.py",
+                  "before_sha256": null,
+                  "after_sha256": null,
+                  "change": "modified"
+                },
+                "evidence_refs": [
+                  "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+                ],
+                "statement": "File calc.py changed from None to None (modified)."
+              }
+            },
+            "span_valid": true,
+            "canonical_mapping_valid": false,
+            "atomic_boundary_valid": false,
+            "claim_verdict": null,
+            "display_status": "not_supported_by_this_recording"
+          }
+        ],
+        "supported_claims": [
+          {
+            "id": "claim-calc-modified",
+            "assertion": {
+              "predicate": "file_changed",
+              "path": "calc.py",
+              "before_sha256": null,
+              "after_sha256": null,
+              "change": "modified"
+            },
+            "evidence_refs": [
+              "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1"
+            ],
+            "statement": "File calc.py changed from None to None (modified)."
+          }
+        ],
+        "auditor_version": "replay-summary-auditor-1.0",
+        "limitations": [
+          "Only exact statement spans with supported typed predicates are accepted as facts.",
+          "A statement must equal the deterministic canonical rendering of its typed predicate; substring proximity cannot establish semantic correspondence.",
+          "A canonical statement must occupy a standalone summary line; embedded clauses in compound prose remain unverified.",
+          "Unmapped prose and claims about intent, security, performance or completeness remain unverified."
+        ]
+      }
+    }
+  ],
+  "baseline_chapters": [
+    {
+      "id": "chapter:8ea01027c7a896f2473f7869",
+      "start_sequence": 1,
+      "end_sequence": 2,
+      "title": "Recorded events 1-2",
+      "evidence_refs": [
+        "record:record-cffe95404af9499b806793e841496f18",
+        "record:record-a1e6ba97c1624de4bd9cfab19bf5407a"
+      ],
+      "source": "deterministic_fixed_group",
+      "title_status": "deterministic template"
+    },
+    {
+      "id": "chapter:94087e53e573fe1461c001e9",
+      "start_sequence": 3,
+      "end_sequence": 6,
+      "title": "Prompt turn turn-1",
+      "evidence_refs": [
+        "record:record-a47e032cf41e9bae344554162f80bf40bbf6e4264ecedb0b1b89b044fa5a83c3",
+        "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+        "record:record-8598e873f5aad46631ce9e18192f9e2f6ab6de5d9ae64bb37f65c7f841643d62",
+        "record:record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455"
+      ],
+      "source": "deterministic_prompt_turn",
+      "title_status": "deterministic template"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "chapter:model-replay-4",
+      "start_sequence": 1,
+      "end_sequence": 3,
+      "title": "Fix calculate validation logic for negative inputs",
+      "evidence_refs": [
+        "record:record-cffe95404af9499b806793e841496f18",
+        "record:record-a1e6ba97c1624de4bd9cfab19bf5407a",
+        "record:record-a47e032cf41e9bae344554162f80bf40bbf6e4264ecedb0b1b89b044fa5a83c3",
+        "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+        "record:record-8598e873f5aad46631ce9e18192f9e2f6ab6de5d9ae64bb37f65c7f841643d62",
+        "record:record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455"
+      ],
+      "source": "model",
+      "title_status": "model interpretation"
+    }
+  ],
+  "chapter_run": {
+    "schema_version": "replay-chapter-run-1.0",
+    "chapters": [
+      {
+        "id": "chapter:model-replay-4",
+        "start_sequence": 1,
+        "end_sequence": 3,
+        "title": "Fix calculate validation logic for negative inputs",
+        "evidence_refs": [
+          "record:record-cffe95404af9499b806793e841496f18",
+          "record:record-a1e6ba97c1624de4bd9cfab19bf5407a",
+          "record:record-a47e032cf41e9bae344554162f80bf40bbf6e4264ecedb0b1b89b044fa5a83c3",
+          "record:record-e7aa585e834a4124fd1fcf8fa502aa26badf1d5464970ffc7c7816fa8830c1e1",
+          "record:record-8598e873f5aad46631ce9e18192f9e2f6ab6de5d9ae64bb37f65c7f841643d62",
+          "record:record-156a4f0745881f68ace8439c4d7ecc13f1a3374a4af6745fd33653868b4c4455"
+        ],
+        "source": "model",
+        "title_status": "model interpretation"
+      }
+    ],
+    "raw_model_output": null,
+    "parsed_model_output": null,
+    "error": null,
+    "fallback_used": false,
+    "backend": "local",
+    "model": "qwen2.5-coder-7b",
+    "latency_ms": 0.0
+  }
+}
