@@ -41,15 +41,17 @@ _URL_PASSWORD = re.compile(
     r"(?i)(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<user>[^:/@\s]+):"
     r"(?P<password>[^/@\s]+)@"
 )
-_ENV_SECRET = re.compile(
-    r"(?im)(?P<prefix>^\s*(?:export\s+)?"
-    r"(?P<key>[A-Z][A-Z0-9_]*(?:API_KEY|ACCESS_KEY|TOKEN|PASSWORD|PASSWD|SECRET)"
-    r"[A-Z0-9_]*)\s*[:=]\s*)"
-    r"(?P<value>(?:'[^'\r\n]{4,}'|\"[^\"\r\n]{4,}\"|[^\s#;]{8,}))\s*$"
+_JSON_SECRET = re.compile(
+    r'(?P<prefix>"(?P<key>[^"\r\n]+)"\s*:\s*)'
+    r'"(?P<value>(?:\\.|[^"\\])*)"'
 )
-_INLINE_SECRET = re.compile(
-    r"(?i)(?P<prefix>\b(?P<key>api[_-]?key|access[_-]?key|token|password|passwd|secret)"
-    r"\s*[:=]\s*)(?P<quote>['\"]?)(?P<value>[A-Za-z0-9_./+:-]{8,})(?P=quote)"
+_ESCAPED_JSON_SECRET = re.compile(
+    r'(?P<prefix>\\"(?P<key>[^"\\\r\n]+)\\"\s*:\s*\\")'
+    r'(?P<value>(?:\\\\.|[^"\\])*)\\"'
+)
+_ASSIGNMENT_SECRET = re.compile(
+    r"(?i)(?P<prefix>\b(?P<key>[A-Za-z_][A-Za-z0-9_-]*)\s*[:=]\s*)"
+    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s#;]+)"
 )
 
 _TYPED_PATTERNS = (
@@ -68,15 +70,15 @@ def _marker(label: str) -> str:
 
 def _sensitive_key_label(key: str) -> str | None:
     normalized = key.lower().replace("-", "_")
-    if "password" in normalized or "passwd" in normalized:
+    if normalized in {"password", "passwd"} or normalized.endswith(("_password", "_passwd")):
         return "password"
-    if "token" in normalized:
-        return "token"
-    if "api_key" in normalized or "access_key" in normalized:
-        return "api key"
-    if "private_key" in normalized:
+    if normalized == "private_key" or normalized.endswith("_private_key"):
         return "private key"
-    if "secret" in normalized:
+    if normalized in {"api_key", "access_key"} or normalized.endswith(("_api_key", "_access_key")):
+        return "api key"
+    if normalized == "token" or normalized.endswith("_token"):
+        return "token"
+    if normalized == "secret" or normalized.endswith("_secret"):
         return "secret"
     return None
 
@@ -107,20 +109,39 @@ def redact_history_text(value: str, max_bytes: int) -> HistoryRedaction:
     redacted = value
     counts: dict[str, int] = {}
 
-    def env_replacement(match: re.Match[str]) -> str:
-        label = _sensitive_key_label(match.group("key")) or "environment secret"
+    def json_replacement(match: re.Match[str]) -> str:
+        label = _sensitive_key_label(match.group("key"))
+        if label is None:
+            return match.group(0)
         _increment(counts, label)
-        return f"{match.group('prefix')}{_marker(label)}"
+        return f'{match.group("prefix")}"{_marker(label)}"'
 
-    redacted = _ENV_SECRET.sub(env_replacement, redacted)
+    redacted = _JSON_SECRET.sub(json_replacement, redacted)
 
-    def inline_replacement(match: re.Match[str]) -> str:
-        label = _sensitive_key_label(match.group("key")) or "secret"
+    def escaped_json_replacement(match: re.Match[str]) -> str:
+        label = _sensitive_key_label(match.group("key"))
+        if label is None:
+            return match.group(0)
         _increment(counts, label)
-        quote = match.group("quote")
-        return f"{match.group('prefix')}{quote}{_marker(label)}{quote}"
+        return f'{match.group("prefix")}{_marker(label)}\\"'
 
-    redacted = _INLINE_SECRET.sub(inline_replacement, redacted)
+    redacted = _ESCAPED_JSON_SECRET.sub(escaped_json_replacement, redacted)
+
+    def assignment_replacement(match: re.Match[str]) -> str:
+        label = _sensitive_key_label(match.group("key"))
+        if label is None:
+            return match.group(0)
+        _increment(counts, label)
+        raw_value = match.group("value")
+        if len(raw_value) >= 2 and raw_value[0] in {'"', "'"} and raw_value[-1] == raw_value[0]:
+            return f"{match.group('prefix')}{raw_value[0]}{_marker(label)}{raw_value[0]}"
+        suffix = ""
+        while raw_value and raw_value[-1] in ",)]}":
+            suffix = raw_value[-1] + suffix
+            raw_value = raw_value[:-1]
+        return f"{match.group('prefix')}{_marker(label)}{suffix}"
+
+    redacted = _ASSIGNMENT_SECRET.sub(assignment_replacement, redacted)
     for label, pattern in _TYPED_PATTERNS:
         redacted, count = pattern.subn(_marker(label), redacted)
         if count:

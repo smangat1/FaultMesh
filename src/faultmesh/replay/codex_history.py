@@ -443,7 +443,8 @@ def _next_turn_ids(lines: list[_Line]) -> list[str | None]:
     return output
 
 
-def _completed_tool_items(lines: list[_Line]) -> set[str]:
+def _completed_tool_call_ids(lines: list[_Line]) -> set[str]:
+    """Return only explicit source relationships; never infer them from position or text."""
     identities: set[str] = set()
     for line in lines:
         if line.value is None or line.value.get("type") != "event_msg":
@@ -458,26 +459,10 @@ def _completed_tool_items(lines: list[_Line]) -> set[str]:
             "McpToolCall",
         }:
             continue
-        item_id = _source_item_id(item)
-        if item_id is not None:
-            identities.add(item_id)
-    return identities
-
-
-def _low_level_output_call_ids(lines: list[_Line]) -> set[str]:
-    identities: set[str] = set()
-    for line in lines:
-        if line.value is None or line.value.get("type") != "response_item":
-            continue
-        payload = line.value.get("payload")
-        if not isinstance(payload, dict) or payload.get("type") not in {
-            "custom_tool_call_output",
-            "function_call_output",
-        }:
-            continue
-        call_id = payload.get("call_id")
-        if isinstance(call_id, str) and call_id:
-            identities.add(call_id)
+        for key in ("call_id", "callId"):
+            call_id = item.get(key)
+            if isinstance(call_id, str) and call_id:
+                identities.add(call_id)
     return identities
 
 
@@ -552,9 +537,7 @@ def parse_codex_history(
     gaps = 0
     unsupported = 0
     next_turn_ids = _next_turn_ids(lines)
-    completed_tool_ids = _completed_tool_items(lines)
-    has_completed_tools = bool(completed_tool_ids)
-    low_level_output_ids = _low_level_output_call_ids(lines)
+    completed_tool_call_ids = _completed_tool_call_ids(lines)
     canonical_prompt_texts = {
         text
         for line in lines
@@ -674,7 +657,10 @@ def parse_codex_history(
             name_value = payload.get("name")
             name = name_value if isinstance(name_value, str) else "tool"
             is_output = response_type.endswith("_output")
-            if has_completed_tools and (is_output or call_id in low_level_output_ids):
+            # High- and low-level items coexist in real rollouts. Only an explicit source call id
+            # proves that a completed item represents this low-level record.
+            if call_id is not None and call_id in completed_tool_call_ids:
+                duplicate_items += 1
                 if item_id is not None:
                     seen_item_ids.add(item_id)
                 continue

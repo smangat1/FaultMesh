@@ -39,7 +39,7 @@ def test_normal_synthetic_history_maps_prompts_tools_edits_flags_and_snapshots()
     assert prompt.prompt_text is not None
     assert "[redacted: api key]" in prompt.prompt_text
     assert "synthetic_value" not in prompt.prompt_text
-    assert prompt.redaction_types == ["api key"]
+    assert prompt.redaction_types == ["api key", "password"]
 
     calls = [record for record in result.records if record.record_type is RecordKind.PRE_TOOL]
     results = [record for record in result.records if record.record_type is RecordKind.POST_TOOL]
@@ -68,6 +68,19 @@ def test_normal_synthetic_history_maps_prompts_tools_edits_flags_and_snapshots()
     assert "generated.py" in (write.edit_patch or "")
     assert "source old 2" in (multi.edit_patch or "")
     assert "write_text" in (bash.edit_command or "")
+    assert "[redacted: password]" in (edit.edit_patch or "")
+    assert "[redacted: api key]" in (write.edit_patch or "")
+    assert "[redacted: password]" in (bash.edit_command or "")
+    assert edit.redaction_types == ["password"]
+    assert write.redaction_types == ["api key"]
+    assert bash.redaction_types == ["password"]
+
+    edit_result = next(record for record in results if record.tool_use_id == "tool-edit")
+    write_result = next(record for record in results if record.tool_use_id == "tool-write")
+    bash_result = next(record for record in results if record.tool_use_id == "tool-bash")
+    assert edit_result.tool_response == "password=[redacted: password]"
+    assert write_result.tool_response == '{"password":"[redacted: password]"}'
+    assert "[redacted: url password]" in str(bash_result.tool_response)
 
     sidechain = next(record for record in calls if record.tool_name == "Read")
     assert sidechain.tool_input == {

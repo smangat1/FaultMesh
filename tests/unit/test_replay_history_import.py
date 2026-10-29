@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from faultmesh.cli.app import app
+from faultmesh.replay.history_discovery import discover_history
 from faultmesh.replay.history_import import import_history_session, real_history_smoke_summary
 from faultmesh.replay.models import RecordKind, ReplayExport
 from faultmesh.replay.views import load_export
@@ -51,7 +52,7 @@ def test_selected_history_round_trips_through_existing_ui_export_loader(
     assert all(not entry.changed_files for entry in loaded.timeline)
     prompt = next(record for record in loaded.records if record.prompt_text is not None)
     assert "[redacted: api key]" in (prompt.prompt_text or "")
-    assert prompt.redaction_types == ["api key"]
+    assert prompt.redaction_types == ["api key", "password"]
     assert any("file bytes are unknown" in limitation for limitation in loaded.limitations)
 
 
@@ -107,7 +108,7 @@ def test_smoke_summary_is_aggregate_only_for_synthetic_roots(tmp_path: Path) -> 
     assert summary.ok == 1
     assert summary.imports_validated == 1
     assert summary.import_failures == 0
-    assert summary.redactions_by_type == {"api key": 1}
+    assert summary.redactions_by_type == {"api key": 3, "password": 5, "secret": 1}
     assert "synthetic-session-normal" not in serialized
     assert "synthetic_value" not in serialized
     assert str(tmp_path) not in serialized
@@ -140,12 +141,63 @@ def test_history_import_cli_writes_loadable_export_and_reports_only_summary(
     summary = json.loads(result.output)
     assert summary == {
         "path": str(export_path.resolve()),
-        "records": 5,
+        "records": 9,
         "schema_version": "replay-export-1.0",
         "session_id": "synthetic-session-normal",
     }
     assert "synthetic_value" not in result.output
     assert load_export(export_path).session.id == "synthetic-session-normal"
+
+
+def test_supported_parsers_redact_every_sentinel_before_index_and_export(
+    tmp_path: Path,
+) -> None:
+    codex_root, claude_root = _history_roots(tmp_path)
+    claude_project = claude_root / "-synthetic-example-project"
+    claude_project.mkdir()
+    shutil.copy(FIXTURE_ROOT / "codex_history" / "normal.jsonl", codex_root / "normal.jsonl")
+    shutil.copy(
+        FIXTURE_ROOT / "claude_history" / "-synthetic-example-project" / "normal.jsonl",
+        claude_project / "normal.jsonl",
+    )
+
+    index = discover_history(codex_root=codex_root, claude_root=claude_root)
+    codex_export = import_history_session(
+        "synthetic-session-normal",
+        tool="codex",
+        codex_root=codex_root,
+        claude_root=claude_root,
+    )
+    claude_export = import_history_session(
+        "synthetic-claude-normal",
+        tool="claude_code",
+        codex_root=codex_root,
+        claude_root=claude_root,
+    )
+    serialized_index = index.model_dump_json()
+    serialized_exports = codex_export.model_dump_json() + claude_export.model_dump_json()
+
+    assert "FM_" not in serialized_index
+    assert "FM_" not in serialized_exports
+    assert "[redacted: api key]" in serialized_index
+    assert "[redacted: password]" in serialized_index
+    for marker in (
+        "[redacted: api key]",
+        "[redacted: password]",
+        "[redacted: secret]",
+        "[redacted: url password]",
+    ):
+        assert marker in serialized_exports
+    redaction_types = {
+        label
+        for exported in (codex_export, claude_export)
+        for record in exported.records
+        for label in record.redaction_types or []
+    }
+    assert redaction_types >= {"api key", "password", "secret", "url password"}
+    assert "safe synthetic query" in serialized_exports
+    assert "write_text" in serialized_exports
+    assert "VALUE = 1" in serialized_exports
 
 
 def test_history_import_rejects_unknown_session_without_writing(tmp_path: Path) -> None:

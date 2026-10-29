@@ -314,3 +314,37 @@ P5 validation passed 243 non-container Python tests with one opt-in real-log tes
 All 202 UI tests and 8 Electron tests passed unchanged. Ruff and format checks passed for every P5
 Python file, and strict mypy passed for all 62 source files. P5 changes no file under `ui/` and adds
 no dependency.
+
+## Post-P5 review correction
+
+Review of `c8590dc` found two blockers. First, the typed text redactor did not cover quoted JSON
+key/value pairs or several common shell/environment assignment forms, allowing a serialized secret
+to reach a list preview or imported evidence even though structured dictionary keys were protected.
+The shared redactor now handles ordinary and escaped JSON strings plus quoted/unquoted assignments
+with punctuation and trailing comments as complete values. Typed markers, redaction types and
+bounds remain intact. Synthetic end-to-end sentinels cover Codex and provisional Claude prompts,
+tool inputs, tool outputs, commands and edit/diff evidence; the serialized indexes and exports
+contain no sentinel suffix. Safe hashes, `password_hash`, `token_count` and ordinary code remain
+readable in the regression cases.
+
+Second, the Codex parser previously treated the presence of any completed high-level tool item as
+permission to discard unrelated low-level calls and outputs. It now deduplicates a low-level record
+only when a completed item carries the same explicit source `call_id`/`callId`. It does not infer a
+relationship from position, command text or mere co-occurrence. Mixed sessions retain unrelated
+calls, failure outputs and unmatched calls/outputs in source order with stable source item ids;
+explicitly related pairs and repeated resumed item ids remain deduplicated. When the source supplies
+no relationship, both representations may remain visible rather than risking evidence loss.
+
+The adversarial synthetic correction suite passed before the optional real-log smoke. This is a
+targeted regression suite, not an independent or universal secret-leak audit; pattern redaction
+remains best effort. The subsequent aggregate-only smoke again found 4 sessions: 4 `ok`, 0
+`partial`, 0 `unsupported`, 4 validated imports and 0 failures. Post-fix record-level redaction
+counts were API key 47, AWS access key 4, bearer token 16, GitHub token 10, JWT 8, password 38,
+private key 14, secret 22, Slack token 10, token 39 and URL password 11. No source content, path,
+session id or raw secret was emitted.
+
+Final correction validation passed 246 non-container Python tests with one opt-in smoke skipped by
+default, 5 container tests deselected and 86% coverage. The opt-in smoke passed separately; the
+unchanged UI suite (202 tests), Electron suite (8 tests), production UI build, Ruff, format check
+and strict mypy over 62 source files all passed. The correction changes no `ui/` file and adds no
+dependency.

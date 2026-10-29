@@ -58,6 +58,8 @@ def test_history_redaction_avoids_common_code_and_hash_false_positives() -> None
             "sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             "tokenize(source)",
             "password_hash = compute_hash(value)",
+            '{"password_hash": "sha256-value"}',
+            '{"token_count": 42}',
             "DEBUG=true",
             "VALUE=1",
             "Bearer",
@@ -67,6 +69,36 @@ def test_history_redaction_avoids_common_code_and_hash_false_positives() -> None
     result = redact_history_text(safe, 64 * 1024)
     assert result.value == safe
     assert result.redaction_counts == {}
+
+
+def test_common_serialized_and_shell_secret_forms_are_redacted_completely() -> None:
+    sentinels = [
+        "FM_JSON_PASSWORD_SENTINEL!",
+        "FM_JSON_API_SENTINEL!",
+        "FM_ESCAPED_JSON_SENTINEL!",
+        "FM_QUOTED_ENV_PREFIX$FM_QUOTED_ENV_SUFFIX/@:value",
+        "FM_ASSIGNMENT_PREFIX$FM_ASSIGNMENT_SUFFIX/@:value",
+    ]
+    value = "\n".join(
+        [
+            f'{{"password": "{sentinels[0]}"}}',
+            f'{{"api_key": "{sentinels[1]}"}}',
+            f'{{\\"password\\":\\"{sentinels[2]}\\"}}',
+            f'export DATABASE_PASSWORD="{sentinels[3]}" # synthetic comment',
+            f"password={sentinels[4]}",
+        ]
+    )
+
+    result = redact_history_text(value, 64 * 1024)
+
+    assert isinstance(result.value, str)
+    assert all(sentinel not in result.value for sentinel in sentinels)
+    assert "FM_QUOTED_ENV_SUFFIX" not in result.value
+    assert "FM_ASSIGNMENT_SUFFIX" not in result.value
+    assert result.value.count("[redacted: password]") == 4
+    assert result.value.count("[redacted: api key]") == 1
+    assert result.redaction_types == ("api key", "password")
+    assert "# synthetic comment" in result.value
 
 
 def test_history_redaction_bounds_output_after_redacting() -> None:

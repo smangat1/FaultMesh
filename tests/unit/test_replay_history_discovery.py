@@ -38,12 +38,13 @@ def test_discovery_indexes_metadata_and_redacted_preview_without_paths(tmp_path:
     assert by_tool["codex"].prompt_count == 1
     assert by_tool["codex"].first_prompt_preview is not None
     assert "[redacted: api key]" in by_tool["codex"].first_prompt_preview
-    assert by_tool["codex"].redaction_types == ["api key"]
+    assert by_tool["codex"].redaction_types == ["api key", "password"]
     assert by_tool["claude_code"].session_id == "synthetic-claude-normal"
     assert by_tool["claude_code"].project_display_name == "project"
     serialized = result.model_dump_json()
     assert str(tmp_path) not in serialized
     assert "synthetic_value" not in serialized
+    assert "FM_" not in serialized
     assert '"path"' not in serialized
 
 
