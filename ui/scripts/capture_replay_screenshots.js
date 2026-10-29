@@ -63,46 +63,81 @@ async function main() {
     await fileInput.uploadFile(FIXTURE_HERO);
     await new Promise((r) => setTimeout(r, 800));
 
-    // View 1: Normal run (hero bar, diff view, chapters, summary audit)
-    console.log('Capturing Scenario 1: Normal run overview at step 3...');
+    // Scenario 1: Normal run (timeline-first default view: hero bar across top, diff viewer hero, panels closed)
+    console.log('Capturing Scenario 1: Timeline-first normal run at step 3...');
     await page.evaluate(() => {
-      const cp3 = document.querySelector('div[data-testid="replay-checkpoint-row-3"]');
-      if (cp3) cp3.click();
-      const summaryTab = document.querySelector('button[data-testid="replay-tab-summary"]');
-      if (summaryTab) summaryTab.click();
+      // Step to step 3 (calc.py modified)
+      const nextBtn = document.querySelector('button[data-testid="replay-next-btn"]');
+      if (nextBtn) {
+        nextBtn.click(); // step 2
+        nextBtn.click(); // step 3
+      }
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `01_normal_run_${vp.name}.png`, vp.width, vp.height);
 
-    // View 2: Idle break with axis-break squiggle + real label computed from timestamps (15m idle) + failed test marker
-    console.log('Capturing Scenario 2: Idle break axis label (15m idle) and failed test at step 6...');
+    // Scenario 2: Idle break with axis-break squiggle + real label (15m idle) + Evidence drawer open at step 6
+    console.log('Capturing Scenario 2: Idle break axis label (15m idle) and failed test evidence drawer at step 6...');
     await page.evaluate(() => {
-      const cp6 = document.querySelector('div[data-testid="replay-checkpoint-row-6"]');
-      if (cp6) cp6.click();
-      const testsTab = document.querySelector('button[data-testid="replay-tab-tests"]');
-      if (testsTab) testsTab.click();
+      // Step to step 6 (post-idle with failed test)
+      const nextBtn = document.querySelector('button[data-testid="replay-next-btn"]');
+      if (nextBtn) {
+        nextBtn.click(); // step 4
+        nextBtn.click(); // step 5
+        nextBtn.click(); // step 6
+      }
+      // Open Evidence right drawer
+      const evToggle = document.querySelector('button[data-testid="replay-toggle-evidence"]');
+      if (evToggle) evToggle.click();
+
+      // Switch to Tests tab in Evidence drawer
+      setTimeout(() => {
+        const testsTab = document.querySelector('button[data-testid="replay-tab-tests"]');
+        if (testsTab) testsTab.click();
+      }, 50);
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `02_idle_break_axis_label_${vp.name}.png`, vp.width, vp.height);
 
-    // View 3: Mid-run Gap region on hero bar with warning hatch pattern and GAP badge at step 4
-    console.log('Capturing Scenario 3: Mid-run gap region at step 4...');
+    // Scenario 3: Mid-run Gap region on hero bar + Chapters left rail open at step 4
+    console.log('Capturing Scenario 3: Mid-run gap region and Chapters rail at step 4...');
     await page.evaluate(() => {
-      const cp4 = document.querySelector('div[data-testid="replay-checkpoint-row-4"]');
-      if (cp4) cp4.click();
-      const summaryTab = document.querySelector('button[data-testid="replay-tab-summary"]');
-      if (summaryTab) summaryTab.click();
+      // Close Evidence drawer
+      const evClose = document.querySelector('button[data-testid="replay-evidence-close-btn"]');
+      if (evClose) evClose.click();
+
+      // Step back to step 4 (mid-run gap record)
+      const prevBtn = document.querySelector('button[data-testid="replay-prev-btn"]');
+      if (prevBtn) {
+        prevBtn.click(); // step 5
+        prevBtn.click(); // step 4
+      }
+
+      // Open Chapters rail on the left
+      const chToggle = document.querySelector('button[data-testid="replay-toggle-chapters"]');
+      if (chToggle) chToggle.click();
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `03_gap_region_${vp.name}.png`, vp.width, vp.height);
 
-    // View 4: Model-interpretation chapter segment on hero bar with dashed bracket and [model] badge at step 7
-    console.log('Capturing Scenario 4: Model-interpretation chapter segment with claims reasoning at step 7...');
+    // Scenario 4: Model-interpretation chapter segment on hero bar + Mini Map dock open at step 7
+    console.log('Capturing Scenario 4: Model-interpretation chapter segment and Mini Map dock at step 7...');
     await page.evaluate(() => {
-      const cp7 = document.querySelector('div[data-testid="replay-checkpoint-row-7"]');
-      if (cp7) cp7.click();
-      const claimsTab = document.querySelector('button[data-testid="replay-tab-claims"]');
-      if (claimsTab) claimsTab.click();
+      // Close Chapters rail
+      const chClose = document.querySelector('button[data-testid="replay-chapters-close-btn"]');
+      if (chClose) chClose.click();
+
+      // Step forward to step 7 (in Chapter 2 - model interpretation)
+      const nextBtn = document.querySelector('button[data-testid="replay-next-btn"]');
+      if (nextBtn) {
+        nextBtn.click(); // step 5
+        nextBtn.click(); // step 6
+        nextBtn.click(); // step 7
+      }
+
+      // Open Mini Map dock
+      const mapToggle = document.querySelector('button[data-testid="replay-toggle-minimap"]');
+      if (mapToggle) mapToggle.click();
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `04_model_interpretation_chapter_${vp.name}.png`, vp.width, vp.height);
