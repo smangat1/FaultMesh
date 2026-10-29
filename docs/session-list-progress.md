@@ -37,7 +37,8 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   - [x] Headless screenshot harness capturing required Phase 1 scenarios with DOM assertions and unique SHA-256 hashes.
   - [x] Phase 1 commit: "Phase 1: autodetect selector widgets" and open Draft PR.
 
-- [x] **Phase 1.5: Real-Data Session List Fixes**
+- [x] **Phase 1.5: Real-Data Session List Fixes & Full-Screen Tool Exploration**
+  - [x] Full-screen tool exploration: clicking tool widget ("Codex", "Claude Code") on home transitions into full-screen session view with "← All Tools" back button.
   - [x] Hide `system_temp` project folders by default inside each tool widget.
   - [x] Quiet "Show N hidden system folder(s)" / "Hide N hidden system folder(s)" toggle per tool widget with collapse state persisting for session.
   - [x] Muted "system temp" badge (`data-testid="system-temp-badge"`) displayed on revealed system temp folders.
@@ -109,9 +110,9 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   | `03-autodetect-home-unsupported-row.png` | Autodetect home displaying honest partial and unsupported status tags with zstd reason and focused row | `session-parse-status-unsupported` with zstd decompression title and `session-parse-status-partial` present in DOM | `c565dfd8d2b2b8e5ddd7b87131e78505b5fb7e97f80771851d41930041a94bf7` |
   | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `autodetect-no-bridge-empty-state` and `startup-open-recording-btn` present in DOM | `f09af2ee719b84445bdfddab5610bf0839586bf12772b05bb908245593ae2fd3` |
 
-### Phase 1.5: real-data session list fixes
-- **Commit SHA**: `91d27e361be5c6f39385ceb5be9d37537b98d249`
-- **Files Changed (6 files)**:
+### Phase 1.5: real-data session list fixes & full-screen tool exploration
+- **Commit SHA**: `a7c173e` (Phase 1.5: real-data session list fixes) & `d5c8c33` (feat(ui): click tool widget to explore sessions in full-screen view)
+- **Files Changed**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/01-autodetect-home-two-tool-widgets.png`
   - `docs/screenshots/session-list/02-autodetect-home-folder-collapsed.png`
@@ -122,20 +123,28 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   - `docs/screenshots/session-list/10-empty-state-no-bridge.png`
   - `ui/electron/spectate-main.cjs`
   - `ui/scripts/capture_session_list_screenshots.js`
+  - `ui/src/App.tsx`
   - `ui/src/components/AutodetectHomeScreen.tsx`
+  - `ui/src/components/StartupScreen.tsx`
   - `ui/src/fixtures/syntheticHistory.ts`
   - `ui/src/spectate/types.ts`
   - `ui/src/test/autodetectHome.test.tsx`
 - **Verification Commands & Results**:
+  - `npx tsc --noEmit`: Clean (0 errors).
   - `npm test`: 28 test files passed (244 Vitest tests, 10 Electron node tests, 0 failed). Total: 254 tests passing.
-  - `npm run build`: `tsc && vite build` built cleanly with zero errors.
+  - `npm run build`: `tsc && vite build` built cleanly with zero errors in 1.44s.
+- **Full-Screen Tool Exploration Confirmation**:
+  - Normal startup displays sleek, focused tool widget cards (Codex, Claude Code) displaying tool name, icon, source file counts, session counts, and "Explore sessions →".
+  - Clicking any detected tool widget transitions into a full-screen view for that tool (`data-testid="tool-fullscreen-<tool>"`), with prominent "← All Tools" back button (`data-testid="back-to-tools-btn"`).
+  - Pressing Escape or clicking "← All Tools" returns to the tools overview.
+  - Secondary utilities ("Open recording (.json)", "Select project", and "Return to workspace") remain reachable on all states.
 - **Screenshots Captured (Headless Chrome against real built bundle)**:
   | File | What it shows | DOM Assertion | SHA-256 Checksum |
   |---|---|---|---|
-  | `01-autodetect-home-two-tool-widgets.png` | Full new home with two detected tool widgets (Codex & Claude Code), project folders and sessions inside widgets, plus secondary Open recording and Select project actions | `asserted tool-widget-codex, tool-widget-claude_code, startup-open-recording-btn, startup-select-project-btn in DOM` | `d35cd3b7ea4877446aad53c10acbd975b8c50b6dbb3f91147f532dedcd427f69` |
-  | `04-autodetect-home-hidden-system-collapsed.png` | Autodetect home with system temp folder hidden by default inside Codex widget, showing quiet "Show 1 hidden system folder" toggle | `asserted toggle-hidden-system-codex is present, project-folder-codex:group-temp-fixture is null, and group-auth-fork is collapsed` | `af7449ec558908b9a99e6245684e478948a5d4c5db360aeff0c542395b34e3b4` |
-  | `05-autodetect-home-system-temp-revealed.png` | Autodetect home with system temp folder revealed, displaying muted "system temp" badge and "Hide 1 hidden system folder" toggle | `asserted project-folder-codex:group-temp-fixture present, system-temp-badge text is "system temp", and toggle reads "Hide 1 hidden system folder"` | `13b8fa19729bcd59e67615c5cfbafdabf048f25d21dd26d7b620d410e9383229` |
-  | `06-autodetect-home-archived-and-source-title.png` | Session list showing duplicate-folder disambiguation ("auth-service / backend" and "auth-service / services"), quiet "archived" badge on session row, and preferred source_title with secondary redacted preview line | `asserted folder names disambiguated with parent dirs, session-history-state-archived present, session-title is "Token leak investigation", and session-preview-secondary is "Check token leakage in debug logs"` | `6fcfb6c844758e43f5f5f73ffa91338714ea2e7baa414c5708a246fe13458e64` |
-  | `02-autodetect-home-folder-collapsed.png` | Autodetect home with collapsed project folder (auth-service) showing collapsed chevron and hidden sessions list | `asserted folder-sessions-codex:group-auth is null and aria-expanded="false"` | `ff3a9bb8081454af09d249c1ad3b602c02c805911fb797f9a1ead1ee5d010d1d` |
-  | `03-autodetect-home-unsupported-row.png` | Autodetect home displaying honest partial and unsupported status tags with zstd reason | `asserted session-parse-status-unsupported with zstd decompression title and session-parse-status-partial in DOM` | `8cdb651fde4553afe241953f5a09785f48f35f9b9998fd3282ddb6b2cdf69112` |
+  | `01-autodetect-home-two-tool-widgets.png` | Full new home with two detected tool widgets (Codex & Claude Code) showing source file counts, session counts, "Explore sessions", and secondary actions | `asserted tool-widget-codex, tool-widget-claude_code, startup-open-recording-btn, startup-select-project-btn in DOM` | `5505fd8ced672555429a87cb5f3c629dd2f91573848d29f6b464bdb77d6b03bb` |
+  | `04-autodetect-home-hidden-system-collapsed.png` | Codex full-screen view with system temp folder hidden by default, showing quiet "Show 1 hidden system folder" toggle | `asserted toggle-hidden-system-codex is present, project-folder-codex:group-temp-fixture is null, and group-auth-fork is collapsed` | `d0ed4bd7137a38ac66a0bbfd4b900dc85149ae3b8d8730599abfa4d3bf8ffbee` |
+  | `05-autodetect-home-system-temp-revealed.png` | Codex full-screen view with system temp folder revealed, displaying muted "system temp" badge and "Hide 1 hidden system folder" toggle | `asserted project-folder-codex:group-temp-fixture present, system-temp-badge text is "system temp", and toggle reads "Hide 1 hidden system folder"` | `5d762d459ec979c846adfe5d9edbe6056278e4fe2854ef3c474600cca1937a9f` |
+  | `06-autodetect-home-archived-and-source-title.png` | Codex full-screen view showing duplicate-folder disambiguation ("auth-service / backend" and "auth-service / services"), quiet "archived" badge on session row, and preferred source_title with secondary redacted preview line | `asserted folder names disambiguated with parent dirs, session-history-state-archived present, session-title is "Token leak investigation", and session-preview-secondary is "Check token leakage in debug logs"` | `139dec7b3e95a18c9cc9b7242711814e6a108e9afd0cd4f48672f878a2e646b3` |
+  | `02-autodetect-home-folder-collapsed.png` | Codex full-screen view with collapsed project folder (auth-service) showing collapsed chevron and hidden sessions list | `asserted folder-sessions-codex:group-auth is null and aria-expanded="false"` | `7563ee2d430943f47b52cd1783e3af8f623563fe105ba79ca155c5cd6e9a6eec` |
+  | `03-autodetect-home-unsupported-row.png` | Claude Code full-screen view displaying honest unsupported status tag with zstd reason | `asserted session-row-claude-sess-2 and session-parse-status-unsupported with zstd decompression title in DOM` | `b6360185a3f1100d1666458c8f341e13ca1125389b5adfe56d030eb0e46b42c0` |
   | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `asserted autodetect-no-bridge-empty-state and startup-open-recording-btn in DOM` | `f09af2ee719b84445bdfddab5610bf0839586bf12772b05bb908245593ae2fd3` |

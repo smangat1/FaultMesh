@@ -6,3 +6,4 @@ export type StartupScreenProps = AutodetectHomeScreenProps;
 export const StartupScreen: React.FC<StartupScreenProps> = (props) => {
   return <AutodetectHomeScreen {...props} />;
 };
+

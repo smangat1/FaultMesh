@@ -7,6 +7,7 @@ import {
   RefreshCw,
   FolderOpen as FolderOpenIcon,
   ArrowRight,
+  ArrowLeft,
   Terminal,
   Copy,
   Check,
@@ -32,6 +33,9 @@ export interface AutodetectHomeScreenProps {
   onCacheHistory?: (roots: HistoryRoot[], sessions: HistorySession[]) => void;
   expandedFolderKeys?: Set<string>;
   onToggleFolderExpanded?: (key: string) => void;
+  selectedTool?: string | null;
+  onSelectTool?: (tool: string | null) => void;
+  initialSelectedTool?: string | null;
 }
 
 export function formatRelativeTime(isoString?: string | null): string {
@@ -88,7 +92,35 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
   onCacheHistory,
   expandedFolderKeys: externalExpandedKeys,
   onToggleFolderExpanded,
+  selectedTool: propSelectedTool,
+  onSelectTool,
+  initialSelectedTool = null,
 }) => {
+  const [internalSelectedTool, setInternalSelectedTool] = useState<string | null>(initialSelectedTool);
+  const activeTool = propSelectedTool !== undefined ? propSelectedTool : internalSelectedTool;
+
+  const handleSelectTool = useCallback(
+    (tool: string | null) => {
+      if (onSelectTool) {
+        onSelectTool(tool);
+      } else {
+        setInternalSelectedTool(tool);
+      }
+    },
+    [onSelectTool]
+  );
+
+  useEffect(() => {
+    if (!activeTool) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleSelectTool(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTool, handleSelectTool]);
+
   const [internalExpandedKeys, setInternalExpandedKeys] = useState<Set<string>>(() => new Set());
   const expandedKeys = externalExpandedKeys ?? internalExpandedKeys;
 
@@ -520,63 +552,76 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
               FaultMesh detected no active Codex or Claude Code history folders on this machine. You can open a recorded export (.json) or watch a Python codebase live.
             </p>
           </div>
-        ) : (
-          /* Tool Widgets Grid */
-          <div
-            data-testid="autodetect-widgets-grid"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-              gap: '20px',
-              alignItems: 'start',
-            }}
-          >
-            {okRoots.map((root) => {
-              const allProjects = groupedByTool.get(root.tool) || [];
-              const totalSessions = allProjects.reduce((acc, p) => acc + p.sessions.length, 0);
-              const isShowingHidden = Boolean(showHiddenByTool[root.tool]);
-              const hiddenCount = allProjects.filter((p) => p.isSystemTemp).length;
-              const visibleProjects = isShowingHidden
-                ? allProjects
-                : allProjects.filter((p) => !p.isSystemTemp);
+        ) : activeTool !== null ? (
+          /* Full-Screen Tool Sessions View */
+          (() => {
+            const root = okRoots.find((r) => r.tool === activeTool) || {
+              tool: activeTool,
+              status: 'ok',
+              file_count: 0,
+              message: null,
+            };
+            const allProjects = groupedByTool.get(root.tool) || [];
+            const totalSessions = allProjects.reduce((acc, p) => acc + p.sessions.length, 0);
+            const isShowingHidden = Boolean(showHiddenByTool[root.tool]);
+            const hiddenCount = allProjects.filter((p) => p.isSystemTemp).length;
+            const visibleProjects = isShowingHidden
+              ? allProjects
+              : allProjects.filter((p) => !p.isSystemTemp);
 
-              // Disambiguate duplicate project display names among visible groups within this tool:
-              // when two or more visible groups share the same project_display_name,
-              // append the parent directory component (e.g. "auth-service / backend");
-              // never render a full path or home directory.
-              const nameCounts = new Map<string, number>();
-              for (const p of visibleProjects) {
-                nameCounts.set(p.displayName, (nameCounts.get(p.displayName) || 0) + 1);
-              }
+            const nameCounts = new Map<string, number>();
+            for (const p of visibleProjects) {
+              nameCounts.set(p.displayName, (nameCounts.get(p.displayName) || 0) + 1);
+            }
 
-              return (
+            return (
+              <div
+                data-testid={`tool-fullscreen-${root.tool}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px',
+                  width: '100%',
+                }}
+              >
+                {/* Back button and tool bar */}
                 <div
-                  key={root.tool}
-                  data-testid={`tool-widget-${root.tool}`}
-                  onKeyDown={handleWidgetKeyDown}
                   style={{
-                    backgroundColor: '#151922',
-                    border: '1px solid #262f3f',
-                    borderRadius: 'var(--radius-md)',
-                    overflow: 'hidden',
                     display: 'flex',
-                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                    paddingBottom: '12px',
+                    borderBottom: '1px solid #1e2430',
                   }}
                 >
-                  {/* Tool Widget Header */}
-                  <div
-                    style={{
-                      padding: '16px',
-                      backgroundColor: '#181d28',
-                      borderBottom: '1px solid #262f3f',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '10px',
-                    }}
-                  >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <button
+                      type="button"
+                      data-testid="back-to-tools-btn"
+                      onClick={() => handleSelectTool(null)}
+                      className="btn-ghost"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        color: '#94a3b8',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid #262f3f',
+                        backgroundColor: '#151922',
+                        cursor: 'pointer',
+                      }}
+                      aria-label="Back to detected tools"
+                    >
+                      <ArrowLeft size={14} />
+                      <span>All Tools</span>
+                    </button>
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 600, color: '#ffffff' }}>
+                      <span style={{ fontSize: '18px', fontWeight: 600, color: '#ffffff' }}>
                         {formatToolDisplayName(root.tool)}
                       </span>
                       {root.tool === 'claude_code' && (
@@ -595,33 +640,47 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                         </span>
                       )}
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span
-                        data-testid={`tool-file-count-${root.tool}`}
-                        style={{
-                          fontSize: '11px',
-                          color: 'var(--text-muted)',
-                        }}
-                      >
-                        {root.file_count} source {root.file_count === 1 ? 'file' : 'files'}
-                      </span>
-                      <span
-                        data-testid={`tool-session-count-${root.tool}`}
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          backgroundColor: '#202738',
-                          color: '#38bdf8',
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                        }}
-                      >
-                        {totalSessions} {totalSessions === 1 ? 'session' : 'sessions'}
-                      </span>
-                    </div>
                   </div>
 
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span
+                      data-testid={`tool-file-count-${root.tool}`}
+                      style={{
+                        fontSize: '11.5px',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      {root.file_count} source {root.file_count === 1 ? 'file' : 'files'}
+                    </span>
+                    <span
+                      data-testid={`tool-session-count-${root.tool}`}
+                      style={{
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        backgroundColor: '#202738',
+                        color: '#38bdf8',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                      }}
+                    >
+                      {totalSessions} {totalSessions === 1 ? 'session' : 'sessions'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Full-Screen Tool Card with all folders and sessions */}
+                <div
+                  data-testid={`tool-widget-${root.tool}`}
+                  onKeyDown={handleWidgetKeyDown}
+                  style={{
+                    backgroundColor: '#151922',
+                    border: '1px solid #262f3f',
+                    borderRadius: 'var(--radius-md)',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
                   {/* Tool Widget Body */}
                   <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {visibleProjects.length === 0 ? (
@@ -1017,11 +1076,140 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                       </div>
                     )}
                   </div>
+                
+                </div>
+              </div>
+            );
+          })()
+        ) : (
+          /* Tool Widgets Grid (Overview Cards) */
+          <div
+            data-testid="autodetect-widgets-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+              gap: '20px',
+              alignItems: 'start',
+            }}
+          >
+            {okRoots.map((root) => {
+              const allProjects = groupedByTool.get(root.tool) || [];
+              const totalSessions = allProjects.reduce((acc, p) => acc + p.sessions.length, 0);
+
+              return (
+                <div
+                  key={root.tool}
+                  data-testid={`tool-widget-${root.tool}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleSelectTool(root.tool)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSelectTool(root.tool);
+                    }
+                  }}
+                  style={{
+                    backgroundColor: '#151922',
+                    border: '1px solid #262f3f',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    transition: 'border-color 0.15s ease, background-color 0.15s ease',
+                    minHeight: '170px',
+                    outline: 'none',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#3b82f6';
+                    e.currentTarget.style.backgroundColor = '#181e2b';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#262f3f';
+                    e.currentTarget.style.backgroundColor = '#151922';
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '8px',
+                            backgroundColor: '#1e2638',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#38bdf8',
+                          }}
+                        >
+                          {root.tool === 'codex' ? <Terminal size={20} /> : <Layers size={20} />}
+                        </div>
+                        <span style={{ fontSize: '18px', fontWeight: 600, color: '#ffffff' }}>
+                          {formatToolDisplayName(root.tool)}
+                        </span>
+                      </div>
+                      {root.tool === 'claude_code' && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            padding: '2px 8px',
+                            backgroundColor: '#232b3b',
+                            color: '#94a3b8',
+                            borderRadius: '4px',
+                            border: '1px solid #334155',
+                          }}
+                        >
+                          Synthetic contract only
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span
+                        data-testid={`tool-file-count-${root.tool}`}
+                        style={{ fontSize: '12px', color: 'var(--text-muted)' }}
+                      >
+                        {root.file_count} source {root.file_count === 1 ? 'file' : 'files'}
+                      </span>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>·</span>
+                      <span
+                        data-testid={`tool-session-count-${root.tool}`}
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: '#38bdf8',
+                        }}
+                      >
+                        {totalSessions} {totalSessions === 1 ? 'session' : 'sessions'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: '20px',
+                      paddingTop: '12px',
+                      borderTop: '1px solid #1e2533',
+                      color: '#60a5fa',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                    }}
+                  >
+                    <span>Explore sessions</span>
+                    <ArrowRight size={15} />
+                  </div>
                 </div>
               );
             })}
-
-            {/* Unreadable Roots */}
+{/* Unreadable Roots */}
             {unreadableRoots.map((root) => (
               <div
                 key={root.tool}

@@ -37,6 +37,16 @@ function installHistoryBridge(customPayload?: Partial<HistoryListPayload>) {
   return { bridge, listHistory, importSession, payload };
 }
 
+async function openTool(tool: 'codex' | 'claude_code' = 'codex') {
+  await waitFor(() => {
+    expect(screen.getByTestId(`tool-widget-${tool}`)).toBeDefined();
+  });
+  fireEvent.click(screen.getByTestId(`tool-widget-${tool}`));
+  await waitFor(() => {
+    expect(screen.getByTestId(`tool-fullscreen-${tool}`)).toBeDefined();
+  });
+}
+
 describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/');
@@ -70,20 +80,43 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     expect(codexWidget.textContent).toContain('14 source files');
     expect(claudeWidget.textContent).toContain('5 source files');
 
-    // Project folders exist inside their respective widgets
-    expect(codexWidget.textContent).toContain('auth-service');
-    expect(claudeWidget.textContent).toContain('billing-service');
-    expect(claudeWidget.textContent).toContain('reporting-service');
+    // Clicking Codex widget leads into full screen view
+    fireEvent.click(codexWidget);
+    await waitFor(() => {
+      expect(screen.getByTestId('tool-fullscreen-codex')).toBeDefined();
+      expect(screen.getByTestId('back-to-tools-btn')).toBeDefined();
+    });
 
-    // Sessions listed by first_prompt_preview or "Untitled session"
-    expect(codexWidget.textContent).toContain('Fix token expiration bug [redacted: jwt secret] in auth handler');
-    expect(codexWidget.textContent).toContain('Untitled session');
-    expect(claudeWidget.textContent).toContain('Add stripe webhook handler [redacted: webhook key]');
+    // Project folders and sessions exist inside Codex full screen
+    const codexFullscreen = screen.getByTestId('tool-fullscreen-codex');
+    expect(codexFullscreen.textContent).toContain('auth-service');
+    expect(codexFullscreen.textContent).toContain('Fix token expiration bug [redacted: jwt secret] in auth handler');
+    expect(codexFullscreen.textContent).toContain('Untitled session');
+
+    // Clicking Back to Tools returns to the widgets overview
+    fireEvent.click(screen.getByTestId('back-to-tools-btn'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('back-to-tools-btn')).toBeNull();
+      expect(screen.getByTestId('tool-widget-claude_code')).toBeDefined();
+    });
+
+    // Clicking Claude Code widget leads into its full screen view
+    fireEvent.click(screen.getByTestId('tool-widget-claude_code'));
+    await waitFor(() => {
+      expect(screen.getByTestId('tool-fullscreen-claude_code')).toBeDefined();
+    });
+
+    const claudeFullscreen = screen.getByTestId('tool-fullscreen-claude_code');
+    expect(claudeFullscreen.textContent).toContain('billing-service');
+    expect(claudeFullscreen.textContent).toContain('reporting-service');
+    expect(claudeFullscreen.textContent).toContain('Add stripe webhook handler [redacted: webhook key]');
   });
 
   it('keeps same-display-name projects with different group keys separate', async () => {
     installHistoryBridge();
     render(<App />);
+
+    await openTool('codex');
 
     await waitFor(() => {
       expect(screen.getByTestId('project-folder-codex:group-auth')).toBeDefined();
@@ -106,22 +139,21 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     installHistoryBridge();
     render(<App />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('tool-widget-codex')).toBeDefined();
-      expect(screen.getByTestId('tool-widget-claude_code')).toBeDefined();
-    });
+    await openTool('codex');
+    const codexFullscreen = screen.getByTestId('tool-fullscreen-codex');
+    expect(codexFullscreen.textContent).not.toContain('billing-service');
 
-    const codexWidget = screen.getByTestId('tool-widget-codex');
-    const claudeWidget = screen.getByTestId('tool-widget-claude_code');
-
-    // Codex sessions never appear in Claude widget
-    expect(codexWidget.textContent).not.toContain('billing-service');
-    expect(claudeWidget.textContent).not.toContain('Fix token expiration bug');
+    fireEvent.click(screen.getByTestId('back-to-tools-btn'));
+    await openTool('claude_code');
+    const claudeFullscreen = screen.getByTestId('tool-fullscreen-claude_code');
+    expect(claudeFullscreen.textContent).not.toContain('Fix token expiration bug');
   });
 
   it('renders prompt_count labeled strictly as prompts, not steps', async () => {
     installHistoryBridge();
     render(<App />);
+
+    await openTool('codex');
 
     await waitFor(() => {
       expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
@@ -140,6 +172,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     installHistoryBridge();
     render(<App />);
 
+    await openTool('codex');
+
     await waitFor(() => {
       expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
     });
@@ -152,14 +186,20 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     installHistoryBridge();
     render(<App />);
 
+    await openTool('codex');
     await waitFor(() => {
       expect(screen.getByTestId('session-row-codex-sess-3')).toBeDefined();
-      expect(screen.getByTestId('session-row-claude-sess-2')).toBeDefined();
     });
 
     const partialTag = screen.getByTestId('session-row-codex-sess-3').querySelector('[data-testid="session-parse-status-partial"]')!;
     expect(partialTag.textContent).toBe('partial');
     expect(partialTag.getAttribute('title')).toBe('1 step could not be parsed');
+
+    fireEvent.click(screen.getByTestId('back-to-tools-btn'));
+    await openTool('claude_code');
+    await waitFor(() => {
+      expect(screen.getByTestId('session-row-claude-sess-2')).toBeDefined();
+    });
 
     const unsupportedTag = screen.getByTestId('session-row-claude-sess-2').querySelector('[data-testid="session-parse-status-unsupported"]')!;
     expect(unsupportedTag.textContent).toBe('unsupported');
@@ -229,8 +269,10 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     });
     render(<App />);
 
+    await openTool('codex');
+
     await waitFor(() => {
-      expect(screen.getByTestId('tool-widget-codex')).toBeDefined();
+      expect(screen.getByTestId('tool-no-sessions-codex')).toBeDefined();
     });
 
     expect(screen.getByTestId('tool-no-sessions-codex').textContent).toContain(
@@ -241,6 +283,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
   it('toggles collapsible folders with mouse and keyboard (Enter/Space)', async () => {
     installHistoryBridge();
     render(<App />);
+
+    await openTool('codex');
 
     await waitFor(() => {
       expect(screen.getByTestId('folder-toggle-codex:group-auth')).toBeDefined();
@@ -266,6 +310,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     const harness = installHistoryBridge();
     render(<App />);
 
+    await openTool('codex');
+
     await waitFor(() => {
       expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
     });
@@ -285,7 +331,6 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     fireEvent.click(backBtn);
 
     await waitFor(() => {
-      expect(screen.getByTestId('tool-widget-codex')).toBeDefined();
       expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
     });
   });
@@ -295,6 +340,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     harness.importSession.mockRejectedValueOnce(new Error('corrupt export file'));
 
     render(<App />);
+
+    await openTool('codex');
 
     await waitFor(() => {
       expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
@@ -359,9 +406,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
       installHistoryBridge();
       render(<App />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('tool-widget-codex')).toBeDefined();
-      });
+      await openTool('codex');
 
       // System temp folder (fixture-test) is hidden by default
       expect(screen.queryByTestId('project-folder-codex:group-temp-fixture')).toBeNull();
@@ -398,6 +443,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
       installHistoryBridge();
       render(<App />);
 
+      await openTool('codex');
+
       await waitFor(() => {
         expect(screen.getByTestId('project-folder-codex:group-auth')).toBeDefined();
         expect(screen.getByTestId('project-folder-codex:group-auth-fork')).toBeDefined();
@@ -413,6 +460,10 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
       // Both folders share "auth-service", so they are disambiguated with parent directory
       expect(folder1Name?.textContent).toBe('auth-service / backend');
       expect(folder2Name?.textContent).toBe('auth-service / services');
+
+      // Return to overview and check Claude widget
+      fireEvent.click(screen.getByTestId('back-to-tools-btn'));
+      await openTool('claude_code');
 
       // Groups without duplicates in the same tool (e.g. Claude widget) are NOT appended
       const claudeFolder1Name = screen
@@ -442,6 +493,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
       installHistoryBridge();
       render(<App />);
 
+      await openTool('codex');
+
       await waitFor(() => {
         expect(screen.getByTestId('session-row-codex-sess-3')).toBeDefined();
         expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
@@ -462,6 +515,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     it('prefers source_title over first_prompt_preview as primary row title with secondary redacted preview line', async () => {
       installHistoryBridge();
       render(<App />);
+
+      await openTool('codex');
 
       await waitFor(() => {
         expect(screen.getByTestId('session-row-codex-sess-title')).toBeDefined();
@@ -487,6 +542,8 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     it('renders unsupported row with rollout_file_missing reason truthfully in title tooltip and remains selectable', async () => {
       const harness = installHistoryBridge();
       render(<App />);
+
+      await openTool('codex');
 
       await waitFor(() => {
         expect(screen.getByTestId('session-row-codex-sess-missing-rollout')).toBeDefined();

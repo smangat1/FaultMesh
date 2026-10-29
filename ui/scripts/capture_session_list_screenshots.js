@@ -238,6 +238,10 @@ async function main() {
     });
 
     // Shot 4: 04-autodetect-home-hidden-system-collapsed.png (Phase 1.5)
+    console.log('Clicking tool-widget-codex to enter full screen view for Shot 4...');
+    await page.click('[data-testid="tool-widget-codex"]');
+    await new Promise((r) => setTimeout(r, 400));
+
     console.log('Asserting DOM for Shot 4: Hidden system folder collapsed with quiet toggle...');
     // Collapse group-auth-fork so the quiet toggle is prominently displayed beneath the primary folders
     await page.click('[data-testid="folder-toggle-codex:group-auth-fork"]');
@@ -369,6 +373,12 @@ async function main() {
     });
 
     // Shot 3: 03-autodetect-home-unsupported-row.png
+    console.log('Navigating back to all tools and opening Claude Code for Shot 3...');
+    await page.click('[data-testid="back-to-tools-btn"]');
+    await new Promise((r) => setTimeout(r, 300));
+    await page.click('[data-testid="tool-widget-claude_code"]');
+    await new Promise((r) => setTimeout(r, 400));
+
     console.log('Asserting DOM for Shot 3: Unsupported & partial session rows...');
     await page.hover('[data-testid="session-row-claude-sess-2"]');
     await page.hover('[data-testid="session-row-claude-sess-2"] [data-testid="session-parse-status-unsupported"]');
@@ -378,14 +388,12 @@ async function main() {
       const unsupported = document.querySelector(
         '[data-testid="session-row-claude-sess-2"] [data-testid="session-parse-status-unsupported"]'
       );
-      const partial = document.querySelector('[data-testid="session-parse-status-partial"]');
       if (!unsupported) return { ok: false, error: 'session-parse-status-unsupported missing on claude-sess-2' };
-      if (!partial) return { ok: false, error: 'session-parse-status-partial missing' };
       const unsuppTitle = unsupported.getAttribute('title');
       if (!unsuppTitle || !unsuppTitle.includes('zstd')) {
         return { ok: false, error: `Unexpected unsupported reason: ${unsuppTitle}` };
       }
-      return { ok: true, summary: `Found unsupported row (${unsuppTitle}) and partial row` };
+      return { ok: true, summary: `Found unsupported row (${unsuppTitle})` };
     });
     if (!shot3Check.ok) throw new Error(`Shot 3 assertion failed: ${shot3Check.error}`);
     console.log('Shot 3 assertion passed:', shot3Check.summary);

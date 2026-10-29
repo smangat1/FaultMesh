@@ -125,6 +125,7 @@ export const App: React.FC<AppProps> = ({
   const [cachedHistoryRoots, setCachedHistoryRoots] = useState<HistoryRoot[] | null>(null);
   const [cachedHistorySessions, setCachedHistorySessions] = useState<HistorySession[] | null>(null);
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<Set<string>>(() => new Set());
+  const [selectedHistoryTool, setSelectedHistoryTool] = useState<string | null>(null);
 
   const handleToggleFolderExpanded = useCallback((folderKey: string) => {
     setExpandedFolderKeys((prev) => {
@@ -510,6 +511,7 @@ export const App: React.FC<AppProps> = ({
 
   const handleImportSession = useCallback(
     async (sessionId: string, tool: string) => {
+      setSelectedHistoryTool(tool);
       const bridge = window.faultmeshSpectate;
       if (!bridge?.importSession) {
         throw new Error('Desktop bridge is not available for session import');
@@ -872,6 +874,8 @@ export const App: React.FC<AppProps> = ({
             onCacheHistory={handleCacheHistory}
             expandedFolderKeys={expandedFolderKeys}
             onToggleFolderExpanded={handleToggleFolderExpanded}
+            selectedTool={selectedHistoryTool}
+            onSelectTool={setSelectedHistoryTool}
           />
         )
       ) : currentScreen === 'entrance' ? (
