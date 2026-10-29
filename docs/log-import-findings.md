@@ -2,8 +2,8 @@
 
 ## Gate and revert point
 
-Status: P0 complete on 2026-10-28; P1 additive schema and P2 Codex parser complete on
-2026-10-28; later phases remain pending.
+Status: P0 complete on 2026-10-28; P1 additive schema, P2 Codex parser and P3 provisional Claude
+parser complete on 2026-10-28; later phases remain pending.
 
 Revert point: `957aa27d70ec305f25c5fcd3ffe6b09f0808f406`
 
@@ -128,14 +128,14 @@ same-session representation issue and cannot be solved by item ID alone for the 
 ## Claude Code gate
 
 The assumed `~/.claude/projects/<encoded-project>/<session>.jsonl` layout could not be checked
-because the root was absent. P3 will therefore:
+because the root was absent. The provisional P3 implementation therefore:
 
-- keep the raw project folder name only in local import metadata;
-- perform a documented best-effort path-style decode without claiming it is canonical;
-- version-gate every accepted synthetic shape;
-- represent unknown versions, records and corrupt lines with visible unsupported/gap records;
-- count sidechain, subagent, meta and system handling explicitly;
-- state clearly that support is synthetic-fixture-derived and make no real-format validation claim.
+- keeps the raw project folder name only in local parse metadata;
+- performs a documented best-effort path-style decode without claiming it is canonical;
+- version-gates the accepted synthetic shape;
+- represents unknown versions, records and corrupt lines with visible unsupported/gap records;
+- counts sidechain, subagent, meta and system handling explicitly;
+- is synthetic-fixture-derived and makes no real-format validation claim.
 
 ## Evidence boundary
 
@@ -197,10 +197,10 @@ P0 passes for the observed Codex JSONL versions after adjusting the plan to pars
 
 Two resolved limitations remain important:
 
-1. No real Claude Code log was available. P3 will implement conservative, version-gated support
-   from sanitized synthetic fixtures only, and P5 will not claim a real Claude smoke result.
-2. No real `.jsonl.zst` was available. P2 will use the local `zstd` executable without adding a
-   dependency; if it is unavailable, the compressed session will be visibly unsupported.
+1. No real Claude Code log was available. P3 implements conservative, version-gated support from
+   sanitized synthetic fixtures only, and P5 will not claim a real Claude smoke result.
+2. No real `.jsonl.zst` was available. P2 uses the local `zstd` executable without adding a
+   dependency; if it is unavailable, the compressed session is visibly unsupported.
 
 No code, schema, fixture or UI file changed in P0. P1 adds optional Python model fields only and
 does not change `ui/` or any existing fixture.
@@ -227,6 +227,30 @@ corrupt and empty sessions. The compressed bytes are stored as base64 so the fix
 reviewable. No real history content or machine path is included. P2 has no discovery, persistence
 or CLI surface; P4 must complete the full typed redaction policy before user-requested imports are
 persisted.
+
+## P3 provisional Claude parser boundary
+
+No Claude history exists on this machine, so P3 implements only the explicit provisional synthetic
+contract `claude-code-jsonl-synthetic-1`. The identifier is exact-version-gated. The implementation
+does not claim compatibility with a real Claude Code release or project-folder encoding; any real
+record without that provisional identifier remains visibly unsupported until validated separately.
+
+The parser reads user text, assistant text, `tool_use` and `tool_result` blocks and timestamps.
+`Edit`, `Write` and `MultiEdit` retain source-provided edit evidence, while file-writing `Bash`
+calls retain command evidence. Every tool record uses `file_state: unknown`; file-history snapshots
+are included as explicitly untrusted partial evidence and never treated as the live capture byte
+contract.
+
+Path-style project folder names are decoded by replacing hyphens with separators. This is a
+documented best effort because original hyphen boundaries cannot be recovered. The local parser
+result keeps both the raw folder name and decoded candidate, while the export session carries only
+the grouping hash and final display component.
+
+Sidechain, subagent, meta and system entries are included with explicit flags and separately
+counted. Repeated top-level UUIDs are deduplicated. Unknown versions, record types, per-line version
+mismatches and corrupt lines produce visible unsupported/gap records. Sanitized synthetic fixtures
+cover normal, resumed, unknown-version, corrupt and empty sessions; compression is not part of the
+provisional Claude JSONL contract.
 
 ## P0 validation
 
