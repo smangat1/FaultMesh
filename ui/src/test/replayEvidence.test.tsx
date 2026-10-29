@@ -25,7 +25,7 @@ function createMockNarration(): StepNarration {
       evidence_hash: 'abc',
     },
     claims: {
-      schema_version: 'replay-claims-run-1.0',
+      schema_version: 'replay-claim-run-1.0',
       final_claims: [
         {
           id: 'claim-supported',
@@ -110,7 +110,7 @@ function createMockNarration(): StepNarration {
               end: 45,
               quote: 'fix the token expiration check in auth',
             },
-            integrity: 'verified',
+            integrity: 'valid_exact_quote',
             reason_code: 'exact_quote_match',
             source_text: 'Please fix the token expiration check in auth immediately.',
             policy_version: 'citation-policy-1.0',
@@ -159,7 +159,7 @@ function createMockNarration(): StepNarration {
             evidence_refs: ['rec-1'],
             checker_version: 'replay-checker-1.0',
           },
-          display_status: 'supported',
+          display_status: 'supported_recorded_fact',
         },
         {
           statement: {
@@ -194,7 +194,7 @@ function createMockNarration(): StepNarration {
 function createMockTests(): StructuredTestEvidence[] {
   return [
     {
-      schema_version: 'structured-test-evidence-1.0',
+      schema_version: 'replay-store-1.0',
       id: 'test-ev-1',
       session_id: 'session-ev-1',
       observed_at: '2026-10-28T16:05:00Z',
@@ -218,7 +218,7 @@ function createMockTests(): StructuredTestEvidence[] {
       partial: false,
     },
     {
-      schema_version: 'structured-test-evidence-1.0',
+      schema_version: 'replay-store-1.0',
       id: 'test-ev-2',
       session_id: 'session-ev-1',
       observed_at: '2026-10-28T16:08:00Z',
@@ -332,7 +332,7 @@ describe('ReplayEvidenceInspector (Phase C2)', () => {
 
     expect(screen.getByText('auth.py was modified and all tests passed.')).toBeDefined();
     expect(screen.getByTestId('replay-summary-statement-0').textContent).toContain('supported');
-    expect(screen.getByTestId('replay-summary-statement-1').textContent).toContain('not_supported_by_this_recording');
+    expect(screen.getByTestId('replay-summary-statement-1').textContent).toContain('not supported by recording');
   });
 
   it('renders limits tab with explicit "evaluation pending" badge', () => {

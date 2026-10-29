@@ -10,7 +10,7 @@ function createMockV1(): ReplayExportV1 {
     schema_version: 'replay-export-1.0',
     exported_at: '2026-10-28T15:00:00Z',
     session: {
-      schema_version: 'replay-session-1.0',
+      schema_version: 'replay-store-1.0',
       id: 'session-no-model-001',
       created_at: '2026-10-28T14:50:00Z',
       stopped_at: '2026-10-28T15:00:00Z',
@@ -28,14 +28,14 @@ function createMockV1(): ReplayExportV1 {
     },
     records: [
       {
-        schema_version: 'replay-record-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'rec-1',
         session_id: 'session-no-model-001',
         sequence: 1,
         source_identity: 'id-1',
         source_offset: 0,
         source_sequence: 1,
-        record_type: 'initial',
+        record_type: 'initial_snapshot',
         captured_at: '2026-10-28T14:50:00Z',
         source_timestamp: null,
         provenance: 'initial_snapshot',
@@ -59,7 +59,7 @@ function createMockV1(): ReplayExportV1 {
     ],
     manifests: [
       {
-        schema_version: 'snapshot-manifest-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'm-1',
         files: [
           {
@@ -83,7 +83,7 @@ function createMockV1(): ReplayExportV1 {
       {
         sequence: 1,
         record_id: 'rec-1',
-        record_type: 'initial',
+        record_type: 'initial_snapshot',
         captured_at: '2026-10-28T14:50:00Z',
         completeness: 'complete',
         attribution_status: 'tool_boundary',
@@ -114,8 +114,8 @@ function createMockV2(): ReplayExportV2 {
         end_sequence: 1,
         title: 'Initial baseline snapshot',
         evidence_refs: ['rec-1'],
-        source: 'deterministic_baseline',
-        title_status: 'baseline',
+        source: 'deterministic_fixed_group',
+        title_status: 'deterministic template',
       },
     ],
     chapters: [
@@ -126,7 +126,7 @@ function createMockV2(): ReplayExportV2 {
         title: 'Setup calculation module',
         evidence_refs: ['rec-1'],
         source: 'model',
-        title_status: 'model_interpretation',
+        title_status: 'model interpretation',
       },
     ],
     chapter_run: {
@@ -159,7 +159,7 @@ function createMockV2(): ReplayExportV2 {
           evidence_hash: 'd'.repeat(64),
         },
         claims: {
-          schema_version: 'replay-claims-run-1.0',
+          schema_version: 'replay-claim-run-1.0',
           final_claims: [],
           final_source: 'first',
           verdicts: [],
@@ -214,14 +214,14 @@ describe('ReplayAdapter (Phase C1)', () => {
 
     const modelChapters = adapter.getChapters();
     expect(modelChapters).toHaveLength(1);
-    expect(modelChapters[0].title_status).toBe('model_interpretation');
+    expect(modelChapters[0].title_status).toBe('model interpretation');
     expect(modelChapters[0].title).toBe('Setup calculation module');
 
     // Switch to baseline chapters
     adapter.setUseBaselineChapters(true);
     const baselineChapters = adapter.getChapters();
     expect(baselineChapters).toHaveLength(1);
-    expect(baselineChapters[0].title_status).toBe('baseline');
+    expect(baselineChapters[0].title_status).toBe('deterministic template');
     expect(baselineChapters[0].title).toBe('Initial baseline snapshot');
 
     // Step narration

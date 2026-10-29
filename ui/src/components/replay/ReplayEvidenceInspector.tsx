@@ -3,6 +3,7 @@ import type {
   StepNarration,
   StructuredTestEvidence,
   ClaimVerdict,
+  TypedClaim,
 } from '../../replay/types';
 import {
   ChevronDown,
@@ -28,6 +29,13 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
   const claimRun = narration?.claims || null;
   const reasonRun = narration?.reason || null;
   const summaryAudit = narration?.summary_audit || null;
+
+  const rawClaims = claimRun?.final_claims;
+  const finalClaims: TypedClaim[] = Array.isArray(rawClaims)
+    ? (rawClaims as TypedClaim[])
+    : (rawClaims && Array.isArray((rawClaims as any).claims))
+    ? ((rawClaims as any).claims as TypedClaim[])
+    : [];
 
   const verdictsByClaimId = new Map<string, ClaimVerdict>();
   if (claimRun) {
@@ -225,21 +233,26 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                               <span style={{ fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8' }}>
                                 source:{c.citation.source_id} [{c.citation.start}..{c.citation.end}]
                               </span>
-                              <span
-                                style={{
-                                  fontSize: '9px',
-                                  padding: '1px 4px',
-                                  borderRadius: '2px',
-                                  backgroundColor:
-                                    c.integrity === 'verified'
-                                      ? 'rgba(56, 189, 248, 0.15)'
-                                      : 'rgba(245, 158, 11, 0.15)',
-                                  color: c.integrity === 'verified' ? '#38bdf8' : '#fbbf24',
-                                }}
-                                data-testid="replay-citation-integrity-label"
-                              >
-                                {c.integrity === 'verified' ? 'Source quote checked' : c.integrity}
-                              </span>
+                              {(() => {
+                                const isValidQuote = c.integrity === 'valid_exact_quote' || c.integrity === ('verified' as any);
+                                return (
+                                  <span
+                                    style={{
+                                      fontSize: '9px',
+                                      padding: '1px 4px',
+                                      borderRadius: '2px',
+                                      backgroundColor:
+                                        isValidQuote
+                                          ? 'rgba(56, 189, 248, 0.15)'
+                                          : 'rgba(245, 158, 11, 0.15)',
+                                      color: isValidQuote ? '#38bdf8' : '#fbbf24',
+                                    }}
+                                    data-testid="replay-citation-integrity-label"
+                                  >
+                                    {isValidQuote ? 'Source quote checked' : c.integrity}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <div style={{ color: '#cbd5e1', fontStyle: 'italic' }}>
                               "{c.citation.quote}"
@@ -278,7 +291,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  CHECKED CLAIMS ({claimRun?.final_claims.length || 0})
+                  CHECKED CLAIMS ({finalClaims.length})
                 </span>
                 {claimRun && (
                   <span
@@ -293,13 +306,13 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                 )}
               </div>
 
-              {(!claimRun || claimRun.final_claims.length === 0) && (
+              {(!claimRun || finalClaims.length === 0) && (
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '12px 0' }}>
                   No atomic claims recorded for this step.
                 </div>
               )}
 
-              {claimRun?.final_claims.map((claim) => {
+              {finalClaims.map((claim) => {
                 const verdict = verdictsByClaimId.get(claim.id);
                 const isContradicted = verdict?.verdict === 'contradicted';
                 const isSupported = verdict?.verdict === 'supported';
@@ -460,7 +473,18 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               tests.map((testItem) => {
                 const isFail = testItem.state === 'fail' || testItem.state === 'error';
                 const isPass = testItem.state === 'pass';
-                const isMatched = testItem.association === 'content_identity' || testItem.association === 'validated_interval';
+                const isMatched =
+                  testItem.association === 'content_identity' ||
+                  testItem.association === 'controlled_no_write' ||
+                  testItem.association === ('validated_interval' as any);
+
+                const stateMatchLabel = isMatched
+                  ? `State matched (${testItem.associated_manifest_id?.slice(0, 10)})`
+                  : testItem.association === 'nearby_in_time_state_unverified'
+                  ? 'nearby in time, code state unverified'
+                  : testItem.association === 'none'
+                  ? 'unassociated'
+                  : String(testItem.association);
 
                 return (
                   <div
@@ -517,9 +541,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                         }}
                         data-testid="replay-state-match-badge"
                       >
-                        {isMatched
-                          ? `State matched (${testItem.associated_manifest_id?.slice(0, 10)})`
-                          : 'nearby in time, code state unverified'}
+                        {stateMatchLabel}
                       </span>
                     </div>
 
@@ -611,8 +633,22 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               </span>
 
               {summaryAudit.statements.map((s, idx) => {
-                const isContradicted = s.display_status === 'contradicted';
-                const isSupported = s.display_status === 'supported';
+                const isSupported =
+                  s.display_status === 'supported_recorded_fact' ||
+                  s.display_status === ('supported' as any);
+                const isContradicted =
+                  s.display_status === 'contradicted_by_complete_recording' ||
+                  s.display_status === ('contradicted' as any);
+                const isNotSupported =
+                  s.display_status === 'not_supported_by_this_recording';
+
+                const displayStatusLabel = isSupported
+                  ? 'supported fact'
+                  : isContradicted
+                  ? 'contradicted'
+                  : isNotSupported
+                  ? 'not supported by recording'
+                  : String(s.display_status);
 
                 return (
                   <div
@@ -657,8 +693,9 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                             ? '#f87171'
                             : '#94a3b8',
                         }}
+                        data-testid={`replay-summary-statement-badge-${s.display_status}`}
                       >
-                        {s.display_status}
+                        {displayStatusLabel}
                       </span>
                     </div>
 

@@ -10,22 +10,25 @@ export type ReplaySchemaVersion = 'replay-export-1.0' | 'replay-export-2.0';
 
 export type ReplayOrigin = 'real_recording' | 'synthetic_fixture' | 'simulated_demo';
 
+export type SessionStatus = 'active' | 'stopped' | (string & {});
+
 export type AttributionStatus =
   | 'not_applicable'
   | 'tool_boundary'
   | 'observed_checkpoint'
-  | 'unknown';
+  | 'unknown'
+  | (string & {});
 
-export type Completeness = 'complete' | 'partial' | 'missing' | 'unsupported';
+export type Completeness = 'complete' | 'partial' | 'missing' | 'unsupported' | (string & {});
 
 export type RecordKind =
-  | 'initial'
+  | 'initial_snapshot'
   | 'pre_tool'
   | 'post_tool'
   | 'checkpoint'
   | 'gap'
-  | 'command_exit'
-  | 'pytest_run';
+  | 'unsupported'
+  | (string & {});
 
 export type TestState =
   | 'pass'
@@ -33,40 +36,49 @@ export type TestState =
   | 'error'
   | 'skipped'
   | 'not_observed'
-  | 'incomplete';
+  | 'incomplete'
+  | (string & {});
 
 export type TestAssociation =
   | 'content_identity'
-  | 'validated_interval'
+  | 'controlled_no_write'
   | 'nearby_in_time_state_unverified'
-  | 'unassociated';
+  | 'none'
+  | (string & {});
 
-export type ChangeType = 'added' | 'modified' | 'deleted' | 'unchanged';
+export type ChangeType = 'added' | 'modified' | 'deleted' | 'unchanged' | (string & {});
 
 export type ClaimVerdictValue =
   | 'supported'
   | 'contradicted'
-  | 'unsupported_or_unknown';
+  | 'unsupported_or_unknown'
+  | (string & {});
 
-export type FinalSource = 'first' | 'repaired' | 'deterministic_fallback';
+export type FinalSource = 'first' | 'repaired' | 'deterministic_fallback' | (string & {});
 
-export type ChapterSource = 'deterministic_baseline' | 'model';
+export type ChapterSource =
+  | 'deterministic_prompt_turn'
+  | 'deterministic_fixed_group'
+  | 'model'
+  | (string & {});
 
-export type ChapterTitleStatus = 'baseline' | 'model_interpretation';
+export type ChapterTitleStatus =
+  | 'deterministic template'
+  | 'model interpretation'
+  | (string & {});
 
 export type CitationIntegrity =
-  | 'verified'
-  | 'mismatched'
-  | 'out_of_bounds'
-  | 'unknown_source';
+  | 'valid_exact_quote'
+  | 'invalid_source_or_quote'
+  | (string & {});
 
-export type CitationStatus = 'valid' | 'invalid' | 'unsupported';
+export type CitationStatus = 'valid' | 'invalid' | 'empty' | (string & {});
 
 export type SummaryDisplayStatus =
-  | 'supported'
-  | 'contradicted'
+  | 'supported_recorded_fact'
+  | 'contradicted_by_complete_recording'
   | 'not_supported_by_this_recording'
-  | 'unverified';
+  | (string & {});
 
 export interface CaptureLimits {
   max_file_bytes: number;
@@ -77,11 +89,11 @@ export interface CaptureLimits {
 }
 
 export interface ReplaySession {
-  schema_version: 'replay-session-1.0';
+  schema_version: 'replay-store-1.0';
   id: string;
   created_at: string;
   stopped_at: string | null;
-  status: 'recording' | 'stopped' | 'failed';
+  status: SessionStatus;
   project_root_sha256: string;
   codex_version: string | null;
   raw_logging: boolean;
@@ -89,7 +101,7 @@ export interface ReplaySession {
 }
 
 export interface ReplayRecord {
-  schema_version: 'replay-record-1.0';
+  schema_version: 'replay-store-1.0';
   id: string;
   session_id: string;
   sequence: number;
@@ -128,7 +140,7 @@ export interface CapturedFile {
 }
 
 export interface SnapshotManifest {
-  schema_version: 'snapshot-manifest-1.0';
+  schema_version: 'replay-store-1.0';
   id: string;
   files: CapturedFile[];
   skipped: Array<{ path: string; reason: string }>;
@@ -168,7 +180,7 @@ export interface IndividualTestResult {
 }
 
 export interface StructuredTestEvidence {
-  schema_version: 'structured-test-evidence-1.0';
+  schema_version: 'replay-store-1.0';
   id: string;
   session_id: string;
   observed_at: string;
@@ -298,18 +310,23 @@ export interface ClaimVerdict {
   checker_version: string;
 }
 
+export interface ClaimBatch {
+  schema_version: 'replay-claims-1.0' | (string & {});
+  claims: TypedClaim[];
+}
+
 export interface ClaimRunRecord {
-  schema_version: 'replay-claims-run-1.0';
+  schema_version: 'replay-claim-run-1.0' | (string & {});
   cache_key?: string;
   evidence_hash?: string;
   model_config_id?: string | null;
   raw_first_output?: string | null;
-  parsed_first_claims?: TypedClaim[] | null;
+  parsed_first_claims?: ClaimBatch | TypedClaim[] | null;
   first_error?: string | null;
   raw_repaired_output?: string | null;
-  parsed_repaired_claims?: TypedClaim[] | null;
+  parsed_repaired_claims?: ClaimBatch | TypedClaim[] | null;
   repair_error?: string | null;
-  final_claims: TypedClaim[];
+  final_claims: ClaimBatch | TypedClaim[];
   final_source: FinalSource;
   verdicts: ClaimVerdict[];
   fallback_used: boolean;
@@ -435,6 +452,7 @@ export type ReplayExportV2 = Omit<ReplayExportV1, 'schema_version'> & {
 };
 
 export type AnyReplayExport = ReplayExportV1 | ReplayExportV2;
+export type ReplayExportDocument = AnyReplayExport;
 
 export function isReplayExportV2(exportDoc: AnyReplayExport): exportDoc is ReplayExportV2 {
   return exportDoc.schema_version === 'replay-export-2.0';

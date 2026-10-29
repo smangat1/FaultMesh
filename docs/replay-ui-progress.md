@@ -101,3 +101,56 @@ Acceptance:
 
 Phase C3 commit: `352e6fb589cb1cb25d67996a10a07a1f3e18ff48`.
 
+## Review Alignment — Backend Contract Alignment & Honesty Polish
+
+Status: complete.
+
+Implemented & Verified:
+1. Exact Merged Backend Contract Alignment:
+   - Aligned all frontend types and validators in `ui/src/replay/types.ts` and `ui/src/replay/validators.ts` with merged Python backend schemas (`src/faultmesh/replay/models.py`, `narration.py`, `claims.py`, `chapters.py`, `citations.py`):
+     - `schema_version` for session, record, manifest, and test evidence: `'replay-store-1.0'`.
+     - `SessionStatus`: `'active' | 'stopped'`.
+     - `RecordKind`: `'initial_snapshot' | 'pre_tool' | 'post_tool' | 'checkpoint' | 'gap' | 'unsupported'`.
+     - `TestAssociation`: `'content_identity' | 'controlled_no_write' | 'nearby_in_time_state_unverified' | 'none'`. Both `content_identity` and `controlled_no_write` render `State matched`.
+     - `Chapter.source`: `'deterministic_prompt_turn' | 'deterministic_fixed_group' | 'model'`.
+     - `Chapter.title_status`: `'deterministic template' | 'model interpretation'`.
+     - `CitationIntegrity`: `'valid_exact_quote' | 'invalid_source_or_quote'`. `'valid_exact_quote'` renders `Source quote checked`.
+     - `CheckedLikelyReason.citation_status`: `'valid' | 'invalid' | 'empty'`.
+     - `SummaryStatementAudit.display_status`: `'supported_recorded_fact' | 'contradicted_by_complete_recording' | 'not_supported_by_this_recording'`.
+     - `ClaimRunRecord.schema_version`: `'replay-claim-run-1.0'` and `final_claims` supports `ClaimBatch` object mapping.
+     - Extensible union types with `(string & {})` to render unknown future enum values with neutral raw text.
+2. Active-Session Replay Support:
+   - `validateReplayExport` accepts active-session exports without errors (`session.status === 'active'`, `session.stopped_at === null`).
+   - `ReplayAdapter` sets `replaySessionStatus: session.status` and computes runtime duration from first to last recorded checkpoint.
+   - Replay header renders `IN-PROGRESS SNAPSHOT` badge for active sessions.
+3. Backend-Generated Sanitized Fixtures & Green CI:
+   - Replaced hand-written fixtures with exports generated directly by real backend classes (`ReplayStore`, `export_session`, `build_narration_export`) in `tests/fixtures/replay/fixture_replay_v2_enriched.json` and `fixture_replay_v1_nomodel.json`.
+   - Deleted `scripts/generate_replay_fixtures.py` to eliminate 15 ruff line-length violations.
+   - All Python tests (`pytest tests/`, 205 passed) and linting (`ruff check .`, 0 errors) pass 100% green.
+4. Backend Contract Regression Tests:
+   - Added `ui/src/test/replayBackendContract.test.tsx` verifying:
+     - Real backend-generated V2 export loads with verified honesty contracts.
+     - Model-interpretation chapters labeled `model interpretation`.
+     - Contradicted summary statement struck through with line-through styling and `contradicted` badge.
+     - Supported fact badged with `supported fact`.
+     - `valid_exact_quote` citation displays `Source quote checked`.
+     - Both `controlled_no_write` and `content_identity` tests display `State matched`.
+     - Active-session export (`fixture_replay_v1_nomodel.json`) imports and displays `IN-PROGRESS SNAPSHOT`.
+5. Calmed Obsidian Header & Single Badge Row:
+   - Header top bar: calm Obsidian aesthetic showing project name without raw hash fragments, human-formatted duration (`formatDuration`), removed `STRUCTURE ONLY` pill on replay, and eliminated duplicate replay badge rows.
+   - Replay Workspace header: scrubber controls on left; honesty badges (`ORIGIN`, `IN-PROGRESS SNAPSHOT` vs `HISTORICAL (STOPPED)`, `GRANULARITY`, agent version, `PARTIAL` if incomplete, and `Project Map`) on right.
+   - Diff viewer empty state: replaced empty void with a structured, informative honest state displaying checkpoint overview, attribution status, recording completeness, gap details, and baseline export note.
+6. Distinct Screenshot Capture:
+   - Updated `ui/scripts/capture_replay_screenshots.js` to ensure View 1 displays the Summary Audit tab while View 3 displays the Claims & Reason tab.
+   - Re-captured all 8 screenshots across 1440x900 and 1024x700 viewports.
+   - Verified each PNG has a distinct sha1 checksum (no byte duplicates).
+
+Acceptance:
+- `cd ui && npx tsc --noEmit`: 0 errors.
+- `cd ui && npm test`: 23 test files (179 vitest unit tests + 8 electron tests) passed.
+- `cd ui && npm run build`: production bundle built cleanly in 1.55s.
+- `ruff check .`: All checks passed! (0 errors across whole repository).
+- `pytest tests/`: 205 passed, 5 skipped (0 errors across whole repository).
+- All 8 screenshots verified distinct with valid visual elements.
+
+

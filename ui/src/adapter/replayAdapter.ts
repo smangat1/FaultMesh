@@ -7,6 +7,7 @@ import type {
   SourceViewData,
   CodeNode,
   FileCluster,
+  ChangeStatus,
 } from '../types';
 import type {
   AnyReplayExport,
@@ -222,9 +223,15 @@ export class ReplayAdapter implements FaultMeshAdapter {
     }
 
     const totalTests = passedCount + failedCount + errorsCount + skippedCount;
+    const lastTimestamp =
+      session.stopped_at ||
+      (this.exported.timeline.length > 0
+        ? this.exported.timeline[this.exported.timeline.length - 1].captured_at
+        : null) ||
+      this.exported.exported_at;
     const durationMs =
-      session.stopped_at && session.created_at
-        ? Math.max(0, new Date(session.stopped_at).getTime() - new Date(session.created_at).getTime())
+      session.created_at && lastTimestamp
+        ? Math.max(0, new Date(lastTimestamp).getTime() - new Date(session.created_at).getTime())
         : 0;
 
     const runSummary: RunSummary = {
@@ -236,7 +243,7 @@ export class ReplayAdapter implements FaultMeshAdapter {
       startedAt: session.created_at,
       completedAt: session.stopped_at || undefined,
       durationMs,
-      status: session.status === 'failed' ? 'failed' : 'completed',
+      status: session.status === 'active' ? 'running' : 'completed',
       isFixture: this.origin === 'synthetic_fixture',
       fixtureLabel: this.origin === 'synthetic_fixture' ? 'Synthetic Fixture' : '',
       limitations: this.getLimitations(),
@@ -255,6 +262,7 @@ export class ReplayAdapter implements FaultMeshAdapter {
       replayOrigin: this.origin,
       codexVersion: session.codex_version || 'Not recorded',
       granularity: this.detectCaptureGranularity(),
+      replaySessionStatus: session.status,
     };
 
     return [runSummary];
@@ -401,6 +409,15 @@ export class ReplayAdapter implements FaultMeshAdapter {
     const historical = this.getHistoricalFileAtCheckpoint(entry.sequence, path);
     const diff = this.getHistoricalDiff(entry.sequence, path);
 
+    const changeStatus: ChangeStatus =
+      historical.change === 'deleted'
+        ? 'removed'
+        : historical.change === 'added'
+        ? 'added'
+        : historical.change === 'modified'
+        ? 'modified'
+        : 'unchanged';
+
     return {
       nodeId,
       file: path,
@@ -409,7 +426,7 @@ export class ReplayAdapter implements FaultMeshAdapter {
       lineEnd: 1,
       snippet: historical.content || undefined,
       gitDiff: diff || undefined,
-      changeStatus: historical.change === 'deleted' ? 'removed' : historical.change || 'unchanged',
+      changeStatus,
     };
   }
 }

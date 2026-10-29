@@ -251,7 +251,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               : 'REAL RECORDING'}
           </span>
 
-          {/* Historical (Stopped) Badge - never 'live' */}
+          {/* Historical (Stopped) Badge or In-Progress Snapshot */}
           <span
             style={{
               fontSize: '10px',
@@ -262,8 +262,9 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               border: '1px solid rgba(255, 255, 255, 0.08)',
               color: '#94a3b8',
             }}
+            data-testid="replay-historical-status"
           >
-            HISTORICAL (STOPPED)
+            {session.status === 'active' ? 'IN-PROGRESS SNAPSHOT' : 'HISTORICAL (STOPPED)'}
           </span>
 
           {/* Granularity badge */}
@@ -277,16 +278,18 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               border: '1px solid rgba(255, 255, 255, 0.08)',
               color: '#cbd5e1',
             }}
+            data-testid="replay-granularity-badge"
           >
             {granularity === 'tool_boundary' ? 'TOOL BOUNDARY' : 'OBSERVED CHECKPOINT'}
           </span>
 
-          {/* Completeness Badge */}
+          {/* Completeness Badge (only when incomplete) */}
           {completenessInfo.completeness !== 'complete' && (
             <span
               style={{
                 fontSize: '10px',
                 fontFamily: 'var(--font-mono, monospace)',
+                fontWeight: 600,
                 padding: '2px 7px',
                 borderRadius: '3px',
                 backgroundColor: 'rgba(245, 158, 11, 0.15)',
@@ -294,6 +297,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 color: '#fbbf24',
               }}
               title={completenessInfo.gaps.join('\n')}
+              data-testid="replay-completeness-badge"
             >
               {completenessInfo.completeness.toUpperCase()}
             </span>
@@ -308,6 +312,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 color: '#94a3b8',
                 padding: '2px 6px',
               }}
+              data-testid="replay-agent-version"
             >
               {session.codex_version}
             </span>
@@ -376,6 +381,9 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             changedSymbols={currentEntry?.changed_symbols || []}
             onSelectFile={setSelectedFile}
             getHistoricalContent={getHistoricalContent}
+            entry={currentEntry}
+            completenessInfo={completenessInfo}
+            isModelNarrationAvailable={hasModelChapters}
           />
         </div>
 

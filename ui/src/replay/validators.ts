@@ -89,8 +89,8 @@ export function validateReplayExport(
     if (typeof session.id !== 'string' || !session.id.trim()) {
       errors.push({ path: 'session.id', message: 'Field "session.id" must be a non-empty string' });
     }
-    if (!session.status || !['recording', 'stopped', 'failed'].includes(session.status)) {
-      errors.push({ path: 'session.status', message: 'Field "session.status" must be "recording", "stopped", or "failed"' });
+    if (typeof session.status !== 'string' || !session.status.trim()) {
+      errors.push({ path: 'session.status', message: 'Field "session.status" must be a non-empty string ("active" or "stopped")' });
     }
     if (typeof session.project_root_sha256 !== 'string' || !SHA256_HEX_REGEX.test(session.project_root_sha256)) {
       errors.push({ path: 'session.project_root_sha256', message: 'Field "session.project_root_sha256" must be a 64-character SHA-256 hex string' });

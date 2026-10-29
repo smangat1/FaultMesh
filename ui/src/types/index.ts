@@ -206,6 +206,7 @@ export interface RunSummary {
   replayOrigin?: 'real_recording' | 'synthetic_fixture' | 'simulated_demo';
   codexVersion?: string;
   granularity?: string;
+  replaySessionStatus?: string;
 }
 
 export interface TestEvidence {

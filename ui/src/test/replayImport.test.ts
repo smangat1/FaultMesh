@@ -11,7 +11,7 @@ function makeValidV1Export(): ReplayExportV1 {
     schema_version: 'replay-export-1.0',
     exported_at: '2026-10-28T14:00:00Z',
     session: {
-      schema_version: 'replay-session-1.0',
+      schema_version: 'replay-store-1.0',
       id: 'session-valid-001',
       created_at: '2026-10-28T13:50:00Z',
       stopped_at: '2026-10-28T14:00:00Z',
@@ -29,14 +29,14 @@ function makeValidV1Export(): ReplayExportV1 {
     },
     records: [
       {
-        schema_version: 'replay-record-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'rec-001',
         session_id: 'session-valid-001',
         sequence: 1,
         source_identity: 'src-01',
         source_offset: 0,
         source_sequence: 1,
-        record_type: 'initial',
+        record_type: 'initial_snapshot',
         captured_at: '2026-10-28T13:50:00Z',
         source_timestamp: '2026-10-28T13:50:00Z',
         provenance: 'initial_snapshot',
@@ -58,7 +58,7 @@ function makeValidV1Export(): ReplayExportV1 {
         test_refs: [],
       },
       {
-        schema_version: 'replay-record-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'rec-002',
         session_id: 'session-valid-001',
         sequence: 2,
@@ -89,7 +89,7 @@ function makeValidV1Export(): ReplayExportV1 {
     ],
     manifests: [
       {
-        schema_version: 'snapshot-manifest-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'man-001',
         files: [
           {
@@ -105,7 +105,7 @@ function makeValidV1Export(): ReplayExportV1 {
         partial: false,
       },
       {
-        schema_version: 'snapshot-manifest-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'man-002',
         files: [
           {
@@ -126,7 +126,7 @@ function makeValidV1Export(): ReplayExportV1 {
     },
     tests: [
       {
-        schema_version: 'structured-test-evidence-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'test-ev-1',
         session_id: 'session-valid-001',
         observed_at: '2026-10-28T13:52:05Z',
@@ -154,7 +154,7 @@ function makeValidV1Export(): ReplayExportV1 {
       {
         sequence: 1,
         record_id: 'rec-001',
-        record_type: 'initial',
+        record_type: 'initial_snapshot',
         captured_at: '2026-10-28T13:50:00Z',
         completeness: 'complete',
         attribution_status: 'not_applicable',
@@ -220,8 +220,8 @@ function makeValidV2Export(): ReplayExportV2 {
         end_sequence: 2,
         title: 'Initial snapshot and patch tool boundary',
         evidence_refs: ['rec-001', 'rec-002'],
-        source: 'deterministic_baseline',
-        title_status: 'baseline',
+        source: 'deterministic_fixed_group',
+        title_status: 'deterministic template',
       },
     ],
     chapters: [
@@ -232,7 +232,7 @@ function makeValidV2Export(): ReplayExportV2 {
         title: 'Refactored return value in hello.py',
         evidence_refs: ['rec-001', 'rec-002'],
         source: 'model',
-        title_status: 'model_interpretation',
+        title_status: 'model interpretation',
       },
     ],
     chapter_run: {
@@ -265,7 +265,7 @@ function makeValidV2Export(): ReplayExportV2 {
           evidence_hash: 'c'.repeat(64),
         },
         claims: {
-          schema_version: 'replay-claims-run-1.0',
+          schema_version: 'replay-claim-run-1.0',
           final_claims: [
             {
               id: 'claim-1',
@@ -348,7 +348,7 @@ function makeValidV2Export(): ReplayExportV2 {
                 evidence_refs: ['rec-002'],
                 checker_version: 'replay-checker-1.0',
               },
-              display_status: 'supported',
+              display_status: 'supported_recorded_fact',
             },
           ],
           supported_claims: [],
@@ -479,6 +479,6 @@ describe('Replay Export Validation (Phase C1)', () => {
     expect(v1Result.success).toBe(true);
     expect(v1Result.version).toBe('replay-export-1.0');
     expect(v1Result.origin).toBe('synthetic_fixture');
-    expect(v1Result.isPartial).toBe(true);
+    expect(v1Result.data?.session.status).toBe('active');
   });
 });

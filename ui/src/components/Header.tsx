@@ -11,7 +11,7 @@ import {
   FileText,
   FileDiff,
 } from 'lucide-react';
-import { formatDurationMs } from '../utils/format';
+import { formatDurationMs, formatDuration } from '../utils/format';
 
 export type WorkspaceActiveView = 'map' | 'diagnostics' | 'replay' | 'files' | 'changes';
 
@@ -169,13 +169,17 @@ export const Header: React.FC<HeaderProps> = ({
               title={onBackToSelector ? 'Click to change project or run' : undefined}
             >
               <span style={{ fontWeight: 600 }}>{activeRun.project}</span>
-              <span style={{ color: 'var(--text-muted)' }}>/</span>
-              <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <GitBranch size={11} />
-                {activeRun.gitBranch}
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>@</span>
-              <span style={{ color: 'var(--text-muted)' }}>{activeRun.gitRevision.slice(0, 7)}</span>
+              {!activeRun.isReplay && (
+                <>
+                  <span style={{ color: 'var(--text-muted)' }}>/</span>
+                  <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <GitBranch size={11} />
+                    {activeRun.gitBranch}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>@</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{activeRun.gitRevision.slice(0, 7)}</span>
+                </>
+              )}
             </div>
           )}
 
@@ -211,8 +215,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Sample Data / Fixture Badge */}
-          {activeRun?.isFixture && !activeRun.isLive && (
+          {/* Sample Data / Fixture Badge (hidden in replay to avoid duplicate badge row) */}
+          {activeRun?.isFixture && !activeRun.isLive && !activeRun.isReplay && (
             <span
               className="badge-status sample"
               title={activeRun.fixtureLabel || 'Read-only fixture data: synthetic sample artifacts'}
@@ -235,96 +239,21 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
 
-          {/* Replay Recording Badges */}
-          {activeRun?.isReplay && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <span
-                data-testid="replay-origin-badge"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '10px',
-                  fontFamily: 'var(--font-mono)',
-                  color: activeRun.replayOrigin === 'real_recording' ? '#38bdf8' : '#e2e8f0',
-                  backgroundColor:
-                    activeRun.replayOrigin === 'real_recording'
-                      ? 'rgba(56, 189, 248, 0.12)'
-                      : 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  padding: '2px 7px',
-                  borderRadius: 'var(--radius-sm)',
-                  whiteSpace: 'nowrap',
-                  fontWeight: 600,
-                }}
-              >
-                {activeRun.replayOrigin === 'synthetic_fixture'
-                  ? 'SYNTHETIC FIXTURE'
-                  : activeRun.replayOrigin === 'simulated_demo'
-                  ? 'SIMULATED DEMO'
-                  : 'REAL RECORDING'}
-              </span>
-
-              <span
-                data-testid="replay-historical-status"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  fontSize: '10px',
-                  fontFamily: 'var(--font-mono)',
-                  color: '#94a3b8',
-                  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  padding: '2px 7px',
-                  borderRadius: 'var(--radius-sm)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                HISTORICAL (STOPPED)
-              </span>
-
-              {activeRun.granularity && (
-                <span
-                  data-testid="replay-granularity-badge"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    fontSize: '10px',
-                    fontFamily: 'var(--font-mono)',
-                    color: '#cbd5e1',
-                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    padding: '2px 7px',
-                    borderRadius: 'var(--radius-sm)',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={
-                    activeRun.granularity === 'tool_boundary'
-                      ? 'Tool boundary: attributed pre/post tool snapshots'
-                      : 'Observed checkpoint without attributed tool boundary'
-                  }
-                >
-                  {activeRun.granularity === 'tool_boundary' ? 'TOOL BOUNDARY' : 'OBSERVED CHECKPOINT'}
-                </span>
-              )}
-
-              {activeRun.codexVersion && activeRun.codexVersion !== 'Not recorded' && (
-                <span
-                  data-testid="replay-agent-version"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    fontSize: '10px',
-                    fontFamily: 'var(--font-mono)',
-                    color: '#94a3b8',
-                    padding: '2px 6px',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {activeRun.codexVersion}
-                </span>
-              )}
-            </div>
+          {/* Replay Duration (calm header) */}
+          {activeRun?.isReplay && activeRun.durationMs > 0 && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-muted)',
+                padding: '2px 6px',
+                whiteSpace: 'nowrap',
+              }}
+              title="Recorded session duration"
+              data-testid="replay-duration-badge"
+            >
+              {formatDuration(activeRun.durationMs)}
+            </span>
           )}
 
           {/* Persistent Compact Imported Label */}
@@ -381,8 +310,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Outcome Summary Pill: Derived explicitly from RunOutcome - hidden in live watch */}
-          {activeRun && !activeRun.isLive && (() => {
+          {/* Outcome Summary Pill: Derived explicitly from RunOutcome - hidden in live watch and replay */}
+          {activeRun && !activeRun.isLive && !activeRun.isReplay && (() => {
             const outcome = activeRun.runOutcome || (activeRun.harnessStatus as any);
             const isStructureOnly = activeRun.isRealImport && (activeRun.v2RunCount === 0 || !outcome);
 

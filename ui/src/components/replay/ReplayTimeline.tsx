@@ -162,7 +162,13 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
 
           {chapters.map((ch) => {
             const isSelected = ch.id === selectedChapterId;
-            const isInterpretation = ch.title_status === 'model_interpretation';
+            const isInterpretation = ch.title_status === 'model interpretation';
+            const isTemplate = ch.title_status === 'deterministic template' || ch.title_status === 'baseline';
+            const titleStatusLabel = isInterpretation
+              ? 'model interpretation'
+              : isTemplate
+              ? 'baseline'
+              : ch.title_status || 'unknown';
             const count = timeline.filter((t) => t.sequence >= ch.start_sequence && t.sequence <= ch.end_sequence).length;
 
             return (
@@ -219,8 +225,9 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                       color: isInterpretation ? '#c084fc' : '#94a3b8',
                       border: isInterpretation ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid rgba(148, 163, 184, 0.2)',
                     }}
+                    data-testid="replay-chapter-title-status"
                   >
-                    {isInterpretation ? 'model interpretation' : 'baseline'}
+                    {titleStatusLabel}
                   </span>
                 </div>
               </div>

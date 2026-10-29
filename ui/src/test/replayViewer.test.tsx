@@ -13,7 +13,7 @@ function createTestV1(): ReplayExportV1 {
     schema_version: 'replay-export-1.0',
     exported_at: '2026-10-28T16:00:00Z',
     session: {
-      schema_version: 'replay-session-1.0',
+      schema_version: 'replay-store-1.0',
       id: 'session-view-001',
       created_at: '2026-10-28T15:50:00Z',
       stopped_at: '2026-10-28T16:00:00Z',
@@ -31,14 +31,14 @@ function createTestV1(): ReplayExportV1 {
     },
     records: [
       {
-        schema_version: 'replay-record-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'rec-01',
         session_id: 'session-view-001',
         sequence: 1,
         source_identity: 'src-01',
         source_offset: 0,
         source_sequence: 1,
-        record_type: 'initial',
+        record_type: 'initial_snapshot',
         captured_at: '2026-10-28T15:50:00Z',
         source_timestamp: null,
         provenance: 'initial_snapshot',
@@ -60,7 +60,7 @@ function createTestV1(): ReplayExportV1 {
         test_refs: [],
       },
       {
-        schema_version: 'replay-record-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'rec-02',
         session_id: 'session-view-001',
         sequence: 2,
@@ -91,7 +91,7 @@ function createTestV1(): ReplayExportV1 {
     ],
     manifests: [
       {
-        schema_version: 'snapshot-manifest-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'man-01',
         files: [
           {
@@ -107,7 +107,7 @@ function createTestV1(): ReplayExportV1 {
         partial: false,
       },
       {
-        schema_version: 'snapshot-manifest-1.0',
+        schema_version: 'replay-store-1.0',
         id: 'man-02',
         files: [
           {
@@ -198,8 +198,8 @@ function createTestV2(): ReplayExportV2 {
         end_sequence: 2,
         title: 'Initial snapshot and patch',
         evidence_refs: ['rec-01', 'rec-02'],
-        source: 'deterministic_baseline',
-        title_status: 'baseline',
+        source: 'deterministic_fixed_group',
+        title_status: 'deterministic template',
       },
     ],
     chapters: [
@@ -210,7 +210,7 @@ function createTestV2(): ReplayExportV2 {
         title: 'Implement calculation formula',
         evidence_refs: ['rec-01', 'rec-02'],
         source: 'model',
-        title_status: 'model_interpretation',
+        title_status: 'model interpretation',
       },
     ],
     chapter_run: {
@@ -243,7 +243,7 @@ function createTestV2(): ReplayExportV2 {
           evidence_hash: 'h'.repeat(64),
         },
         claims: {
-          schema_version: 'replay-claims-run-1.0',
+          schema_version: 'replay-claim-run-1.0',
           final_claims: [],
           final_source: 'first',
           verdicts: [],

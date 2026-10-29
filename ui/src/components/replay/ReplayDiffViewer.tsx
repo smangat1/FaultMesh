@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import type { ChangedFileView, ChangedSymbolView } from '../../replay/types';
+import type { ChangedFileView, ChangedSymbolView, TimelineEntry, Completeness } from '../../replay/types';
 import { FileDiff, AlertTriangle, Hash } from 'lucide-react';
+import { formatReplayTime } from '../../replay/utils';
 
 interface ReplayDiffViewerProps {
   selectedFile: string | null;
@@ -8,6 +9,9 @@ interface ReplayDiffViewerProps {
   changedSymbols: ChangedSymbolView[];
   onSelectFile: (path: string) => void;
   getHistoricalContent: (path: string) => { content: string | null; sha256: string | null };
+  entry?: TimelineEntry | null;
+  completenessInfo?: { completeness: Completeness; gaps: string[] };
+  isModelNarrationAvailable?: boolean;
 }
 
 export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
@@ -16,6 +20,9 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   changedSymbols,
   onSelectFile,
   getHistoricalContent,
+  entry,
+  completenessInfo,
+  isModelNarrationAvailable,
 }) => {
   const [viewMode, setViewMode] = useState<'diff' | 'source'>('diff');
 
@@ -30,6 +37,9 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   const hasStaleAst = symbolsForFile.some((s) => !s.verified);
 
   if (!currentPath && changedFiles.length === 0) {
+    const isPartial = entry?.completeness === 'partial' || completenessInfo?.completeness === 'partial';
+    const isTool = entry?.attribution_status === 'tool_boundary';
+
     return (
       <div
         style={{
@@ -38,15 +48,113 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           alignItems: 'center',
           justifyContent: 'center',
           height: '100%',
-          color: 'var(--text-muted)',
-          fontSize: '12px',
-          gap: '8px',
+          color: '#f8fafc',
           backgroundColor: '#111318',
+          padding: '32px',
+          overflowY: 'auto',
         }}
         data-testid="replay-empty-diff"
       >
-        <FileDiff size={28} style={{ opacity: 0.4 }} />
-        <span>No file changes recorded at this checkpoint</span>
+        <div
+          style={{
+            maxWidth: '560px',
+            width: '100%',
+            backgroundColor: '#161920',
+            border: '1px solid #232730',
+            borderRadius: '8px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '6px',
+                backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#94a3b8',
+                flexShrink: 0,
+              }}
+            >
+              <FileDiff size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                Checkpoint #{entry?.sequence ?? 1} Overview
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono, monospace)', marginTop: '2px' }}>
+                record:{entry?.record_id ?? 'unknown'} {entry?.captured_at ? `· ${formatReplayTime(entry.captured_at)}` : ''}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
+            {/* Step Boundary & Attribution */}
+            <div
+              style={{
+                padding: '8px 12px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ color: 'var(--text-muted)' }}>Attribution status:</span>
+              <span style={{ color: isTool ? '#38bdf8' : '#cbd5e1', fontWeight: 500 }}>
+                {isTool ? `Tool boundary (${entry?.tool_name || 'attributed step'})` : 'Observed checkpoint (timer / non-tool event)'}
+              </span>
+            </div>
+
+            {/* Completeness / Snapshot state */}
+            <div
+              style={{
+                padding: '8px 12px',
+                borderRadius: '4px',
+                backgroundColor: isPartial ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                border: isPartial ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid rgba(255, 255, 255, 0.06)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Recording completeness:</span>
+                <span style={{ color: isPartial ? '#fbbf24' : '#10b981', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {entry?.completeness ?? 'complete'}
+                </span>
+              </div>
+              <div style={{ color: isPartial ? '#fde68a' : 'var(--text-muted)', fontSize: '10px' }}>
+                {entry?.gap_reason
+                  ? `Gap details: ${entry.gap_reason}`
+                  : isPartial
+                  ? 'Missing content hashes detected in recording; code diff unavailable at this sequence.'
+                  : 'No file modifications recorded at this checkpoint; code state is unchanged from previous step.'}
+              </div>
+            </div>
+
+            {/* Model interpretation note */}
+            {!isModelNarrationAvailable && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  color: 'var(--text-muted)',
+                  fontSize: '10px',
+                }}
+              >
+                <strong>Prompt A Baseline Recording:</strong> Model-generated chapters, atomic claims, and likely-reason inferences are not present for this export.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
