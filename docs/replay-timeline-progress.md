@@ -5,11 +5,12 @@
 - Phase P0 branch: `replay-timeline-bar` (PR #21 merged into main)
 - Phase P1 branch: `replay-timeline-p1` (PR #22 merged into main)
 - Phase P2 branch: `replay-timeline-p2` (PR #23 merged into main)
-- Phase P3 branch: `replay-timeline-p3`
+- Phase P3 branch: `replay-timeline-p3` (PR #25 merged into main)
+- Phase P4 branch: `replay-timeline-p4`
 - Branched from `origin/main` commit SHA:
-  `957aa27d70ec305f25c5fcd3ffe6b09f0808f406`
-- Base commit description: `Merge pull request #23 from smangat1/replay-timeline-p2` (Phase P2 visual foundation and token system).
-- This SHA is the strict revert baseline for all work in Phase P3.
+  `ced1195f293cd6e19fa9e34999f28056f2ccc7e5`
+- Base commit description: `Merge pull request #25 from smangat1/replay-timeline-p3` (Phase P3 hero timeline bar component).
+- This SHA is the strict revert baseline for all work in Phase P4.
 
 ---
 
@@ -269,10 +270,99 @@ Status: complete. Hero scrubber component implemented with pure time geometry, c
 
 ---
 
-## Next Phase: P4 — Layout Restructure + Mini-Map Dock
-- Restructure `ReplayWorkspace.tsx`:
-  - Timeline bar as full-width hero across top of replay workspace.
-  - Diff view below as the primary default focus.
-  - Chapters accordion and evidence inspector become on-demand panels (left rail and right drawer), closed by default.
-  - Project map becomes resizable mini-map dock (persists size and open state in localStorage, shortcut `M` to toggle, drag handle to resize, honest empty state when recording carries no structure data).
-- How to resume: Run `continue` to proceed to Phase P4 implementation.
+---
+
+## Phase P4 — Timeline-First Layout Restructure & Mini-Map Dock
+
+Status: complete. Implemented uncrowded timeline-first layout where the timeline bar and current-step diff view form the default hero experience, with all secondary panels (Chapters, Evidence, Mini Map) accessible on demand. 7/7 unit tests passed; full UI test suite 27/27 files (220 Vitest tests + 8 Electron tests) passing; production build clean.
+
+### Implementation Summary
+1. **Default Timeline-First Replay Screen**:
+   - **Hero Timeline Bar**: Positioned across the full workspace width directly below the header. Scrubber bar serves as the primary navigation hero element.
+   - **Calm Step Focus & Chapter Info Strip**: Located directly under the hero bar (`.replay-step-focus-strip`). Displays current chapter title with clear badge (`deterministic template` vs `model interpretation`), active step record ID, tool name, and calmness-preserving honesty signals (`HISTORICAL (STOPPED)`, `TOOL BOUNDARY` / `OBSERVED CHECKPOINT`, Codex version).
+   - **Main Stage Diff Viewer**: When on-demand panels are closed (the default initial state), `ReplayDiffViewer` expands to occupy 100% of the workspace width and height. One focus at a time, eliminating visual crowding.
+   - **Minimal Header**: Stripped of badge clusters per visual direction. Retains step position (`replay-current-seq-badge`) with hover tooltip `recorded at <time>`, origin badge (`replay-header-origin`), and subtle completeness warning when incomplete (`replay-completeness-badge`).
+
+2. **On-Demand Secondary Panels (Closed by Default)**:
+   - **Chapters & Sequence Left Rail**:
+     - Closed by default (`isChaptersOpen = false`).
+     - Toggled via the "Chapters" header button (`replay-toggle-chapters`) or keyboard shortcut `C`.
+     - Slides open as a 300px left rail containing `ReplayTimeline` (chapters accordion and step sequence list).
+     - Dismissible via close button `[×]` (`replay-chapters-close-btn`), `C`, or `Escape`.
+   - **Evidence & Claims Right Drawer**:
+     - Closed by default (`isEvidenceOpen = false`).
+     - Toggled via the "Evidence" header button (`replay-toggle-evidence`) or keyboard shortcut `E`.
+     - Slides open as a 420px right drawer containing `ReplayEvidenceInspector` (structured test evidence, claims verdicts, reason inferences, summary audit).
+     - Dismissible via close button `[×]` (`replay-evidence-close-btn`), `E`, or `Escape`.
+   - **Project Structure Mini Map Dock (`ReplayMiniMapDock.tsx`)**:
+     - Closed by default (`isMiniMapOpen = false`).
+     - Toggled via "Mini Map" header button (`replay-toggle-minimap`), floating toggle, or keyboard shortcut `M`.
+     - **Three Preset Size States**:
+       1. `small`: 240px x 160px (default preview)
+       2. `medium`: 400px x 260px (expanded dock)
+       3. `full`: 100% width and height taking over the main stage
+     - **Size Cycling**: Header button (`replay-minimap-cycle-size`) cycles `small` -> `medium` -> `full` -> `small`.
+     - **Free Resize Handle**: Top-left corner drag grip (`replay-minimap-resize-handle`) allows free pointer drag resizing between 200px–900px width and 140px–650px height. Focusable (`tabIndex={0}`, `role="slider"`) and arrow-key operable in 20px steps (`ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`).
+     - **Persistence**: Remembers open state and size configuration across sessions via `localStorage` (`faultmesh:replay:minimap:state`).
+     - **Strict Rule 2 Honesty & Architecture**:
+       - Reuses the existing `GraphView` read-only (`viewMode="structure"`, `isAgentMode={false}`) when recorded graph structure data with nodes and edges is available.
+       - Replay exports carry no graph dependency edges (`edges: []`), so for recordings without structure data, it displays an honest empty state explaining that:
+         *"This recording contains no project-structure data — No dependency graph or AST relationship edges were recorded for this session."*
+         Never invents or fabricates fake nodes, and never substitutes an ad-hoc file list for the project map.
+       - *Follow-up Proposal*: As noted during review, if a checkpoint manifest file browser is desired, it should be designed as a separate dedicated files inspection utility rather than conflated with the project dependency map.
+
+3. **Phase P4 Review Fixes & Keyboard Resize Isolation**:
+   - **Bug 1 (Navigation Away Fixed)**: Removed `onOpenProjectMap` from `ReplayWorkspace.tsx` and `App.tsx`. Removed the hidden dummy span with `data-testid="replay-open-map-btn"`. Clicking "Mini Map" (`replay-toggle-minimap`) and pressing `M` now strictly toggles the dock inside the replay workspace; session never loses context or navigates away. Added unit test verifying `App.tsx` wiring and context retention.
+   - **Design Deviation 3 (Map Engine Reused & Keyboard Operable)**: Removed the custom file list from `ReplayMiniMapDock.tsx`. Connected `GraphView` read-only for genuine graph data, with honest empty state when no graph structure exists. Made the resize handle focusable with visible focus styles and arrow-key operable in 20px steps. Made all dock controls keyboard reachable.
+   - **Keyboard Arrow Isolation (Follow-up)**: In `ReplayMiniMapDock.tsx`'s `handleResizeKeyDown`, called `e.stopPropagation()` (while preserving `e.preventDefault()`). In `ReplayWorkspace.tsx`, added a guard to ignore window keydowns when `e.target` or `document.activeElement` is inside `[data-testid="replay-minimap-dock"]`. This ensures resizing the mini map dock with ArrowLeft/ArrowRight never changes the active checkpoint sequence.
+   - **False Screenshot Claims 2 (Re-query & DOM Assertions)**: Overhauled `ui/scripts/capture_replay_screenshots.js`. Implemented `goToStep` with sequential click re-querying and DOM update synchronization. Added strict assertions (`assertCheckpointInDOM`) verifying exact checkpoint sequence numbers (`#3 of 7`, `#6 of 7`, `#4 of 7`, `#7 of 7`) and scenario-specific DOM elements before capturing each screenshot. Cleared `localStorage` between viewport passes. Re-captured all 4 scenarios across 1440x900 and 1024x700 with verified 100% unique SHA-256 hashes.
+
+4. **Keyboard Shortcuts**:
+   - `Left Arrow` / `j`: Previous checkpoint
+   - `Right Arrow` / `k`: Next checkpoint
+   - `C` / `c`: Toggle Chapters rail
+   - `E` / `e`: Toggle Evidence drawer
+   - `M` / `m`: Toggle Mini Map dock
+   - `ArrowLeft` / `ArrowRight` / `ArrowUp` / `ArrowDown`: Resize Mini Map dock in 20px steps when resize handle is focused (isolated from checkpoint navigation)
+   - `Escape`: Dismiss active open panel
+
+### Unit Test Verification (`ui/src/test/replayTimelineLayoutP4.test.tsx`)
+- **Suite**: 9 comprehensive tests (all passing):
+  1. Default timeline-first layout: hero bar visible, diff viewer as main stage, panels closed by default.
+  2. Toggle Chapters left rail via `C` key and header button with close button dismissal.
+  3. Toggle Evidence right drawer via `E` key and header button with close button dismissal.
+  4. Toggle Mini Map dock via `M` key, cycle size states (`small` -> `medium` -> `full`), and persist in `localStorage`.
+  5. Support free resizing drag and keyboard arrow resizing in 20px steps on mini map resize handle.
+  6. Strictly honor Rule 2: honest empty state when recording carries no project structure data.
+  7. Render `GraphView` inside mini map dock when recording carries valid graph structure data.
+  8. Render the workspace the way `App.tsx` does and assert clicking Mini Map button does NOT call any navigation callback or leave replay.
+  9. Prevent keyboard arrow resizing on mini map resize handle from leaking through to global replay checkpoint navigation.
+
+### Real Screenshot Capture (`docs/screenshots/replay/`)
+- Fresh headless Chrome captures against real fixtures for each distinct scenario, strictly verified with runtime DOM assertions:
+  1. `01_normal_run_${vp.name}.png`: Default timeline-first layout at step 3 with full-width hero bar, diff viewer as central main content, and all on-demand panels closed.
+  2. `02_idle_break_axis_label_${vp.name}.png`: Step 6 with honest `15m idle` axis break on hero bar and Evidence right drawer open displaying failed test evidence.
+  3. `03_gap_region_${vp.name}.png`: Mid-run Step 4 gap record with warning hatch pattern on hero bar and Chapters left rail open showing sequence list with `GAP` badge.
+  4. `04_model_interpretation_chapter_${vp.name}.png`: Step 7 in model chapter, showing dashed bracket with `[model]` tag on hero bar, model interpretation chapter focus strip, and Mini Map dock open inside the replay screen (session remains in replay context).
+- **Verified SHA-256 Checksums (Zero Duplicates)**:
+  | File | SHA-256 Checksum |
+  |---|---|
+  | `01_normal_run_1024x700.png` | `425776e0cddbccd7a82fb159094805bd9198317b4b9e4992209d8f27afabeed6` |
+  | `01_normal_run_1440x900.png` | `5df589a5f66820cbfdedbc38b3b537b2ffbc62396322968c91c7934b363de3d5` |
+  | `02_idle_break_axis_label_1024x700.png` | `0b09598ec000f1651b3a5e59e407ff45d99efb9dc541b57e190f36e31d3dcf6c` |
+  | `02_idle_break_axis_label_1440x900.png` | `7e821361e228a6ebeb1934c7c11d1c69781d1bdf889a749cbddd713c8c3dea68` |
+  | `03_gap_region_1024x700.png` | `9da929a7b9ceda11ac9a5b54276fdeadf426fcd48366f0fa7ea32e4eb69d7829` |
+  | `03_gap_region_1440x900.png` | `280b8e0c508798714fa7e66292ac30f66ef26572b03a272c72e104b5efac1b50` |
+  | `04_model_interpretation_chapter_1024x700.png` | `55f2aae7f70cd125633c203dd9c58a5efcfb1c3310601c781b0c84e303e55c8a` |
+  | `04_model_interpretation_chapter_1440x900.png` | `460edf511820a692b9de847d8d22012ccf90df0f3880dff04bd0879d36ce1e7a` |
+
+### Quality & Verification Results
+- `npm test`: 27/27 test files passed (222 Vitest tests, 8 Electron node tests).
+- `npm run build`: `tsc && vite build` clean in 1.52s with zero errors.
+
+---
+
+## Next Phase: P5 — Integration, Visual Polish & Final Verification
+- Final end-to-end integration across all replay components and screens.
+- Visual polish ensuring calm Homeboard aesthetic across all viewport sizes.
+- Full regression verification across live and replay workspaces.

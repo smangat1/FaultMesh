@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ReplayWorkspace } from '../components/replay/ReplayWorkspace';
 import { ReplayAdapter } from '../adapter/replayAdapter';
@@ -371,12 +371,11 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
   it('provides optional project map action without requiring graph to read run', () => {
     const v1 = createTestV1();
     const adapter = new ReplayAdapter(v1);
-    const onOpenMap = vi.fn();
-    render(<ReplayWorkspace adapter={adapter} onOpenProjectMap={onOpenMap} />);
+    render(<ReplayWorkspace adapter={adapter} />);
 
-    const openMapBtn = screen.getByTestId('replay-open-map-btn');
-    expect(openMapBtn).toBeDefined();
-    fireEvent.click(openMapBtn);
-    expect(onOpenMap).toHaveBeenCalledTimes(1);
+    const toggleMapBtn = screen.getByTestId('replay-toggle-minimap');
+    expect(toggleMapBtn).toBeDefined();
+    fireEvent.click(toggleMapBtn);
+    expect(screen.getByTestId('replay-minimap-dock')).toBeDefined();
   });
 });

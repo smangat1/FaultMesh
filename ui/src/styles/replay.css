@@ -478,3 +478,148 @@
   }
 }
 
+/* ==========================================================================
+   Phase P4: Timeline-First Layout & On-Demand Panels
+   ========================================================================== */
+
+/* Step Focus & Chapter Strip (Under Hero Bar) */
+.replay-step-focus-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background-color: var(--replay-bg-surface-2);
+  border-bottom: 1px solid var(--replay-border-subtle);
+  font-size: 11px;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.replay-step-focus-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.replay-step-focus-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Header Toggle Buttons */
+.replay-header-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  border-radius: var(--replay-radius-control);
+  border: 1px solid var(--replay-border-subtle);
+  background-color: var(--replay-bg-surface-2);
+  color: var(--replay-text-muted);
+  cursor: pointer;
+  transition: all var(--replay-transition-quick);
+  user-select: none;
+}
+
+.replay-header-toggle-btn:hover {
+  color: var(--replay-text-primary);
+  border-color: var(--replay-border-focus);
+  background-color: var(--replay-bg-surface-3);
+}
+
+.replay-header-toggle-btn.active {
+  color: var(--replay-accent);
+  background-color: var(--replay-accent-glow);
+  border-color: var(--replay-status-complete-border);
+}
+
+.replay-shortcut-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--replay-text-faint);
+}
+
+/* On-Demand Left Rail (Chapters & Steps) */
+.replay-chapters-rail {
+  width: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 1px solid var(--replay-border-subtle);
+  background-color: var(--replay-bg-surface-1);
+  overflow: hidden;
+  z-index: 20;
+}
+
+/* On-Demand Right Drawer (Evidence Inspector) */
+.replay-evidence-drawer {
+  width: 420px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-left: 1px solid var(--replay-border-subtle);
+  background-color: var(--replay-bg-surface-1);
+  overflow: hidden;
+  z-index: 20;
+}
+
+/* On-Demand Panel Top Header */
+.replay-panel-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background-color: var(--replay-bg-surface-2);
+  border-bottom: 1px solid var(--replay-border-subtle);
+  flex-shrink: 0;
+}
+
+.replay-panel-top-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--replay-text-primary);
+}
+
+.replay-panel-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--replay-border-subtle);
+  border-radius: var(--replay-radius-control);
+  background: transparent;
+  color: var(--replay-text-muted);
+  cursor: pointer;
+  transition: all var(--replay-transition-quick);
+}
+
+.replay-panel-close-btn:hover {
+  color: var(--replay-text-primary);
+  border-color: var(--replay-border-focus);
+  background-color: var(--replay-bg-surface-3);
+}
+
+.replay-minimap-resize-handle:focus-visible {
+  outline: 1.5px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45));
+  color: var(--replay-accent, #4a7bb0) !important;
+  background-color: var(--replay-bg-surface-3, #1c2436);
+}
+
+

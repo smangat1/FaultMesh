@@ -938,7 +938,7 @@ export const App: React.FC<AppProps> = ({
               activeAdapter instanceof ReplayAdapter ? (
                 <ReplayWorkspace
                   adapter={activeAdapter}
-                  onOpenProjectMap={() => setActiveView('map')}
+                  graphData={graphData}
                 />
               ) : (
                 <ReplayComparisonView

@@ -21,6 +21,7 @@ import type {
   AttributionStatus,
   Completeness,
   ChangeType,
+  SnapshotManifest,
 } from '../replay/types';
 import { isReplayExportV2 } from '../replay/types';
 import { decodeBase64ToUtf8 } from '../replay/utils';
@@ -67,6 +68,10 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public getTimeline(): TimelineEntry[] {
     return this.exported.timeline;
+  }
+
+  public getManifests(): SnapshotManifest[] {
+    return this.exported.manifests || [];
   }
 
   public getTimelineEntry(sequence: number): TimelineEntry | null {
