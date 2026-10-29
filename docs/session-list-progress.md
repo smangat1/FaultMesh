@@ -5,7 +5,7 @@
 - **BASE_SHA**: `f5cda9650936c1e6767edbc830e4ec086f480f49`
 - **Branch**: `session-list-timeline-tips`
 - **Revert Baseline**: All work across Phase 1, Phase 2, and Phase 3 is branched from and revertible to `f5cda9650936c1e6767edbc830e4ec086f480f49`.
-- **Target PR**: Draft PR on `session-list-timeline-tips` opened after Phase 1 commit.
+- **Target PR**: Draft PR [#27](https://github.com/smangat1/FaultMesh/pull/27) on `session-list-timeline-tips` opened after Phase 1 commit.
 
 ## Backend Integration Note (PR #28)
 
@@ -59,7 +59,7 @@ controls. This note does not alter the parallel branch's phase ownership or chec
 ## Commit & Evidence Log
 
 ### Phase 1: autodetect selector widgets
-- **Commit SHA**: `7134b4081c74ad496c09a803f295e86dbe329c31`
+- **Commit SHA**: `718af731ddf1b087408bb0df85e7f91e3654b9ae`
 - **Files Changed (12 files)**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/01-autodetect-home-two-tool-widgets.png`
