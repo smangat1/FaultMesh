@@ -2,11 +2,12 @@
 
 ## Reference Baseline
 
-- Branch: `replay-timeline-bar`
+- Phase P0 branch: `replay-timeline-bar` (PR #21 merged into main)
+- Phase P1 branch: `replay-timeline-p1`
 - Branched from `origin/main` commit SHA:
-  `5b29d26e45b41f9bc1a730e3e688bceba2e39e4c`
-- Base commit description: `Merge pull request #20 from smangat1/replay-viewer-ui` (includes complete merged replay viewer, typed contracts, sanitized fixtures, and backend contract alignment).
-- This SHA is the strict revert baseline for all work in this stream.
+  `f3530fe6e9d64dc17cef679e4aa84eb9030fb230`
+- Base commit description: `Merge pull request #21 from smangat1/replay-timeline-bar` (Phase P0 time-field gate investigation doc).
+- This SHA is the strict revert baseline for all work in Phase P1.
 
 ---
 
@@ -87,7 +88,49 @@ Status: complete. Gate passed.
 
 ---
 
-## Next Phase: P1 — Time Model + Unit Tests
-- Create pure TypeScript module `ui/src/replay/timeModel.ts` producing bar geometry (proportional time, capped idle stretches with axis-break squiggles, gap regions, chapter segment bounds, test markers).
-- Add unit tests in `ui/src/test/replayTimeModel.test.ts` covering: empty session, single step, normal run, idle stretch over threshold, gap mid-run, rotation clock jump, chapter spanning a gap, chapters from all three source values.
-- How to resume: Run `continue` to proceed to Phase P1 implementation.
+## Phase P1 — Time Model + Unit Tests
+
+Status: complete. 18/18 unit tests passed, full suite 24/24 files (197 tests + 8 electron tests) passed, build clean.
+
+### Implementation Summary
+- **Module**: `ui/src/replay/timeModel.ts`
+  - Pure TypeScript geometry and timing calculator for the hero timeline bar.
+  - Takes `timeline: TimelineEntry[]`, `tests?: StructuredTestEvidence[]`, `chapters?: ReplayChapter[]`, and configurable `options?: TimeModelOptions`.
+  - Calculates proportional time positions along `[0.0, 1.0]` with visual separation guarantees (`minIntervalWeightMs`).
+  - Identifies idle stretches exceeding `idleThresholdMs` (default 5m), caps their visual weight to `cappedIdleWeightMs`, and generates `AxisBreak` data with human-readable labels (e.g. `2h 14m idle`, `30m idle`).
+  - Identifies gap records (`record_type === 'gap'`), allocates `fixedGapWeightMs` (since elapsed time is unknown), and generates `GapRegion` items preserving `gapReason` (e.g., `corrupt input`, `sequence loss`).
+  - Accurately tracks tool call durations strictly for matching `pre_tool` and `post_tool` pairs with the same `tool_use_id`.
+  - Maps `ReplayChapter` sequence ranges to bar coordinate ratios, flags model interpretations (`isModelInterpretation: boolean`), and detects gap spans (`spansGap: boolean`). Chapters spanning gaps have `durationMs = null` to maintain strict data honesty.
+  - Maps `StructuredTestEvidence` to bar positions via command record linkage, manifest association, or interpolated timestamps.
+  - Clamps clock jumps and log rotations using `Math.max(0, nextTs - curTs)` to ensure strictly monotonic sequence ordering.
+  - Provides `findNearestStep(ratio)` snap helper, honoring the rule that scrubber thumb snaps to the nearest recorded step and never rests in unrecorded space.
+  - Provides strict wall-clock time hover string helper: `formatRecordedAt()` ("recorded at 2:03:22 PM", never "agent spent X on this").
+
+### Unit Test Verification (`ui/src/test/replayTimeModel.test.ts`)
+- **Suite**: 18 tests across 11 key scenarios:
+  1. `formatRecordedAt`: UTC ISO timestamps formatted into wall-clock times (AM/PM, midnight, invalid fallback).
+  2. `formatIdleDuration`: Concise axis-break labels (`15m idle`, `2h 14m idle`, `45s idle`).
+  3. `Scenario 1`: Empty session (`timeline: []`) cleanly returns empty geometry with null-safe lookup methods.
+  4. `Scenario 2`: Single step session correctly sets `positionRatio: 0.0` and snaps queries to that step.
+  5. `Scenario 3`: Normal run with proportional time spacing and visual separation.
+  6. `Scenario 4`: Idle stretch over threshold caps virtual weight and creates `AxisBreak` with exact start/center/end ratios.
+  7. `Scenario 5`: Gap mid-run allocates fixed gap weight and creates `GapRegion` with `gapReason`.
+  8. `Scenario 6`: Rotation clock jumps / timestamp regressions preserve monotonic sequence ordering without backwards positions.
+  9. `Scenario 7`: Chapter spanning a gap sets `spansGap: true` and `durationMs: null`.
+  10. `Scenario 8`: Chapters from all three source values (`deterministic_prompt_turn`, `deterministic_fixed_group`, `model`) and both title statuses (`deterministic template`, `model interpretation`).
+  11. `Scenario 9`: Tool call duration calculated for matching `pre_tool` and `post_tool` pairs with matching `tool_use_id`.
+  12. `Scenario 10`: `findNearestStep(ratio)` snaps accurately to nearest recorded step for various position queries and clamps bounds.
+  13. `Scenario 11`: Maps test markers with pass/fail/error and neutral states.
+
+### Quality & Verification Results
+- `npm test`: 24/24 test files passed (197 Vitest tests, 8 Electron node tests).
+- `npm run build`: `tsc && vite build` passed with zero errors.
+
+---
+
+## Next Phase: P2 — Visual Foundation & Tokens
+- Introduce calm black/gray/dark-blue tokens in `ui/src/index.css` (layered blue-gray surfaces, 1px low-contrast borders, soft shadows, rounded corners, quiet metadata).
+- Apply tokens strictly to the replay workspace scope (`ReplayWorkspace`, `ReplayTimeline`, `ReplayDiffViewer`, `ReplayEvidenceInspector`, replay header elements).
+- Leave entry screens (`StartupScreen`, `ProjectSelectorScreen`, `LiveEntranceScreen`) and live/spectate workspace untouched.
+- Run tests and take real screenshots.
+- How to resume: Run `continue` to proceed to Phase P2 implementation.
