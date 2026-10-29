@@ -6,6 +6,7 @@ import {
   SYNTHETIC_HISTORY_PAYLOAD,
   createSyntheticReplayExport,
 } from '../fixtures/syntheticHistory';
+import { sanitizeParentDirectory } from '../components/AutodetectHomeScreen';
 
 function installHistoryBridge(customPayload?: Partial<HistoryListPayload>) {
   const payload: HistoryListPayload = {
@@ -156,11 +157,11 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
       expect(screen.getByTestId('session-row-claude-sess-2')).toBeDefined();
     });
 
-    const partialTag = screen.getByTestId('session-parse-status-partial');
+    const partialTag = screen.getByTestId('session-row-codex-sess-3').querySelector('[data-testid="session-parse-status-partial"]')!;
     expect(partialTag.textContent).toBe('partial');
     expect(partialTag.getAttribute('title')).toBe('1 step could not be parsed');
 
-    const unsupportedTag = screen.getByTestId('session-parse-status-unsupported');
+    const unsupportedTag = screen.getByTestId('session-row-claude-sess-2').querySelector('[data-testid="session-parse-status-unsupported"]')!;
     expect(unsupportedTag.textContent).toBe('unsupported');
     expect(unsupportedTag.getAttribute('title')).toBe('Requires local zstd decompression');
   });
@@ -351,5 +352,162 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     expect(screen.getByTestId('autodetect-no-bridge-empty-state')).toBeDefined();
     expect(screen.getByText(/Local session autodetect requires the FaultMesh desktop app/i)).toBeDefined();
     expect(screen.getByTestId('startup-open-recording-btn')).toBeDefined();
+  });
+
+  describe('Phase 1.5: Real-Data Session List Fixes', () => {
+    it('hides system_temp groups by default and reveals them with muted "system temp" badge when toggled', async () => {
+      installHistoryBridge();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('tool-widget-codex')).toBeDefined();
+      });
+
+      // System temp folder (fixture-test) is hidden by default
+      expect(screen.queryByTestId('project-folder-codex:group-temp-fixture')).toBeNull();
+
+      // Quiet toggle button is visible showing hidden count
+      const toggleBtn = screen.getByTestId('toggle-hidden-system-codex');
+      expect(toggleBtn.textContent).toContain('Show 1 hidden system folder');
+
+      // Click to reveal hidden system folders
+      fireEvent.click(toggleBtn);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('project-folder-codex:group-temp-fixture')).toBeDefined();
+      });
+
+      const tempFolder = screen.getByTestId('project-folder-codex:group-temp-fixture');
+      expect(tempFolder.textContent).toContain('fixture-test');
+
+      // Muted system temp badge is rendered
+      const badge = tempFolder.querySelector('[data-testid="system-temp-badge"]');
+      expect(badge).toBeDefined();
+      expect(badge?.textContent).toBe('system temp');
+
+      // Toggle text updates to Hide
+      expect(toggleBtn.textContent).toContain('Hide 1 hidden system folder');
+
+      // Click again to hide
+      fireEvent.click(toggleBtn);
+      expect(screen.queryByTestId('project-folder-codex:group-temp-fixture')).toBeNull();
+      expect(toggleBtn.textContent).toContain('Show 1 hidden system folder');
+    });
+
+    it('disambiguates duplicate project display names within one tool by appending sanitized parent directory', async () => {
+      installHistoryBridge();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('project-folder-codex:group-auth')).toBeDefined();
+        expect(screen.getByTestId('project-folder-codex:group-auth-fork')).toBeDefined();
+      });
+
+      const folder1Name = screen
+        .getByTestId('project-folder-codex:group-auth')
+        .querySelector('[data-testid="project-folder-name"]');
+      const folder2Name = screen
+        .getByTestId('project-folder-codex:group-auth-fork')
+        .querySelector('[data-testid="project-folder-name"]');
+
+      // Both folders share "auth-service", so they are disambiguated with parent directory
+      expect(folder1Name?.textContent).toBe('auth-service / backend');
+      expect(folder2Name?.textContent).toBe('auth-service / services');
+
+      // Groups without duplicates in the same tool (e.g. Claude widget) are NOT appended
+      const claudeFolder1Name = screen
+        .getByTestId('project-folder-claude_code:group-billing')
+        .querySelector('[data-testid="project-folder-name"]');
+      expect(claudeFolder1Name?.textContent).toBe('billing-service');
+    });
+
+    it('sanitizes parent directory components and never leaks full paths or user home directories', () => {
+      expect(sanitizeParentDirectory('/Users/samyan/backend')).toBe('backend');
+      expect(sanitizeParentDirectory('/home/developer/workspace/services')).toBe('services');
+      expect(sanitizeParentDirectory('backend')).toBe('backend');
+
+      // Home directory roots and paths must never be leaked
+      expect(sanitizeParentDirectory('/Users/samyan')).toBeNull();
+      expect(sanitizeParentDirectory('/home/developer')).toBeNull();
+      expect(sanitizeParentDirectory('~')).toBeNull();
+      expect(sanitizeParentDirectory('~/')).toBeNull();
+      expect(sanitizeParentDirectory('/')).toBeNull();
+      expect(sanitizeParentDirectory('Users')).toBeNull();
+      expect(sanitizeParentDirectory('home')).toBeNull();
+      expect(sanitizeParentDirectory(null)).toBeNull();
+      expect(sanitizeParentDirectory('')).toBeNull();
+    });
+
+    it('renders quiet "archived" badge on session row when history_state is archived', async () => {
+      installHistoryBridge();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-row-codex-sess-3')).toBeDefined();
+        expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
+      });
+
+      const archivedSession = screen.getByTestId('session-row-codex-sess-3');
+      const activeSession = screen.getByTestId('session-row-codex-sess-1');
+
+      // Archived session has the archived badge
+      const badge = archivedSession.querySelector('[data-testid="session-history-state-archived"]');
+      expect(badge).toBeDefined();
+      expect(badge?.textContent).toBe('archived');
+
+      // Active session does not have the archived badge
+      expect(activeSession.querySelector('[data-testid="session-history-state-archived"]')).toBeNull();
+    });
+
+    it('prefers source_title over first_prompt_preview as primary row title with secondary redacted preview line', async () => {
+      installHistoryBridge();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-row-codex-sess-title')).toBeDefined();
+        expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
+      });
+
+      // Session with source_title
+      const sessionWithTitle = screen.getByTestId('session-row-codex-sess-title');
+      const primaryTitle = sessionWithTitle.querySelector('[data-testid="session-title"]');
+      const secondaryPreview = sessionWithTitle.querySelector('[data-testid="session-preview-secondary"]');
+
+      expect(primaryTitle?.textContent).toBe('Token leak investigation');
+      expect(secondaryPreview?.textContent).toBe('Check token leakage in debug logs');
+
+      // Session without source_title (fallback to preview as primary, no secondary line)
+      const sessionWithoutTitle = screen.getByTestId('session-row-codex-sess-1');
+      const fallbackTitle = sessionWithoutTitle.querySelector('[data-testid="session-title"]');
+
+      expect(fallbackTitle?.textContent).toBe('Fix token expiration bug [redacted: jwt secret] in auth handler');
+      expect(sessionWithoutTitle.querySelector('[data-testid="session-preview-secondary"]')).toBeNull();
+    });
+
+    it('renders unsupported row with rollout_file_missing reason truthfully in title tooltip and remains selectable', async () => {
+      const harness = installHistoryBridge();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-row-codex-sess-missing-rollout')).toBeDefined();
+      });
+
+      const missingRow = screen.getByTestId('session-row-codex-sess-missing-rollout');
+      const unsupportedBadge = missingRow.querySelector('[data-testid="session-parse-status-unsupported"]');
+
+      expect(unsupportedBadge).toBeDefined();
+      expect(unsupportedBadge?.textContent).toBe('unsupported');
+      expect(unsupportedBadge?.getAttribute('title')).toBe('rollout_file_missing');
+
+      // Primary title reflects source title
+      const title = missingRow.querySelector('[data-testid="session-title"]');
+      expect(title?.textContent).toBe('Archived catalog thread without rollout file');
+
+      // Row is selectable/clickable
+      fireEvent.click(missingRow);
+      await waitFor(() => {
+        expect(harness.importSession).toHaveBeenCalledWith('codex-sess-missing-rollout', 'codex');
+      });
+    });
   });
 });

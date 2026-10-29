@@ -91,6 +91,10 @@ export interface HistoryRoot {
   status: 'ok' | 'missing' | 'unreadable';
   file_count: number;
   message?: string | null;
+  active_file_count?: number | null;
+  archived_file_count?: number | null;
+  catalog_status?: 'ok' | 'missing' | 'unsupported' | 'unreadable' | string | null;
+  catalog_message?: string | null;
 }
 
 export interface HistorySession {
@@ -107,6 +111,17 @@ export interface HistorySession {
   unsupported_reason?: string | null;
   source_file_sha256?: string;
   redaction_types?: string[];
+  history_state?: 'active' | 'archived' | string;
+  project_visibility?: 'normal' | 'system_temp' | string;
+  source_title?: string | null;
+  catalog_first_user_message_preview?: string | null;
+  catalog_preview?: string | null;
+  catalog_matched?: boolean | null;
+  injected_context_messages?: number | null;
+  project_parent_name?: string | null;
+  parent_display_name?: string | null;
+  parent_directory?: string | null;
+  parent_dir?: string | null;
 }
 
 export interface HistoryListPayload {

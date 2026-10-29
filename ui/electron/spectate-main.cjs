@@ -472,6 +472,10 @@ function attachSpectateBridge({
             status: r.status === 'ok' || r.status === 'missing' || r.status === 'unreadable' ? r.status : 'unreadable',
             file_count: Number.isSafeInteger(r.file_count) ? r.file_count : 0,
             message: r.message ? String(r.message) : null,
+            active_file_count: Number.isSafeInteger(r.active_file_count) ? r.active_file_count : undefined,
+            archived_file_count: Number.isSafeInteger(r.archived_file_count) ? r.archived_file_count : undefined,
+            catalog_status: r.catalog_status ? String(r.catalog_status) : undefined,
+            catalog_message: r.catalog_message ? String(r.catalog_message) : undefined,
           }));
           const sessions = parsed.sessions.map((s) => ({
             session_id: String(s.session_id || ''),
@@ -487,6 +491,14 @@ function attachSpectateBridge({
             unsupported_reason: s.unsupported_reason ? String(s.unsupported_reason) : null,
             source_file_sha256: s.source_file_sha256 ? String(s.source_file_sha256) : undefined,
             redaction_types: Array.isArray(s.redaction_types) ? s.redaction_types.map(String) : [],
+            history_state: s.history_state === 'archived' || s.history_state === 'active' ? s.history_state : undefined,
+            project_visibility: s.project_visibility === 'system_temp' || s.project_visibility === 'normal' ? s.project_visibility : undefined,
+            source_title: s.source_title !== null && s.source_title !== undefined ? String(s.source_title) : undefined,
+            catalog_first_user_message_preview: s.catalog_first_user_message_preview ? String(s.catalog_first_user_message_preview) : undefined,
+            catalog_preview: s.catalog_preview ? String(s.catalog_preview) : undefined,
+            catalog_matched: typeof s.catalog_matched === 'boolean' ? s.catalog_matched : undefined,
+            injected_context_messages: Number.isSafeInteger(s.injected_context_messages) ? s.injected_context_messages : undefined,
+            project_parent_name: s.project_parent_name ? String(s.project_parent_name) : (s.parent_display_name ? String(s.parent_display_name) : undefined),
           }));
           resolve({ roots, sessions });
         } catch (err) {

@@ -60,6 +60,20 @@ export function formatToolDisplayName(tool: string): string {
   return tool.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export function sanitizeParentDirectory(parent?: string | null): string | null {
+  if (!parent || !parent.trim()) return null;
+  const trimmed = parent.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  if (trimmed === '~' || trimmed === '/' || !trimmed) return null;
+  const parts = trimmed.split('/').filter(Boolean);
+  if (parts.length === 0) return null;
+  // Never leak home directory paths (e.g. /Users/sam, /home/ubuntu)
+  if (parts.length <= 2 && (parts[0] === 'Users' || parts[0] === 'home')) return null;
+  const last = parts[parts.length - 1];
+  if (last === '~' || last === 'Users' || last === 'home' || last === 'root') return null;
+  if (last.startsWith('~')) return null;
+  return last;
+}
+
 export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
   onSelectProject,
   isBusy = false,
@@ -105,6 +119,8 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
   const [importError, setImportError] = useState<{ sessionId: string; message: string } | null>(null);
   const [playgroundExpanded, setPlaygroundExpanded] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
+  const [showHiddenByTool, setShowHiddenByTool] = useState<Record<string, boolean>>({});
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -191,7 +207,17 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
 
   // Group sessions by (tool, project_group_key)
   const groupedByTool = useMemo(() => {
-    const map = new Map<string, { groupKey: string; displayName: string; sessions: HistorySession[]; latestTime: number }[]>();
+    const map = new Map<
+      string,
+      {
+        groupKey: string;
+        displayName: string;
+        parentDirectory: string | null;
+        isSystemTemp: boolean;
+        sessions: HistorySession[];
+        latestTime: number;
+      }[]
+    >();
 
     for (const root of okRoots) {
       const toolSessions = sessions.filter((s) => s.tool === root.tool);
@@ -214,10 +240,22 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
 
         const latestTime = sortedSessions.length > 0 ? new Date(sortedSessions[0].started_at || sortedSessions[0].ended_at).getTime() || 0 : 0;
         const displayName = sortedSessions[0]?.project_display_name || groupKey;
+        const isSystemTemp = sortedSessions.some((s) => s.project_visibility === 'system_temp');
+        const rawParentSession = sortedSessions.find(
+          (s) => s.project_parent_name || s.parent_display_name || s.parent_directory || s.parent_dir
+        );
+        const parentDirectory = sanitizeParentDirectory(
+          rawParentSession?.project_parent_name ||
+          rawParentSession?.parent_display_name ||
+          rawParentSession?.parent_directory ||
+          rawParentSession?.parent_dir
+        );
 
         return {
           groupKey,
           displayName,
+          parentDirectory,
+          isSystemTemp,
           sessions: sortedSessions,
           latestTime,
         };
@@ -494,8 +532,22 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
             }}
           >
             {okRoots.map((root) => {
-              const projects = groupedByTool.get(root.tool) || [];
-              const totalSessions = projects.reduce((acc, p) => acc + p.sessions.length, 0);
+              const allProjects = groupedByTool.get(root.tool) || [];
+              const totalSessions = allProjects.reduce((acc, p) => acc + p.sessions.length, 0);
+              const isShowingHidden = Boolean(showHiddenByTool[root.tool]);
+              const hiddenCount = allProjects.filter((p) => p.isSystemTemp).length;
+              const visibleProjects = isShowingHidden
+                ? allProjects
+                : allProjects.filter((p) => !p.isSystemTemp);
+
+              // Disambiguate duplicate project display names among visible groups within this tool:
+              // when two or more visible groups share the same project_display_name,
+              // append the parent directory component (e.g. "auth-service / backend");
+              // never render a full path or home directory.
+              const nameCounts = new Map<string, number>();
+              for (const p of visibleProjects) {
+                nameCounts.set(p.displayName, (nameCounts.get(p.displayName) || 0) + 1);
+              }
 
               return (
                 <div
@@ -572,7 +624,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
 
                   {/* Tool Widget Body */}
                   <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {projects.length === 0 ? (
+                    {visibleProjects.length === 0 ? (
                       <div
                         data-testid={`tool-no-sessions-${root.tool}`}
                         style={{
@@ -582,12 +634,19 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                           fontSize: '12px',
                         }}
                       >
-                        No recorded sessions found in this root.
+                        {hiddenCount > 0
+                          ? 'All sessions in this tool are inside hidden system folders.'
+                          : 'No recorded sessions found in this root.'}
                       </div>
                     ) : (
-                      projects.map((proj) => {
+                      visibleProjects.map((proj) => {
                         const folderKey = `${root.tool}:${proj.groupKey}`;
                         const isExpanded = expandedKeys.has(folderKey);
+                        const isDuplicate = (nameCounts.get(proj.displayName) || 0) > 1;
+                        const resolvedDisplayName =
+                          isDuplicate && proj.parentDirectory
+                            ? `${proj.displayName} / ${proj.parentDirectory}`
+                            : proj.displayName;
 
                         return (
                           <div
@@ -628,7 +687,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                 }
                               }}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap' }}>
                                 {isExpanded ? (
                                   <ChevronDown size={14} color="#94a3b8" />
                                 ) : (
@@ -650,8 +709,26 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  {proj.displayName}
+                                  {resolvedDisplayName}
                                 </span>
+                                {proj.isSystemTemp && (
+                                  <span
+                                    data-testid="system-temp-badge"
+                                    style={{
+                                      fontSize: '9.5px',
+                                      fontWeight: 500,
+                                      padding: '1px 6px',
+                                      borderRadius: '3px',
+                                      backgroundColor: '#1e2430',
+                                      color: '#94a3b8',
+                                      border: '1px solid #2d3748',
+                                      flexShrink: 0,
+                                      letterSpacing: '0.02em',
+                                    }}
+                                  >
+                                    system temp
+                                  </span>
+                                )}
                               </div>
 
                               <span
@@ -680,7 +757,8 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                 {proj.sessions.map((sess) => {
                                   const isImporting = importingSessionId === sess.session_id;
                                   const hasError = importError?.sessionId === sess.session_id;
-                                  const titleText = sess.first_prompt_preview || 'Untitled session';
+                                  const hasSourceTitle = Boolean(sess.source_title && sess.source_title.trim());
+                                  const primaryTitle = hasSourceTitle ? sess.source_title! : (sess.first_prompt_preview || 'Untitled session');
 
                                   return (
                                     <div
@@ -692,6 +770,10 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                         role="button"
                                         tabIndex={0}
                                         onClick={() => handleSessionClick(sess.session_id, sess.tool)}
+                                        onMouseEnter={() => setHoveredSessionId(sess.session_id)}
+                                        onMouseLeave={() => setHoveredSessionId(null)}
+                                        onFocus={() => setHoveredSessionId(sess.session_id)}
+                                        onBlur={() => setHoveredSessionId(null)}
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
                                             e.preventDefault();
@@ -704,10 +786,16 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                           gap: '4px',
                                           padding: '8px 10px',
                                           borderRadius: '4px',
-                                          backgroundColor: isImporting ? '#1e2838' : '#141822',
-                                          border: '1px solid #1f2736',
+                                          backgroundColor: isImporting
+                                            ? '#1e2838'
+                                            : hoveredSessionId === sess.session_id
+                                            ? '#1a2233'
+                                            : '#141822',
+                                          border: hoveredSessionId === sess.session_id
+                                            ? '1px solid #2d3b55'
+                                            : '1px solid #1f2736',
                                           cursor: isImporting ? 'wait' : 'pointer',
-                                          transition: 'background-color 0.15s ease',
+                                          transition: 'background-color 0.15s ease, border-color 0.15s ease',
                                         }}
                                       >
                                         {/* Session Title */}
@@ -729,9 +817,9 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                               textOverflow: 'ellipsis',
                                               whiteSpace: 'nowrap',
                                             }}
-                                            title={titleText}
+                                            title={primaryTitle}
                                           >
-                                            {titleText}
+                                            {primaryTitle}
                                           </span>
 
                                           {isImporting && (
@@ -750,6 +838,24 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                             </span>
                                           )}
                                         </div>
+
+                                        {/* Secondary Preview Line when source_title is present */}
+                                        {hasSourceTitle && sess.first_prompt_preview && (
+                                          <div
+                                            data-testid="session-preview-secondary"
+                                            style={{
+                                              fontSize: '11px',
+                                              color: 'var(--text-secondary)',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                              whiteSpace: 'nowrap',
+                                              lineHeight: '1.3',
+                                            }}
+                                            title={sess.first_prompt_preview}
+                                          >
+                                            {sess.first_prompt_preview}
+                                          </div>
+                                        )}
 
                                         {/* Metadata Row */}
                                         <div
@@ -776,6 +882,26 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                           >
                                             {formatRelativeTime(sess.started_at || sess.ended_at)}
                                           </span>
+
+                                          {/* Archived badge */}
+                                          {sess.history_state === 'archived' && (
+                                            <span
+                                              data-testid="session-history-state-archived"
+                                              style={{
+                                                fontSize: '9.5px',
+                                                fontWeight: 600,
+                                                padding: '1px 5px',
+                                                borderRadius: '3px',
+                                                backgroundColor: '#1f2430',
+                                                color: '#94a3b8',
+                                                border: '1px solid #2d3748',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.04em',
+                                              }}
+                                            >
+                                              archived
+                                            </span>
+                                          )}
 
                                           {/* Parse Status Badge */}
                                           {sess.parse_status !== 'ok' && (
@@ -844,6 +970,51 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                           </div>
                         );
                       })
+                    )}
+
+                    {/* Quiet "Show N hidden system folders" toggle */}
+                    {hiddenCount > 0 && (
+                      <div
+                        style={{
+                          padding: '4px 2px 2px 2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          data-testid={`toggle-hidden-system-${root.tool}`}
+                          onClick={() =>
+                            setShowHiddenByTool((prev) => ({
+                              ...prev,
+                              [root.tool]: !prev[root.tool],
+                            }))
+                          }
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: '4px 6px',
+                            color: 'var(--text-muted)',
+                            fontSize: '11.5px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            borderRadius: 'var(--radius-sm)',
+                          }}
+                          aria-label={
+                            isShowingHidden
+                              ? `Hide ${hiddenCount} hidden system ${hiddenCount === 1 ? 'folder' : 'folders'}`
+                              : `Show ${hiddenCount} hidden system ${hiddenCount === 1 ? 'folder' : 'folders'}`
+                          }
+                        >
+                          <span>
+                            {isShowingHidden
+                              ? `Hide ${hiddenCount} hidden system ${hiddenCount === 1 ? 'folder' : 'folders'}`
+                              : `Show ${hiddenCount} hidden system ${hiddenCount === 1 ? 'folder' : 'folders'}`}
+                          </span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
