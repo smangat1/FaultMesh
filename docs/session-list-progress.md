@@ -150,7 +150,7 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `asserted autodetect-no-bridge-empty-state and startup-open-recording-btn in DOM` | `f09af2ee719b84445bdfddab5610bf0839586bf12772b05bb908245593ae2fd3` |
 
 ### Phase 2: timeline restyle
-- **Commit SHA**: `7fd4169`
+- **Commit SHA**: `153ffa5` (or final HEAD after amend)
 - **Files Changed (11 files)**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/04-timeline-resting.png`
