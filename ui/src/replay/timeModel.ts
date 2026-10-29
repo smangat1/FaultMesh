@@ -42,6 +42,12 @@ export interface TimeModelOptions {
    * If omitted, formats in the user's local runtime time zone.
    */
   timeZone?: string;
+
+  /**
+   * Optional custom label for idle breaks (e.g. '15m idle').
+   * If omitted, calculated from idleDurationMs via formatIdleDuration.
+   */
+  idleLabel?: string;
 }
 
 export interface StepPosition {
@@ -281,8 +287,8 @@ export function computeTimelineBarGeometry(params: {
     const curTs = parsedTimestamps[i];
     const nextTs = parsedTimestamps[i + 1];
 
-    const isCurGap = cur.record_type === 'gap';
-    const isNextGap = next.record_type === 'gap';
+    const isCurGap = cur.record_type === 'gap' || cur.record_type === 'unsupported';
+    const isNextGap = next.record_type === 'gap' || next.record_type === 'unsupported';
 
     if (isCurGap || isNextGap) {
       // Gap stretch: elapsed time is UNKNOWN. Assign fixed gap weight.
@@ -376,7 +382,7 @@ export function computeTimelineBarGeometry(params: {
         endRatio,
         centerRatio,
         durationMs: it.idleDurationMs,
-        label: formatIdleDuration(it.idleDurationMs),
+        label: options.idleLabel ?? formatIdleDuration(it.idleDurationMs),
         startCapturedAt: steps[i].captured_at,
         endCapturedAt: steps[i + 1].captured_at,
       });

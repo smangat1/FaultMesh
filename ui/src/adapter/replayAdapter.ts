@@ -173,6 +173,10 @@ export class ReplayAdapter implements FaultMeshAdapter {
     return [];
   }
 
+  public getAllTests(): StructuredTestEvidence[] {
+    return this.exported.tests || [];
+  }
+
   public detectCaptureGranularity(): AttributionStatus {
     const attributions = this.exported.timeline.map((t) => t.attribution_status);
     if (attributions.includes('tool_boundary')) return 'tool_boundary';

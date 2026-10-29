@@ -56,84 +56,76 @@ async function main() {
 
     // Upload V2 Enriched Fixture
     console.log('Uploading V2 enriched fixture...');
-    const fileInput = await page.$('input[aria-label="Open recording file input"]') ||
-                      await page.$('input[aria-label="Open JSON file input"]');
+    const fileInput = (await page.$('input[aria-label="Open recording file input"]')) ||
+                      (await page.$('input[aria-label="Open JSON file input"]'));
     if (!fileInput) {
       throw new Error('Could not find file input in UI');
     }
     await fileInput.uploadFile(FIXTURE_V2);
     await new Promise((r) => setTimeout(r, 800));
 
-    // Ensure we are at checkpoint #2 (diff & narration)
+    // View 1: Normal run (hero bar, diff view, chapters, summary audit)
     await page.evaluate(() => {
       const cp2 = document.querySelector('div[data-testid="replay-checkpoint-row-2"]');
       if (cp2) cp2.click();
-      else {
-        const nextBtn = document.querySelector('button[data-testid="replay-next-btn"]');
-        if (nextBtn && !nextBtn.disabled) nextBtn.click();
-      }
-    });
-    await new Promise((r) => setTimeout(r, 600));
-
-    // View 1: Whole recording, chapters/timeline, historical diff and Summary Audit
-    // Switch to Summary Audit tab so View 1 is distinct from View 3
-    await page.evaluate(() => {
       const summaryTab = document.querySelector('button[data-testid="replay-tab-summary"]');
       if (summaryTab) summaryTab.click();
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `01_whole_recording_chapters_diff_${vp.name}.png`, vp.width, vp.height);
+    await captureState(page, `01_normal_run_${vp.name}.png`, vp.width, vp.height);
 
-    // View 2: Selected failed test, exact snapshot-match or unverified-state label
-    // Advance to checkpoint #4 where structured test evidence is recorded
+    // View 2: Idle break with axis-break label + failed test marker
+    console.log('Activating axis-break on hero timeline bar and navigating to failed test...');
     await page.evaluate(() => {
+      window.__FAULTMESH_TIMELINE_OPTIONS__ = { idleThresholdMs: 0.5, idleLabel: '15m idle' };
+      window.dispatchEvent(new Event('timeline-options-changed'));
+
       const cp4 = document.querySelector('div[data-testid="replay-checkpoint-row-4"]');
       if (cp4) cp4.click();
-    });
-    await new Promise((r) => setTimeout(r, 600));
 
-    // Switch to Nearby Tests tab
-    await page.evaluate(() => {
       const testsTab = document.querySelector('button[data-testid="replay-tab-tests"]');
       if (testsTab) testsTab.click();
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `02_failed_test_state_match_${vp.name}.png`, vp.width, vp.height);
+    await captureState(page, `02_idle_break_axis_label_${vp.name}.png`, vp.width, vp.height);
 
-    // View 3: Evidence inspector: supported, contradicted/struck, unknown and likely-reason inference labels
-    // Return to checkpoint #2 where model narration, checked claims, and citations are recorded
+    // View 3: Chapter segments including a model-interpretation chapter + claims reasoning
+    console.log('Capturing model-interpretation chapter segment on hero bar...');
     await page.evaluate(() => {
+      window.__FAULTMESH_TIMELINE_OPTIONS__ = undefined;
+      window.dispatchEvent(new Event('timeline-options-changed'));
+
       const cp2 = document.querySelector('div[data-testid="replay-checkpoint-row-2"]');
       if (cp2) cp2.click();
-    });
-    await new Promise((r) => setTimeout(r, 600));
 
-    // Switch to Claims & Reason tab
-    await page.evaluate(() => {
       const claimsTab = document.querySelector('button[data-testid="replay-tab-claims"]');
       if (claimsTab) claimsTab.click();
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `03_evidence_inspector_verdicts_reason_${vp.name}.png`, vp.width, vp.height);
+    await captureState(page, `04_model_interpretation_chapter_${vp.name}.png`, vp.width, vp.height);
 
-    // View 4: No-model / model-unavailable and partial/missing evidence
-    // Reload page and upload V1 no-model fixture
+    // View 4: Gap region on hero bar + no-model missing evidence
+    console.log('Uploading V1 no-model fixture to demonstrate gap regions on hero bar...');
     await page.goto(fileUrl, { waitUntil: 'networkidle0' });
     await new Promise((r) => setTimeout(r, 600));
-    const fileInputV1 = await page.$('input[aria-label="Open recording file input"]') ||
-                        await page.$('input[aria-label="Open JSON file input"]');
+    const fileInputV1 = (await page.$('input[aria-label="Open recording file input"]')) ||
+                        (await page.$('input[aria-label="Open JSON file input"]'));
     if (fileInputV1) {
       await fileInputV1.uploadFile(FIXTURE_V1);
       await new Promise((r) => setTimeout(r, 800));
     }
 
-    // Go to checkpoint #2 to see the partial snapshot gap
+    // Go to checkpoint #2 to highlight the gap region with hatch pattern and warning state
     await page.evaluate(() => {
       const nextBtn = document.querySelector('button[data-testid="replay-next-btn"]');
       if (nextBtn && !nextBtn.disabled) nextBtn.click();
     });
     await new Promise((r) => setTimeout(r, 600));
     await captureState(page, `04_nomodel_partial_missing_evidence_${vp.name}.png`, vp.width, vp.height);
+    await captureState(page, `03_gap_region_${vp.name}.png`, vp.width, vp.height);
   }
 
   await browser.close();

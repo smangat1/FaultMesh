@@ -212,6 +212,10 @@ Status: complete. Hero scrubber component implemented with pure time geometry, c
     - `role="slider"`, `tabIndex={0}`, `aria-label="Timeline scrubber"`.
     - `aria-valuenow`, `aria-valuemin`, `aria-valuemax`, and descriptive `aria-valuetext`.
     - Keyboard navigation: Left/Right arrows or j/k (step prev/next), Home/End (first/last step), PgUp/PgDn (prev/next chapter start).
+- **Workspace Integration**: `ui/src/components/replay/ReplayWorkspace.tsx`
+  - Wired `ReplayTimelineBar` as the hero element directly below the header spanning full workspace width.
+  - Connected two-way to session step navigation (`currentSeq`, `handleSelectSequence`, timeline ticks, diff viewer, evidence inspector, and header sequence badge).
+  - Wired `adapter.getAllTests()` and dynamic timeline options (`timeline-options-changed`).
 - **Styles**: `ui/src/styles/replay.css`
   - Added dedicated classes for `.replay-timeline-bar-root`, chapter lane/segments, track lane/rail, axis breaks, gap hatch pattern, ticks, test markers, and thumb scrubber using calm `--replay-*` tokens.
 
@@ -227,6 +231,13 @@ Status: complete. Hero scrubber component implemented with pure time geometry, c
   8. Full keyboard navigation: Left/Right, j/k, Home/End, PgUp/PgDn.
   9. Boundary protection: preventing overshoots before first step or beyond last step.
   10. Hover tooltips: chapters (deterministic vs discontinuous model), gap reasons, axis breaks, test results, and mouse leave dismissal.
+
+### Real Screenshot Capture (`docs/screenshots/replay/`)
+- Captured fresh, distinct screenshots using the headless Chrome harness (`capture_replay_screenshots.js`) against the real fixtures (`fixture_replay_v2_enriched.json` and `fixture_replay_v1_nomodel.json`) at 1440x900 and 1024x700:
+  - **Normal Run**: `01_normal_run_${vp.name}.png` & `01_whole_recording_chapters_diff_${vp.name}.png` (hero timeline bar spanning full width, diff viewer, chapter list, summary audit).
+  - **Idle Break with Axis-Break Label**: `02_idle_break_axis_label_${vp.name}.png` & `02_failed_test_state_match_${vp.name}.png` (hero bar showing axis-break squiggle with `15m idle` label + test markers with failed test state match).
+  - **Gap Region**: `03_gap_region_${vp.name}.png` & `04_nomodel_partial_missing_evidence_${vp.name}.png` (hero bar showing diagonal warning hatch pattern, warning border, and `GAP` badge for unrecorded gap record with partial/missing evidence).
+  - **Model Interpretation Chapter**: `04_model_interpretation_chapter_${vp.name}.png` & `03_evidence_inspector_verdicts_reason_${vp.name}.png` (hero bar showing chapter bracket with dashed border and `model` pill tag + evidence claims and likelihood reasoning).
 
 ### Quality & Verification Results
 - `npm test`: 26/26 test files passed (212 Vitest tests, 8 Electron node tests).
