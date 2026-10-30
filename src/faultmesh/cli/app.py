@@ -51,6 +51,7 @@ from faultmesh.replay.narration import (
     suggest_likely_reason,
 )
 from faultmesh.replay.store import ReplayStore, default_replay_root
+from faultmesh.replay.thread_history_import import thread_history_smoke_summary
 from faultmesh.replay.views import (
     export_session,
     load_export,
@@ -565,6 +566,26 @@ def replay_history_import(
             sort_keys=True,
         )
     )
+
+
+@app.command("replay-thread-history-smoke")
+def replay_thread_history_smoke(
+    database: Annotated[
+        Path,
+        typer.Argument(
+            dir_okay=False,
+            resolve_path=True,
+            help="Explicit projected thread-history SQLite database path.",
+        ),
+    ],
+) -> None:
+    """Print aggregate-only diagnostics from projected Codex thread history."""
+    try:
+        summary = thread_history_smoke_summary(database)
+    except Exception as exc:
+        typer.secho(f"FaultMesh thread history smoke failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(summary.model_dump_json(indent=2))
 
 
 @app.command("replay-ingest")

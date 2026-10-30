@@ -16,6 +16,7 @@ from faultmesh.replay.history_discovery import (
     find_history_source,
 )
 from faultmesh.replay.models import ReplayExport, ReplayRecord, ReplaySession, TimelineEntry
+from faultmesh.replay.thread_history_import import parse_thread_history_thread
 
 HISTORY_IMPORT_LIMITATIONS = [
     "History import is read-only and does not inspect or modify a project checkout.",
@@ -147,6 +148,18 @@ def import_history_session(
         return _build_export(session, codex_parsed.records)
     claude_parsed = parse_claude_history(source, max_source_bytes=max_source_bytes)
     return _build_export(claude_parsed.session, claude_parsed.records)
+
+
+def import_thread_history_session(
+    database: Path | str,
+    thread_id: str,
+    *,
+    cwd: str | None = None,
+    title: str | None = None,
+) -> ReplayExport:
+    """Import one projected Codex thread when its rollout file is unavailable."""
+    parsed = parse_thread_history_thread(database, thread_id, cwd=cwd, title=title)
+    return _build_export(parsed.session, parsed.records)
 
 
 def real_history_smoke_summary(
