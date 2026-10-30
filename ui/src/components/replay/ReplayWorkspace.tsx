@@ -59,6 +59,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   });
 
   const currentEntry = adapter.getTimelineEntry(currentSeq) || timeline[0] || null;
+  const currentRecord = adapter.getRecordForSequence(currentSeq);
   const session = adapter.getSession();
   const origin = adapter.getOrigin();
   const limitations = adapter.getLimitations();
@@ -573,6 +574,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             onSelectFile={setSelectedFile}
             getHistoricalContent={getHistoricalContent}
             entry={currentEntry}
+            record={currentRecord}
             completenessInfo={completenessInfo}
             isModelNarrationAvailable={hasModelChapters}
           />
@@ -616,6 +618,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               tests={testsForCurrentSeq}
               limitations={limitations}
               isNarrationOn={isNarrationOn}
+              record={currentRecord}
             />
           </div>
         </div>

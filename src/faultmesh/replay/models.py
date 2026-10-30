@@ -194,6 +194,25 @@ class ReplaySession(ReplayModel):
         pattern=r"^[0-9a-f]{64}$",
         description="Digest of the local source log; its private path is never exported.",
     )
+    history_state: Literal["active", "archived"] | None = Field(
+        default=None,
+        description="Whether an imported Codex rollout came from active or archived history.",
+    )
+    source_title: str | None = Field(
+        default=None,
+        description="Best-effort redacted sidebar title from the local Codex catalog.",
+    )
+    timeline_started_at: datetime | None = Field(
+        default=None,
+        description="Minimum captured time across imported records, independent of source order.",
+    )
+    timeline_ended_at: datetime | None = Field(
+        default=None,
+        description="Maximum captured time across imported records, independent of source order.",
+    )
+    injected_context_messages: int | None = Field(default=None, ge=0)
+    missing_timestamp_fallbacks: int | None = Field(default=None, ge=0)
+    out_of_order_steps: int | None = Field(default=None, ge=0)
 
 
 class ReplayRecord(ReplayModel):
@@ -207,6 +226,13 @@ class ReplayRecord(ReplayModel):
     record_type: RecordKind
     captured_at: datetime
     source_timestamp: datetime | None = None
+    timestamp_inferred: bool = Field(
+        default=False,
+        description=(
+            "Captured time was inferred from a nearby event because the source timestamp "
+            "was absent."
+        ),
+    )
     provenance: str
     completeness: Completeness
     attribution_status: AttributionStatus
@@ -327,6 +353,7 @@ class TimelineEntry(ReplayModel):
     record_id: str
     record_type: RecordKind
     captured_at: datetime
+    timestamp_inferred: bool = False
     completeness: Completeness
     attribution_status: AttributionStatus
     tool_name: str | None = None

@@ -331,3 +331,140 @@ def test_explicit_completed_call_id_deduplicates_only_its_low_level_pair(
     assert result.duplicate_items == 2
     assert [record.source_item_id for record in result.records] == ["completed-high-item"]
     assert result.records[0].tool_use_id == "completed-high-item"
+
+
+def test_injected_prompt_blocks_are_skipped_and_mixed_text_is_preserved(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "injected-context.jsonl"
+    injected = "<environment_context><cwd>/synthetic</cwd></environment_context>"
+    mixed = f"{injected}\nPlease keep this real synthetic request"
+    records = [
+        {
+            "timestamp": "2026-10-29T12:00:00Z",
+            "type": "session_meta",
+            "payload": {
+                "id": "synthetic-context-parser",
+                "timestamp": "2026-10-29T12:00:00Z",
+                "cwd": "/synthetic/project",
+                "cli_version": "0.165.0-alpha.1.2",
+            },
+        },
+        {
+            "timestamp": "2026-10-29T12:00:01Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "id": "context-only",
+                "content": [{"type": "input_text", "text": injected}],
+            },
+        },
+        {
+            "timestamp": "2026-10-29T12:00:02Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "id": "mixed-canonical",
+                "content": [{"type": "input_text", "text": mixed}],
+            },
+        },
+        {
+            "timestamp": "2026-10-29T12:00:03Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "UserMessage",
+                    "id": "mixed-completed",
+                    "content": [{"type": "input_text", "text": mixed}],
+                },
+            },
+        },
+    ]
+    source.write_text(
+        "".join(json.dumps(record, separators=(",", ":")) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    result = parse_codex_history(source)
+    prompts = [record for record in result.records if record.prompt_text is not None]
+
+    assert len(prompts) == 1
+    assert prompts[0].prompt_text == "Please keep this real synthetic request"
+    assert result.injected_context_messages == 3
+    assert result.duplicate_items == 1
+
+
+def test_missing_timestamps_use_nearest_event_and_preserve_nonmonotonic_source_order(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "timestamp-gaps.jsonl"
+    records = [
+        {
+            "timestamp": "2026-10-29T12:00:00Z",
+            "type": "session_meta",
+            "payload": {
+                "id": "synthetic-timestamp-gaps",
+                "timestamp": "2026-10-29T12:00:00Z",
+                "cwd": "/synthetic/project",
+                "cli_version": "0.165.0-alpha.1.2",
+            },
+        },
+        {
+            "timestamp": "2026-10-29T12:02:00Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "id": "timed-prompt",
+                "content": [{"type": "input_text", "text": "Synthetic timed prompt"}],
+            },
+        },
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "CommandExecution",
+                    "id": "missing-time-command",
+                    "command": ["python -m pytest -q"],
+                    "aggregated_output": "synthetic output",
+                    "status": "completed",
+                },
+            },
+        },
+        {
+            "timestamp": "2026-10-29T11:59:00Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "CommandExecution",
+                    "id": "out-of-order-command",
+                    "command": ["python -m pytest tests/unit -q"],
+                    "aggregated_output": "synthetic output",
+                    "status": "completed",
+                },
+            },
+        },
+    ]
+    source.write_text(
+        "".join(json.dumps(record, separators=(",", ":")) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    result = parse_codex_history(source)
+    inferred = next(record for record in result.records if record.timestamp_inferred)
+
+    assert inferred.source_timestamp is None
+    assert inferred.captured_at.isoformat() == "2026-10-29T12:02:00+00:00"
+    assert all(record.captured_at.year != 1970 for record in result.records)
+    assert result.missing_timestamp_fallbacks == 1
+    assert result.out_of_order_steps == 1
+    assert [record.source_item_id for record in result.records] == [
+        "timed-prompt",
+        "missing-time-command",
+        "out-of-order-command",
+    ]

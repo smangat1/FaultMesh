@@ -6,8 +6,10 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -16,12 +18,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from faultmesh.replay.claude_history import KNOWN_CLAUDE_FORMAT_VERSIONS
 from faultmesh.replay.codex_history import KNOWN_CODEX_FORMAT_VERSIONS
+from faultmesh.replay.history_context import strip_injected_context
 from faultmesh.replay.privacy import redact_history_text
 
 DEFAULT_MAX_SOURCE_BYTES = 64 * 1024 * 1024
 DEFAULT_PREVIEW_CHARACTERS = 160
 HistoryTool = Literal["codex", "claude_code"]
 ParseStatus = Literal["ok", "partial", "unsupported"]
+HistoryState = Literal["active", "archived"]
+ProjectVisibility = Literal["normal", "system_temp"]
+CatalogStatus = Literal["ok", "missing", "unsupported", "unreadable"]
 
 
 class HistoryRootStatus(BaseModel):
@@ -31,6 +37,10 @@ class HistoryRootStatus(BaseModel):
     status: Literal["ok", "missing", "unreadable"]
     file_count: int = Field(ge=0)
     message: str
+    active_file_count: int | None = Field(default=None, ge=0)
+    archived_file_count: int | None = Field(default=None, ge=0)
+    catalog_status: CatalogStatus | None = None
+    catalog_message: str | None = None
 
 
 class HistorySessionIndex(BaseModel):
@@ -49,6 +59,13 @@ class HistorySessionIndex(BaseModel):
     unsupported_reason: str | None = None
     source_file_sha256: str
     redaction_types: list[str] = Field(default_factory=list)
+    history_state: HistoryState | None = None
+    project_visibility: ProjectVisibility | None = None
+    source_title: str | None = None
+    catalog_first_user_message_preview: str | None = None
+    catalog_preview: str | None = None
+    catalog_matched: bool | None = None
+    injected_context_messages: int | None = Field(default=None, ge=0)
 
 
 class HistoryDiscoveryResult(BaseModel):
@@ -69,7 +86,19 @@ class HistoryFileChange(BaseModel):
 
 
 def default_codex_history_root() -> Path:
-    return Path.home() / ".codex" / "sessions"
+    codex_home = os.environ.get("CODEX_HOME")
+    return (
+        Path(codex_home).expanduser() / "sessions"
+        if codex_home
+        else Path.home() / ".codex" / "sessions"
+    )
+
+
+def default_codex_catalog_path() -> Path:
+    sqlite_home = os.environ.get("CODEX_SQLITE_HOME")
+    if sqlite_home:
+        return Path(sqlite_home).expanduser() / "state_5.sqlite"
+    return default_codex_history_root().parent / "state_5.sqlite"
 
 
 def default_claude_history_root() -> Path:
@@ -180,6 +209,126 @@ def _project_identity(value: str | None, display_fallback: str) -> tuple[str, st
     return key, normalized.rsplit("/", 1)[-1] if normalized else display_fallback
 
 
+def _is_within(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def _project_visibility(value: str | None) -> ProjectVisibility:
+    if not value:
+        return "normal"
+    normalized = os.path.realpath(os.path.expanduser(value)).replace("\\", "/").rstrip("/")
+    roots = {
+        "/var/folders",
+        "/private/var/folders",
+        "/private/tmp",
+        "/tmp",
+        "/var/tmp",
+        "/dev/shm",
+    }
+    tmpdir = os.environ.get("TMPDIR")
+    if tmpdir:
+        roots.add(os.path.realpath(os.path.expanduser(tmpdir)).replace("\\", "/").rstrip("/"))
+    return "system_temp" if any(_is_within(normalized, root) for root in roots) else "normal"
+
+
+def _bounded_catalog_text(value: object) -> tuple[str | None, list[str]]:
+    if not isinstance(value, str) or not value:
+        return None, []
+    prompt, _injected = strip_injected_context(value)
+    if prompt is None:
+        return None, []
+    redacted = redact_history_text(prompt, 4 * DEFAULT_PREVIEW_CHARACTERS)
+    text = str(redacted.value).replace("\n", " ")[:DEFAULT_PREVIEW_CHARACTERS]
+    return text, list(redacted.redaction_types)
+
+
+def _catalog_datetime(value: object) -> datetime | None:
+    parsed = _parse_datetime(value)
+    if parsed is not None:
+        return parsed
+    if not isinstance(value, int | float):
+        return None
+    seconds = float(value)
+    while seconds > 10_000_000_000:
+        seconds /= 1000
+    try:
+        return datetime.fromtimestamp(seconds, tz=UTC)
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
+@dataclass(frozen=True)
+class _CatalogThread:
+    session_id: str
+    rollout_path: str | None
+    created_at: datetime | None
+    cwd: str | None
+    title: str | None
+    first_user_message: str | None
+    preview: str | None
+    archived: bool | None
+
+
+def _read_catalog(path: Path) -> tuple[list[_CatalogThread], CatalogStatus, str]:
+    if not path.is_file():
+        return [], "missing", "Codex thread catalog is absent"
+    allowed = (
+        "id",
+        "rollout_path",
+        "created_at",
+        "cwd",
+        "title",
+        "first_user_message",
+        "preview",
+        "archived",
+    )
+    try:
+        uri = f"{path.resolve().as_uri()}?mode=ro&immutable=1"
+        connection = sqlite3.connect(uri, uri=True)
+        try:
+            columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(threads)").fetchall()
+            }
+            if "id" not in columns:
+                return [], "unsupported", "Codex thread catalog has no usable threads table"
+            selected = [column for column in allowed if column in columns]
+            quoted = ", ".join(f'"{column}"' for column in selected)
+            rows = connection.execute(f"SELECT {quoted} FROM threads").fetchall()
+        finally:
+            connection.close()
+    except (OSError, sqlite3.Error):
+        return [], "unreadable", "Codex thread catalog could not be read immutably"
+
+    output: list[_CatalogThread] = []
+    for row in rows:
+        values = dict(zip(selected, row, strict=True))
+        session_value = values.get("id")
+        if not isinstance(session_value, str) or not session_value:
+            continue
+        archived_value = values.get("archived")
+        output.append(
+            _CatalogThread(
+                session_id=session_value,
+                rollout_path=(
+                    values.get("rollout_path")
+                    if isinstance(values.get("rollout_path"), str)
+                    else None
+                ),
+                created_at=_catalog_datetime(values.get("created_at")),
+                cwd=values.get("cwd") if isinstance(values.get("cwd"), str) else None,
+                title=values.get("title") if isinstance(values.get("title"), str) else None,
+                first_user_message=(
+                    values.get("first_user_message")
+                    if isinstance(values.get("first_user_message"), str)
+                    else None
+                ),
+                preview=(values.get("preview") if isinstance(values.get("preview"), str) else None),
+                archived=bool(archived_value) if archived_value is not None else None,
+            )
+        )
+    return output, "ok", "Codex thread catalog enriched matching sessions"
+
+
 def _fallback_time(path: Path) -> datetime:
     try:
         return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
@@ -193,6 +342,7 @@ def _unsupported_index(
     tool: HistoryTool,
     digest: str,
     reason: str,
+    history_state: HistoryState | None = None,
 ) -> HistorySessionIndex:
     timestamp = _fallback_time(path)
     project_key, project_display = _project_identity(None, "Unknown project")
@@ -208,6 +358,8 @@ def _unsupported_index(
         parse_status="unsupported",
         unsupported_reason=reason,
         source_file_sha256=digest,
+        history_state=history_state,
+        project_visibility="normal",
     )
 
 
@@ -280,6 +432,7 @@ def _preview(prompts: list[str], preview_characters: int) -> tuple[str | None, l
 def _index_codex(
     path: Path,
     *,
+    history_state: HistoryState = "active",
     max_source_bytes: int,
     preview_characters: int,
     zstd_executable: Path | str | None,
@@ -293,7 +446,11 @@ def _index_codex(
     )
     if data is None:
         return _unsupported_index(
-            path, tool="codex", digest=digest, reason=read_error or "history_source_read_failed"
+            path,
+            tool="codex",
+            digest=digest,
+            reason=read_error or "history_source_read_failed",
+            history_state=history_state,
         )
     values, corrupt = _json_objects(data)
     metadata: dict[str, object] | None = None
@@ -308,6 +465,7 @@ def _index_codex(
             tool="codex",
             digest=digest,
             reason="empty_codex_history" if not values else "missing_session_meta",
+            history_state=history_state,
         )
     format_value = metadata.get("cli_version")
     format_version = format_value if isinstance(format_value, str) else None
@@ -330,7 +488,17 @@ def _index_codex(
     if metadata_time is not None:
         timestamps.append(metadata_time)
     fallback = _fallback_time(path)
-    prompts = [text for value in values for text in [_codex_prompt(value)] if text is not None]
+    prompts: list[str] = []
+    injected_context_messages = 0
+    for value in values:
+        raw_prompt = _codex_prompt(value)
+        if raw_prompt is None:
+            continue
+        prompt, injected = strip_injected_context(raw_prompt)
+        if injected:
+            injected_context_messages += 1
+        if prompt is not None:
+            prompts.append(prompt)
     preview, redaction_types = _preview(prompts, preview_characters)
     unsupported = format_version not in KNOWN_CODEX_FORMAT_VERSIONS
     return HistorySessionIndex(
@@ -347,6 +515,9 @@ def _index_codex(
         unsupported_reason="unsupported_codex_format_version" if unsupported else None,
         source_file_sha256=digest,
         redaction_types=redaction_types,
+        history_state=history_state,
+        project_visibility=_project_visibility(cwd),
+        injected_context_messages=injected_context_messages,
     )
 
 
@@ -412,7 +583,95 @@ def _index_claude(
         unsupported_reason="unsupported_claude_format_version" if unsupported else None,
         source_file_sha256=digest,
         redaction_types=redaction_types,
+        project_visibility=_project_visibility(decoded),
     )
+
+
+def _normalized_path_key(value: str | Path) -> str:
+    return os.path.realpath(os.path.expanduser(str(value)))
+
+
+def _catalog_fields(thread: _CatalogThread) -> tuple[dict[str, object], list[str]]:
+    source_title, title_types = _bounded_catalog_text(thread.title)
+    first_message, first_types = _bounded_catalog_text(thread.first_user_message)
+    preview, preview_types = _bounded_catalog_text(thread.preview)
+    return (
+        {
+            "source_title": source_title,
+            "catalog_first_user_message_preview": first_message,
+            "catalog_preview": preview,
+            "catalog_matched": True,
+        },
+        sorted(set(title_types + first_types + preview_types)),
+    )
+
+
+def _enrich_from_catalog(
+    indexed: list[tuple[HistorySessionIndex, Path]],
+    threads: list[_CatalogThread],
+) -> list[HistorySessionIndex]:
+    by_id = {session.session_id: position for position, (session, _path) in enumerate(indexed)}
+    by_path = {
+        _normalized_path_key(path): position for position, (_session, path) in enumerate(indexed)
+    }
+    output = [session for session, _path in indexed]
+    for thread in threads:
+        position = by_id.get(thread.session_id)
+        if position is None and thread.rollout_path:
+            position = by_path.get(_normalized_path_key(thread.rollout_path))
+        fields, catalog_redactions = _catalog_fields(thread)
+        if position is not None:
+            existing = output[position]
+            output[position] = existing.model_copy(
+                update={
+                    **fields,
+                    "redaction_types": sorted(set(existing.redaction_types + catalog_redactions)),
+                }
+            )
+            continue
+        if not thread.rollout_path:
+            continue
+        if Path(thread.rollout_path).expanduser().is_file():
+            continue
+        timestamp = thread.created_at or datetime.fromtimestamp(0, tz=UTC)
+        project_key, project_display = _project_identity(thread.cwd, "Unknown project")
+        digest = hashlib.sha256(
+            f"catalog-thread:{thread.session_id}:{thread.rollout_path or ''}".encode()
+        ).hexdigest()
+        output.append(
+            HistorySessionIndex(
+                session_id=thread.session_id,
+                tool="codex",
+                project_group_key=project_key,
+                project_display_name=project_display,
+                started_at=timestamp,
+                ended_at=timestamp,
+                prompt_count=0,
+                first_prompt_preview=None,
+                parse_status="unsupported",
+                unsupported_reason="rollout_file_missing",
+                source_file_sha256=digest,
+                redaction_types=catalog_redactions,
+                history_state="archived" if thread.archived else "active",
+                project_visibility=_project_visibility(thread.cwd),
+                injected_context_messages=0,
+                source_title=(
+                    fields["source_title"] if isinstance(fields["source_title"], str) else None
+                ),
+                catalog_first_user_message_preview=(
+                    fields["catalog_first_user_message_preview"]
+                    if isinstance(fields["catalog_first_user_message_preview"], str)
+                    else None
+                ),
+                catalog_preview=(
+                    fields["catalog_preview"]
+                    if isinstance(fields["catalog_preview"], str)
+                    else None
+                ),
+                catalog_matched=True,
+            )
+        )
+    return output
 
 
 def discover_history(
@@ -425,55 +684,104 @@ def discover_history(
     allow_zstd_lookup: bool = True,
 ) -> HistoryDiscoveryResult:
     """Index supported dotfolder histories without constructing full replay records."""
-    configured: list[tuple[HistoryTool, Path]] = [
-        ("codex", codex_root or default_codex_history_root()),
-        ("claude_code", claude_root or default_claude_history_root()),
-    ]
+    active_codex_root = codex_root or default_codex_history_root()
+    archived_codex_root = active_codex_root.parent / "archived_sessions"
+    catalog_path = (
+        active_codex_root.parent / "state_5.sqlite"
+        if codex_root is not None
+        else default_codex_catalog_path()
+    )
+    active_files, active_unreadable = (
+        _history_files(active_codex_root, "codex") if active_codex_root.is_dir() else ([], False)
+    )
+    archived_files, archived_unreadable = (
+        _history_files(archived_codex_root, "codex")
+        if archived_codex_root.is_dir()
+        else ([], False)
+    )
+    catalog_threads, catalog_status, catalog_message = _read_catalog(catalog_path)
+
     roots: list[HistoryRootStatus] = []
-    sessions: list[HistorySessionIndex] = []
-    for tool, root in configured:
-        if not root.exists() or not root.is_dir():
-            roots.append(
-                HistoryRootStatus(
-                    tool=tool,
-                    status="missing",
-                    file_count=0,
-                    message="default history root is absent",
+    codex_root_missing = not active_codex_root.is_dir() and not archived_codex_root.is_dir()
+    codex_unreadable = active_unreadable or archived_unreadable
+    roots.append(
+        HistoryRootStatus(
+            tool="codex",
+            status=(
+                "missing" if codex_root_missing else ("unreadable" if codex_unreadable else "ok")
+            ),
+            file_count=len(active_files) + len(archived_files),
+            message=(
+                "default history roots are absent"
+                if codex_root_missing
+                else (
+                    "history roots could not be read completely"
+                    if codex_unreadable
+                    else "active and archived history roots indexed"
                 )
+            ),
+            active_file_count=len(active_files),
+            archived_file_count=len(archived_files),
+            catalog_status=catalog_status,
+            catalog_message=catalog_message,
+        )
+    )
+
+    indexed_codex: list[tuple[HistorySessionIndex, Path]] = []
+    seen_codex_ids: set[str] = set()
+    codex_trees: tuple[tuple[HistoryState, list[Path]], ...] = (
+        ("active", active_files),
+        ("archived", archived_files),
+    )
+    for history_state, files in codex_trees:
+        for path in files:
+            indexed = _index_codex(
+                path,
+                history_state=history_state,
+                max_source_bytes=max_source_bytes,
+                preview_characters=preview_characters,
+                zstd_executable=zstd_executable,
+                allow_zstd_lookup=allow_zstd_lookup,
             )
-            continue
-        files, unreadable = _history_files(root, tool)
+            if indexed.session_id in seen_codex_ids:
+                continue
+            seen_codex_ids.add(indexed.session_id)
+            indexed_codex.append((indexed, path))
+
+    sessions = _enrich_from_catalog(indexed_codex, catalog_threads)
+
+    configured_claude_root = claude_root or default_claude_history_root()
+    if not configured_claude_root.is_dir():
         roots.append(
             HistoryRootStatus(
-                tool=tool,
-                status="unreadable" if unreadable else "ok",
-                file_count=len(files),
+                tool="claude_code",
+                status="missing",
+                file_count=0,
+                message="default history root is absent",
+            )
+        )
+    else:
+        claude_files, claude_unreadable = _history_files(configured_claude_root, "claude_code")
+        roots.append(
+            HistoryRootStatus(
+                tool="claude_code",
+                status="unreadable" if claude_unreadable else "ok",
+                file_count=len(claude_files),
                 message=(
                     "history root could not be read completely"
-                    if unreadable
+                    if claude_unreadable
                     else "history root indexed"
                 ),
             )
         )
-        for path in files:
-            if tool == "codex":
-                sessions.append(
-                    _index_codex(
-                        path,
-                        max_source_bytes=max_source_bytes,
-                        preview_characters=preview_characters,
-                        zstd_executable=zstd_executable,
-                        allow_zstd_lookup=allow_zstd_lookup,
-                    )
-                )
-            else:
-                sessions.append(
-                    _index_claude(
-                        path,
-                        max_source_bytes=max_source_bytes,
-                        preview_characters=preview_characters,
-                    )
-                )
+        sessions.extend(
+            _index_claude(
+                path,
+                max_source_bytes=max_source_bytes,
+                preview_characters=preview_characters,
+            )
+            for path in claude_files
+        )
     sessions.sort(key=lambda item: (item.started_at, item.tool, item.session_id), reverse=True)
     return HistoryDiscoveryResult(roots=roots, sessions=sessions)
 
@@ -489,21 +797,24 @@ def find_history_source(
     allow_zstd_lookup: bool = True,
 ) -> tuple[HistoryTool, Path]:
     """Resolve one indexed session to an internal source path without exposing it in output."""
-    configured: list[tuple[HistoryTool, Path]] = [
-        ("codex", codex_root or default_codex_history_root()),
-        ("claude_code", claude_root or default_claude_history_root()),
+    active_codex_root = codex_root or default_codex_history_root()
+    configured: list[tuple[HistoryTool, Path, HistoryState | None]] = [
+        ("codex", active_codex_root, "active"),
+        ("codex", active_codex_root.parent / "archived_sessions", "archived"),
+        ("claude_code", claude_root or default_claude_history_root(), None),
     ]
-    matches: list[tuple[HistoryTool, Path]] = []
-    for candidate_tool, root in configured:
-        if tool is not None and candidate_tool != tool:
+    for candidate_tool, root, history_state in configured:
+        if tool is not None and tool != candidate_tool:
             continue
         if not root.is_dir():
             continue
         files, _unreadable = _history_files(root, candidate_tool)
+        matches: list[Path] = []
         for path in files:
             if candidate_tool == "codex":
                 indexed = _index_codex(
                     path,
+                    history_state=history_state or "active",
                     max_source_bytes=max_source_bytes,
                     preview_characters=DEFAULT_PREVIEW_CHARACTERS,
                     zstd_executable=zstd_executable,
@@ -516,12 +827,12 @@ def find_history_source(
                     preview_characters=DEFAULT_PREVIEW_CHARACTERS,
                 )
             if indexed.session_id == session_id:
-                matches.append((candidate_tool, path))
-    if not matches:
-        raise KeyError(f"unknown history session: {session_id}")
-    if len(matches) > 1:
-        raise ValueError("history session id is ambiguous within the selected source")
-    return matches[0]
+                matches.append(path)
+        if len(matches) > 1:
+            raise ValueError("history session id is ambiguous within the selected source")
+        if matches:
+            return candidate_tool, matches[0]
+    raise KeyError(f"unknown history session: {session_id}")
 
 
 def _source_key(tool: HistoryTool, root: Path, path: Path) -> str:
@@ -529,7 +840,7 @@ def _source_key(tool: HistoryTool, root: Path, path: Path) -> str:
         relative = path.relative_to(root).as_posix()
     except ValueError:
         relative = path.name
-    return hashlib.sha256(f"{tool}:{relative}".encode()).hexdigest()
+    return hashlib.sha256(f"{tool}:{root.name}:{relative}".encode()).hexdigest()
 
 
 def _snapshot(
@@ -558,8 +869,10 @@ class HistoryWatcher:
         codex_root: Path | None = None,
         claude_root: Path | None = None,
     ) -> None:
+        active_codex_root = codex_root or default_codex_history_root()
         self._configured: tuple[tuple[HistoryTool, Path], ...] = (
-            ("codex", codex_root or default_codex_history_root()),
+            ("codex", active_codex_root),
+            ("codex", active_codex_root.parent / "archived_sessions"),
             ("claude_code", claude_root or default_claude_history_root()),
         )
         self._previous = _snapshot(self._configured)

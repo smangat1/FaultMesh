@@ -258,6 +258,82 @@ function createTestV2(): ReplayExportV2 {
   };
 }
 
+function createHistoryImportV1(): ReplayExportV1 {
+  const base = createTestV1();
+  const promptRecord = {
+    ...base.records[0],
+    id: 'history-prompt',
+    sequence: 1,
+    record_type: 'checkpoint' as const,
+    provenance: 'history_import',
+    completeness: 'partial' as const,
+    attribution_status: 'unknown' as const,
+    prompt_text: 'Please inspect [redacted: api key] safely',
+    prompt_id: 'prompt-1',
+    file_state: 'unknown' as const,
+    redaction_types: ['api key'],
+  };
+  const toolRecord = {
+    ...base.records[1],
+    id: 'history-tool',
+    sequence: 2,
+    provenance: 'history_import',
+    completeness: 'partial' as const,
+    attribution_status: 'unknown' as const,
+    tool_name: 'Bash',
+    tool_input: { command: 'python -m pytest -q --token [redacted: token]' },
+    tool_response: { aggregated_output: '2 passed; token=[redacted: token]' },
+    edit_command: 'python -m pytest -q --token [redacted: token]',
+    edit_patch: '*** update: synthetic.py\n+VALUE = 2',
+    file_state: 'unknown' as const,
+    redaction_types: ['token'],
+    timestamp_inferred: true,
+  };
+  return {
+    ...base,
+    session: {
+      ...base.session,
+      import_source: 'codex',
+      history_state: 'archived',
+      timeline_started_at: promptRecord.captured_at,
+      timeline_ended_at: toolRecord.captured_at,
+    },
+    records: [promptRecord, toolRecord],
+    manifests: [],
+    content_base64_by_sha256: {},
+    timeline: [
+      {
+        ...base.timeline[0],
+        sequence: 1,
+        record_id: promptRecord.id,
+        record_type: 'checkpoint',
+        captured_at: promptRecord.captured_at,
+        completeness: 'partial',
+        attribution_status: 'unknown',
+        before_manifest_id: null,
+        after_manifest_id: null,
+        changed_files: [],
+        changed_symbols: [],
+      },
+      {
+        ...base.timeline[1],
+        sequence: 2,
+        record_id: toolRecord.id,
+        record_type: 'post_tool',
+        captured_at: toolRecord.captured_at,
+        completeness: 'partial',
+        attribution_status: 'unknown',
+        tool_name: 'Bash',
+        before_manifest_id: null,
+        after_manifest_id: null,
+        changed_files: [],
+        changed_symbols: [],
+        timestamp_inferred: true,
+      },
+    ],
+  };
+}
+
 describe('ReplayWorkspace Component (Phase C2)', () => {
   it('renders a quiet Obsidian-like interface with honest states and no live claims', () => {
     const v1 = createTestV1();
@@ -377,5 +453,32 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     expect(toggleMapBtn).toBeDefined();
     fireEvent.click(toggleMapBtn);
     expect(screen.getByTestId('replay-minimap-dock')).toBeDefined();
+  });
+
+  it('renders imported prompt, tool, output, edit, and unknown file-state evidence', () => {
+    const adapter = new ReplayAdapter(createHistoryImportV1());
+    render(<ReplayWorkspace adapter={adapter} />);
+
+    expect(screen.getByTestId('replay-history-prompt').textContent).toContain(
+      'Please inspect [redacted: api key] safely'
+    );
+
+    fireEvent.click(screen.getByTestId('replay-next-btn'));
+
+    expect(screen.getByTestId('replay-history-tool-name').textContent).toContain('Bash');
+    expect(screen.getByTestId('replay-history-command').textContent).toContain(
+      '--token [redacted: token]'
+    );
+    expect(screen.getByTestId('replay-history-tool-output').textContent).toContain('2 passed');
+    expect(screen.getByTestId('replay-history-edit').textContent).toContain('VALUE = 2');
+    expect(screen.getByTestId('replay-history-file-state').textContent).toContain(
+      'Historical file state: unknown'
+    );
+    expect(screen.getByTestId('replay-history-inferred-time')).toBeDefined();
+
+    fireEvent.click(screen.getByTestId('replay-toggle-evidence'));
+    expect(screen.getByTestId('replay-history-evidence-summary').textContent).toContain(
+      'file state unknown'
+    );
   });
 });

@@ -4,6 +4,7 @@ import type {
   StructuredTestEvidence,
   ClaimVerdict,
   TypedClaim,
+  ReplayRecord,
 } from '../../replay/types';
 import {
   ChevronDown,
@@ -15,6 +16,7 @@ interface ReplayEvidenceInspectorProps {
   tests: StructuredTestEvidence[];
   limitations: string[];
   isNarrationOn: boolean;
+  record?: ReplayRecord | null;
 }
 
 export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = ({
@@ -22,6 +24,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
   tests,
   limitations,
   isNarrationOn,
+  record,
 }) => {
   const [activeTab, setActiveTab] = useState<'claims' | 'tests' | 'summary' | 'limitations'>('claims');
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
@@ -166,6 +169,22 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
           gap: '16px',
         }}
       >
+        {record?.provenance === 'history_import' && (
+          <div
+            data-testid="replay-history-evidence-summary"
+            style={{
+              padding: '10px 12px',
+              borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+              backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+              fontSize: '10px',
+              color: 'var(--replay-text-muted, #8b97ad)',
+            }}
+          >
+            Recorded history evidence
+            {record.tool_name ? ` · ${record.tool_name}` : ''}
+            {record.file_state === 'unknown' ? ' · file state unknown' : ''}
+          </div>
+        )}
         {/* Tab 1: Claims & Likely Reason */}
         {activeTab === 'claims' && isNarrationOn && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
