@@ -12,6 +12,7 @@ import { plainReplayStepLabel } from '../../replay/stepLabel';
 import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from '../FirstUseTipOverlay';
 import { isScreenTipSeen } from '../../utils/firstUseTipsStorage';
 import { WatchProjectPrompt } from '../WatchProjectPrompt';
+import { ReplayModelSetup } from './ReplayModelSetup';
 import type { ProjectChoice } from '../../spectate/types';
 import {
   dismissSessionWatchPrompt,
@@ -40,6 +41,19 @@ export interface ReplayWorkspaceProps {
   watchProjectBusy?: boolean;
   onWatchProject?: () => Promise<ProjectChoice | null>;
   onLinkSessionProject?: (sessionId: string, projectHandle: string) => Promise<void>;
+  narrationRevision?: number;
+  narrationProgress?: { done: number; total: number } | null;
+  narrationError?: string | null;
+  modelSetupOpen?: boolean;
+  modelSetupMessage?: string;
+  modelSetupBusy?: boolean;
+  modelDownloadProgress?: { downloaded: number; total: number } | null;
+  plainMode?: boolean;
+  onDownloadModel?: () => void;
+  onChooseModel?: () => void;
+  onSkipModelSetup?: () => void;
+  onCancelNarration?: () => void;
+  onRerunNarration?: () => void;
 }
 
 export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
@@ -54,6 +68,19 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   watchProjectBusy = false,
   onWatchProject,
   onLinkSessionProject,
+  narrationRevision = 0,
+  narrationProgress = null,
+  narrationError = null,
+  modelSetupOpen = false,
+  modelSetupMessage = 'Choose a local model to upgrade the template narration.',
+  modelSetupBusy = false,
+  modelDownloadProgress = null,
+  plainMode = false,
+  onDownloadModel,
+  onChooseModel,
+  onSkipModelSetup,
+  onCancelNarration,
+  onRerunNarration,
 }) => {
   const timeline = useMemo(() => adapter.getTimeline(), [adapter]);
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
@@ -94,6 +121,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const completenessInfo = adapter.getCompletenessSummary();
   const granularity = adapter.detectCaptureGranularity();
   const hasModelChapters = adapter.isModelNarrationAvailable();
+  const sessionSummary = adapter.getSessionSummary();
 
   const stepLabels = useMemo(() => new Map(
     timeline.map((entry) => [
@@ -127,11 +155,11 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
   const chapters = useMemo(() => {
     return isBaselineMode ? adapter.getBaselineChapters() : adapter.getChapters();
-  }, [adapter, isBaselineMode]);
+  }, [adapter, isBaselineMode, narrationRevision]);
 
   const narration = useMemo(() => {
     return adapter.getNarration(currentSeq);
-  }, [adapter, currentSeq]);
+  }, [adapter, currentSeq, narrationRevision]);
 
   const testsForCurrentSeq = useMemo(() => {
     return adapter.getTestsForSequence(currentSeq);
@@ -359,6 +387,28 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               : 'REAL RECORDING'}
           </span>
 
+          {narrationProgress && (
+            <span
+              data-testid="replay-narration-progress"
+              style={{
+                fontSize: '10px',
+                padding: '3px 7px',
+                borderRadius: '7px',
+                background: 'rgba(148, 108, 50, 0.12)',
+                border: '1px solid rgba(148, 108, 50, 0.30)',
+                color: 'var(--replay-status-warning, #946c32)',
+              }}
+            >
+              Narrating {narrationProgress.done}/{narrationProgress.total}
+            </span>
+          )}
+
+          {plainMode && !narrationProgress && (
+            <span data-testid="replay-plain-mode" style={{ fontSize: '10px', color: 'var(--replay-text-muted, #8b97ad)' }}>
+              Plain mode
+            </span>
+          )}
+
         </div>
 
         {/* Right: On-Demand Controls (Chapters [C], Evidence [E], Mini Map [M]) & Help */}
@@ -415,8 +465,47 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           >
             ?
           </button>
+          {narrationProgress ? (
+            <button type="button" className="replay-header-toggle-btn" onClick={onCancelNarration}>
+              Cancel narration
+            </button>
+          ) : importedSessionId && !modelSetupOpen && !plainMode ? (
+            <button
+              type="button"
+              className="replay-header-toggle-btn"
+              data-testid="replay-rerun-narration"
+              onClick={onRerunNarration}
+            >
+              Re-run narration
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {sessionSummary && (
+        <div
+          data-testid="replay-session-summary"
+          style={{
+            padding: '9px 16px',
+            borderBottom: '1px solid var(--replay-border-subtle, rgba(255,255,255,0.06))',
+            background: 'var(--replay-bg-surface-2, #141a26)',
+            fontSize: '11px',
+            color: 'var(--replay-text-muted, #8b97ad)',
+            lineHeight: 1.5,
+          }}
+        >
+          <strong style={{ color: 'var(--replay-text-primary, #e6edf8)' }}>
+            {sessionSummary.source === 'model' ? 'AI session summary: ' : 'Session overview: '}
+          </strong>
+          {sessionSummary.sentences.join(' ')}
+        </div>
+      )}
+
+      {narrationError && (
+        <div data-testid="replay-narration-error" style={{ padding: '6px 16px', fontSize: '10px', color: 'var(--replay-status-warning, #946c32)' }}>
+          {narrationError}
+        </div>
+      )}
 
       {/* 2. Hero Timeline Bar (Spanning Full Workspace Width) */}
       <div
@@ -539,6 +628,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             record={currentRecord}
             completenessInfo={completenessInfo}
             isModelNarrationAvailable={hasModelChapters}
+            narration={narration}
           />
 
           {/* Graph Mini Map Dock (Resizable, Size-cycling, Honest empty state) */}
@@ -592,8 +682,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         active={showTips}
         onDismiss={() => setShowTips(false)}
       />
+      <ReplayModelSetup
+        open={!showTips && modelSetupOpen}
+        message={modelSetupMessage}
+        busy={modelSetupBusy}
+        progress={modelDownloadProgress}
+        onDownload={() => onDownloadModel?.()}
+        onChoose={() => onChooseModel?.()}
+        onSkip={() => onSkipModelSetup?.()}
+      />
       <WatchProjectPrompt
-        open={showWatchPrompt}
+        open={showWatchPrompt && !showTips && !modelSetupOpen}
         hasBridge={hasSpectateBridge}
         busy={watchProjectBusy}
         onChoose={() => void handleWatchProject()}

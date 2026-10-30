@@ -18,6 +18,7 @@ import type {
   ReplayChapter,
   ChapterRunRecord,
   StepNarration,
+  SessionSummary,
   StructuredTestEvidence,
   AttributionStatus,
   Completeness,
@@ -28,7 +29,7 @@ import { isReplayExportV2 } from '../replay/types';
 import { decodeBase64ToUtf8 } from '../replay/utils';
 
 export class ReplayAdapter implements FaultMeshAdapter {
-  private readonly exported: AnyReplayExport;
+  private exported: AnyReplayExport;
   private readonly origin: ReplayOrigin;
   private currentSequence: number;
   private useBaselineChapters: boolean = false;
@@ -42,6 +43,18 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public getExport(): AnyReplayExport {
     return this.exported;
+  }
+
+  public applyNarrationProgress(step: StepNarration, chapters: ReplayChapter[]): void {
+    if (!isReplayExportV2(this.exported)) return;
+    const narration = this.exported.narration.filter((item) => item.sequence !== step.sequence);
+    narration.push(step);
+    narration.sort((left, right) => left.sequence - right.sequence);
+    this.exported = { ...this.exported, narration, chapters };
+  }
+
+  public replaceNarratedExport(exported: AnyReplayExport): void {
+    this.exported = exported;
   }
 
   public getOrigin(): ReplayOrigin {
@@ -121,6 +134,11 @@ export class ReplayAdapter implements FaultMeshAdapter {
     if (!isReplayExportV2(this.exported)) return null;
     const targetSeq = sequence ?? this.currentSequence;
     return this.exported.narration.find((n) => n.sequence === targetSeq) || null;
+  }
+
+  public getSessionSummary(): SessionSummary | null {
+    if (!isReplayExportV2(this.exported)) return null;
+    return this.exported.summary || null;
   }
 
   public getStoredContent(sha256: string | null | undefined): string | null {

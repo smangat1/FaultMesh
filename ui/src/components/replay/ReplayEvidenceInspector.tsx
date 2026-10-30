@@ -19,6 +19,16 @@ interface ReplayEvidenceInspectorProps {
   record?: ReplayRecord | null;
 }
 
+const plainVerdictReason = (verdict: ClaimVerdict): string => {
+  const reasons: Record<string, string> = {
+    derived_file_state_unavailable: "couldn't rebuild this file from the log",
+    incomplete_record: 'the recording does not contain enough evidence',
+    evidence_unavailable: 'the recording does not contain enough evidence',
+    missing_evidence: 'the recording does not contain enough evidence',
+  };
+  return reasons[verdict.reason_code] || verdict.reason;
+};
+
 export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = ({
   narration,
   tests,
@@ -396,17 +406,17 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                             ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
                             : isContradicted
                             ? 'var(--replay-status-danger-bg, rgba(156, 68, 68, 0.12))'
-                            : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
+                            : 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
                           border: isSupported
                             ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
                             : isContradicted
                             ? '1px solid var(--replay-status-danger-border, rgba(156, 68, 68, 0.30))'
-                            : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
+                            : '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                           color: isSupported
                             ? 'var(--replay-status-complete, #4a7bb0)'
                             : isContradicted
                             ? 'var(--replay-status-danger, #9c4444)'
-                            : 'var(--replay-text-muted, #8b97ad)',
+                            : 'var(--replay-status-warning, #946c32)',
                         }}
                         data-testid={`replay-claim-verdict-${verdict?.verdict || 'unknown'}`}
                       >
@@ -414,7 +424,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                           ? 'checked against recording'
                           : isContradicted
                           ? 'contradicted'
-                          : 'unsupported / unknown'}
+                          : 'could not check'}
                       </span>
                     </div>
 
@@ -431,7 +441,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                         }}
                       >
                         <span>
-                          reason: {verdict.reason_code} — {verdict.reason}
+                          {plainVerdictReason(verdict)}
                         </span>
                         <button
                           onClick={() => setExpandedClaimId(isExpanded ? null : claim.id)}
@@ -472,6 +482,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       >
                         <div>Predicate: {claim.assertion.predicate}</div>
                         <div>Evidence refs: {verdict.evidence_refs.join(', ')}</div>
+                        {verdict.evidence_source && <div>Evidence source: {verdict.evidence_source.replace(/_/g, ' ')}</div>}
                         <div>Checker: {verdict.checker_version}</div>
                       </div>
                     )}

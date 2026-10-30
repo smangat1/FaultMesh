@@ -5,6 +5,7 @@ import type {
   TimelineEntry,
   Completeness,
   ReplayRecord,
+  StepNarration,
 } from '../../replay/types';
 import { FileDiff, AlertTriangle, Hash } from 'lucide-react';
 import { formatReplayTime } from '../../replay/utils';
@@ -19,6 +20,7 @@ interface ReplayDiffViewerProps {
   record?: ReplayRecord | null;
   completenessInfo?: { completeness: Completeness; gaps: string[] };
   isModelNarrationAvailable?: boolean;
+  narration?: StepNarration | null;
 }
 
 const EvidenceBlock: React.FC<{ label: string; value: string; testId: string }> = ({
@@ -59,6 +61,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   record,
   completenessInfo,
   isModelNarrationAvailable,
+  narration,
 }) => {
   const [viewMode, setViewMode] = useState<'diff' | 'source'>('diff');
 
@@ -151,6 +154,21 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
+            {narration?.explanation && (
+              <div
+                data-testid="replay-ai-summary"
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 'var(--replay-radius-control, 7px)',
+                  backgroundColor: 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))',
+                  border: '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))',
+                  color: 'var(--replay-text-primary, #e6edf8)',
+                }}
+              >
+                <strong style={{ display: 'block', marginBottom: '4px' }}>AI summary</strong>
+                {narration.explanation.text}
+              </div>
+            )}
             {isHistoryImport && (
               <div
                 data-testid="replay-history-step-evidence"
@@ -229,7 +247,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   fontSize: '10px',
                 }}
               >
-                <strong>Prompt A Baseline Recording:</strong> Model-generated chapters, atomic claims, and likely-reason inferences are not present for this export.
+                This step is shown from the recorded session. Local narration has not added an explanation yet.
               </div>
             )}
           </div>
@@ -513,6 +531,23 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           </button>
         </div>
       </div>
+
+      {narration?.explanation && (
+        <div
+          data-testid="replay-ai-summary"
+          style={{
+            padding: '8px 14px',
+            borderBottom: '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))',
+            backgroundColor: 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))',
+            color: 'var(--replay-text-primary, #e6edf8)',
+            fontSize: '11px',
+            lineHeight: 1.5,
+            flexShrink: 0,
+          }}
+        >
+          <strong>AI summary: </strong>{narration.explanation.text}
+        </div>
+      )}
 
       {/* File Header & Hashes */}
       {currentPath && (

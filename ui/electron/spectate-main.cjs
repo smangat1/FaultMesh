@@ -16,6 +16,13 @@ const CHANNELS = Object.freeze({
   listHistory: 'faultmesh:spectate:list-history',
   importSession: 'faultmesh:spectate:import-session',
   linkSessionProject: 'faultmesh:spectate:link-session-project',
+  modelStatus: 'faultmesh:replay:model-status',
+  downloadModel: 'faultmesh:replay:download-model',
+  chooseModel: 'faultmesh:replay:choose-model',
+  startNarration: 'faultmesh:replay:start-narration',
+  cancelNarration: 'faultmesh:replay:cancel-narration',
+  rerunNarration: 'faultmesh:replay:rerun-narration',
+  narrationEvent: 'faultmesh:replay:narration-event',
 });
 
 const EVENTS = new Set([
@@ -251,6 +258,8 @@ function attachSpectateBridge({
   let parser = null;
   let stopping = false;
   let disposed = false;
+  let narrationChild = null;
+  let downloadChild = null;
 
   function assertTrustedSender(event) {
     if (disposed) throw new Error('spectate bridge is closed');
@@ -269,6 +278,70 @@ function attachSpectateBridge({
 
   function sendRecord(record) {
     if (!window.isDestroyed()) window.webContents.send(CHANNELS.event, record);
+  }
+
+  function sendNarrationEvent(record) {
+    if (!window.isDestroyed()) window.webContents.send(CHANNELS.narrationEvent, record);
+  }
+
+  function validSessionId(sessionId) {
+    return typeof sessionId === 'string'
+      && sessionId.length > 0
+      && sessionId.length <= 128
+      && !/[\/\\]/.test(sessionId)
+      && !sessionId.includes('..');
+  }
+
+  function runJsonCommand(args, { timeoutMs = 30000, maxBytes = 1024 * 1024 } = {}) {
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      let proc;
+      const finish = (callback) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        callback();
+      };
+      try {
+        proc = spawn(command, args, {
+          shell: false,
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      const timer = setTimeout(() => {
+        proc.kill('SIGTERM');
+        finish(() => reject(new Error(`${args[0]} timed out`)));
+      }, timeoutMs);
+      timer.unref?.();
+      proc.stdout.on('data', (chunk) => {
+        stdout += chunk.toString('utf8');
+        if (Buffer.byteLength(stdout) > maxBytes) {
+          proc.kill('SIGTERM');
+          finish(() => reject(new Error(`${args[0]} output exceeded limit`)));
+        }
+      });
+      proc.stderr.on('data', (chunk) => {
+        stderr = (stderr + chunk.toString('utf8')).slice(-4096);
+      });
+      proc.once('error', (error) => finish(() => reject(error)));
+      proc.once('close', (code) => finish(() => {
+        if (code !== 0) {
+          reject(new Error(`${args[0]} failed with code ${code}: ${stderr.slice(0, 1000)}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (error) {
+          reject(new Error(`${args[0]} returned invalid JSON`));
+        }
+      }));
+    });
   }
 
   function syntheticSessionEnd(reason) {
@@ -379,7 +452,7 @@ function attachSpectateBridge({
       const message = String(chunk).slice(0, 4096).trim();
       if (message) console.error(`FaultMesh spectate: ${message}`);
     });
-    active.once('error', (error) => {
+    active.once('error', () => {
       console.error('FaultMesh spectate child failed:', error.message);
       if (child === active) child = null;
       syntheticSessionEnd('child_process_error');
@@ -590,6 +663,7 @@ function attachSpectateBridge({
           tool,
           '--out',
           tempOut,
+          '--template-narration',
         ];
         try {
           const links = readProjectLinks(projectLinksPath);
@@ -666,12 +740,217 @@ function attachSpectateBridge({
     });
   });
 
+  ipcMain.handle(CHANNELS.modelStatus, async (event, ...args) => {
+    assertTrusted(event, args);
+    const result = await runJsonCommand(['replay-model-status']);
+    if (!isPlainObject(result) || typeof result.ready !== 'boolean' || typeof result.message !== 'string') {
+      throw new Error('invalid replay-model-status response');
+    }
+    return {
+      ready: result.ready,
+      status: String(result.status || 'setup_required'),
+      message: result.message,
+      preset: String(result.preset || 'medium-3b'),
+      modelFilename: result.model_filename ? String(result.model_filename) : null,
+    };
+  });
+
+  ipcMain.handle(CHANNELS.chooseModel, async (event, ...args) => {
+    assertTrusted(event, args);
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Choose a local GGUF narration model',
+      filters: [{ name: 'GGUF model', extensions: ['gguf'] }],
+      properties: ['openFile', 'dontAddToRecent'],
+    });
+    if (result.canceled || result.filePaths.length !== 1) return null;
+    const selected = result.filePaths[0];
+    const stat = fs.lstatSync(selected);
+    if (stat.isSymbolicLink() || !stat.isFile() || path.extname(selected).toLowerCase() !== '.gguf') {
+      throw new Error('selected model must be a real GGUF file');
+    }
+    const realModel = fs.realpathSync(selected);
+    let selectedStatus;
+    try {
+      selectedStatus = await runJsonCommand(['replay-model-select', realModel]);
+    } catch (_) {
+      throw new Error('The selected local model could not be saved.');
+    }
+    if (!isPlainObject(selectedStatus) || selectedStatus.selected !== true) {
+      throw new Error('replay-model-select returned an invalid response');
+    }
+    return { selected: true, modelFilename: path.basename(realModel) };
+  });
+
+  ipcMain.handle(CHANNELS.downloadModel, async (event, ...args) => {
+    assertTrustedSender(event);
+    if (args.length !== 1 || !['qwen2.5-3b-instruct-q4-k-m', 'qwen2.5-7b-instruct-q4-k-m'].includes(args[0])) {
+      throw new Error('downloadModel requires a supported model id');
+    }
+    if (downloadChild) return { started: false, reason: 'already_running' };
+    const active = spawn(command, ['replay-model-download', args[0]], {
+      shell: false,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    downloadChild = active;
+    let buffer = '';
+    active.stdout.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      if (Buffer.byteLength(buffer) > 1024 * 1024) {
+        active.kill('SIGTERM');
+        buffer = '';
+        sendNarrationEvent({ scope: 'download', event: 'error', message: 'Download output exceeded limit.' });
+        return;
+      }
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (!isPlainObject(parsed)) throw new Error('invalid download event');
+          if (
+            parsed.event === 'progress'
+            && Number.isSafeInteger(parsed.downloaded_bytes)
+            && Number.isSafeInteger(parsed.total_bytes)
+          ) {
+            sendNarrationEvent({
+              scope: 'download',
+              event: 'progress',
+              downloaded_bytes: parsed.downloaded_bytes,
+              total_bytes: parsed.total_bytes,
+            });
+          } else if (parsed.event === 'done' && typeof parsed.model_id === 'string') {
+            sendNarrationEvent({
+              scope: 'download',
+              event: 'done',
+              model_id: parsed.model_id,
+              artifacts: Number.isSafeInteger(parsed.artifacts) ? parsed.artifacts : 0,
+            });
+          } else if (parsed.event === 'error') {
+            sendNarrationEvent({ scope: 'download', event: 'error', message: 'Local model download failed.' });
+          } else {
+            throw new Error('invalid download event');
+          }
+        } catch (_) {
+          active.kill('SIGTERM');
+          sendNarrationEvent({ scope: 'download', event: 'error', message: 'Invalid model download output.' });
+        }
+      }
+    });
+    active.once('close', () => {
+      if (downloadChild === active) downloadChild = null;
+    });
+    active.once('error', (error) => {
+      if (downloadChild === active) downloadChild = null;
+      sendNarrationEvent({ scope: 'download', event: 'error', message: 'Local model download failed.' });
+    });
+    return { started: true };
+  });
+
+  function beginNarration(event, args, rerun) {
+    assertTrustedSender(event);
+    if (args.length !== 2) throw new Error('narration requires exactly (sessionId, tool)');
+    const [sessionId, tool] = args;
+    if (!validSessionId(sessionId)) throw new Error('invalid or unsafe sessionId');
+    if (tool !== 'codex' && tool !== 'claude_code') throw new Error('unsupported narration tool');
+    if (narrationChild) throw new Error('narration is already running');
+    const commandArgs = ['replay-narrate-session', sessionId, '--tool', tool];
+    if (rerun) commandArgs.push('--rerun');
+    try {
+      const links = readProjectLinks(projectLinksPath);
+      const linked = links[sessionId];
+      if (isPlainObject(linked) && typeof linked.root === 'string' && path.isAbsolute(linked.root)) {
+        const linkedRoot = fs.realpathSync(linked.root);
+        if (fs.statSync(linkedRoot).isDirectory()) commandArgs.push('--project-root', linkedRoot);
+      }
+    } catch (error) {
+      if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
+    }
+    const active = spawn(command, commandArgs, {
+      shell: false,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    narrationChild = active;
+    let buffer = '';
+    active.stdout.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      if (Buffer.byteLength(buffer) > 64 * 1024 * 1024) {
+        active.kill('SIGTERM');
+        buffer = '';
+        sendNarrationEvent({ scope: 'narration', event: 'error', message: 'Narration output exceeded limit.' });
+        return;
+      }
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (!isPlainObject(parsed)) throw new Error('unknown narration event');
+          if (
+            parsed.event === 'progress'
+            && Number.isSafeInteger(parsed.done)
+            && Number.isSafeInteger(parsed.total)
+            && isPlainObject(parsed.step)
+            && Array.isArray(parsed.chapters)
+          ) {
+            sendNarrationEvent({
+              scope: 'narration',
+              event: 'progress',
+              done: parsed.done,
+              total: parsed.total,
+              step: parsed.step,
+              chapters: parsed.chapters,
+            });
+          } else if (parsed.event === 'done' && isPlainObject(parsed.export)) {
+            sendNarrationEvent({ scope: 'narration', event: 'done', export: parsed.export });
+          } else if (parsed.event === 'error') {
+            sendNarrationEvent({ scope: 'narration', event: 'error', message: 'Local narration stopped.' });
+          } else {
+            throw new Error('unknown narration event');
+          }
+        } catch (_) {
+          active.kill('SIGTERM');
+          sendNarrationEvent({ scope: 'narration', event: 'error', message: 'Invalid narration output.' });
+        }
+      }
+    });
+    active.stderr.on('data', () => {});
+    active.once('error', () => {
+      if (narrationChild === active) narrationChild = null;
+      sendNarrationEvent({ scope: 'narration', event: 'error', message: 'Local narration could not start.' });
+    });
+    active.once('close', (code) => {
+      if (narrationChild === active) narrationChild = null;
+      if (code !== 0) {
+        sendNarrationEvent({ scope: 'narration', event: 'error', message: 'Local narration stopped.' });
+      }
+    });
+    return { started: true };
+  }
+
+  ipcMain.handle(CHANNELS.startNarration, async (event, ...args) => beginNarration(event, args, false));
+  ipcMain.handle(CHANNELS.rerunNarration, async (event, ...args) => beginNarration(event, args, true));
+  ipcMain.handle(CHANNELS.cancelNarration, async (event, ...args) => {
+    assertTrusted(event, args);
+    const active = narrationChild;
+    narrationChild = null;
+    if (active) active.kill('SIGTERM');
+    return { cancelled: Boolean(active) };
+  });
+
   return {
     channels: CHANNELS,
     dispose(reason = 'bridge_disposed', immediate = true) {
       if (disposed) return;
       const active = child;
       if (active) void terminate(active, reason, immediate);
+      if (narrationChild) narrationChild.kill('SIGTERM');
+      if (downloadChild) downloadChild.kill('SIGTERM');
+      narrationChild = null;
+      downloadChild = null;
       ipcMain.removeHandler(CHANNELS.choose);
       ipcMain.removeHandler(CHANNELS.start);
       ipcMain.removeHandler(CHANNELS.stop);
@@ -679,6 +958,12 @@ function attachSpectateBridge({
       ipcMain.removeHandler(CHANNELS.listHistory);
       ipcMain.removeHandler(CHANNELS.importSession);
       ipcMain.removeHandler(CHANNELS.linkSessionProject);
+      ipcMain.removeHandler(CHANNELS.modelStatus);
+      ipcMain.removeHandler(CHANNELS.downloadModel);
+      ipcMain.removeHandler(CHANNELS.chooseModel);
+      ipcMain.removeHandler(CHANNELS.startNarration);
+      ipcMain.removeHandler(CHANNELS.cancelNarration);
+      ipcMain.removeHandler(CHANNELS.rerunNarration);
       disposed = true;
     },
   };

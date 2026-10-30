@@ -599,6 +599,10 @@ def replay_history_import(
             ),
         ),
     ] = None,
+    template_narration: Annotated[
+        bool,
+        typer.Option(help="Wrap the import in replay-export-2.0 template narration."),
+    ] = False,
 ) -> None:
     """Import one selected local history session with optional read-only reconstruction."""
     if tool not in {None, "codex", "claude_code"}:
@@ -614,15 +618,18 @@ def replay_history_import(
             catalog_path=catalog,
             project_root=project_root,
         )
+        document: ReplayExport | ReplayNarrationExport = exported
+        if template_narration:
+            document = run_narration(exported, None)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(exported.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        out.write_text(document.model_dump_json(indent=2) + "\n", encoding="utf-8")
     except Exception as exc:
         typer.secho(f"FaultMesh history import failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(
         json.dumps(
             {
-                "schema_version": exported.schema_version,
+                "schema_version": document.schema_version,
                 "session_id": exported.session.id,
                 "records": len(exported.records),
                 "path": str(out.resolve()),
@@ -828,6 +835,35 @@ def replay_model_status(
         )
         return
     typer.echo(status.model_dump_json())
+
+
+@app.command("replay-model-select")
+def replay_model_select(
+    model_path: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, resolve_path=True),
+    ],
+    preset: Annotated[
+        str, typer.Option(help="small-1.5b, medium-3b, or large-7b")
+    ] = "medium-3b",
+) -> None:
+    """Select an existing local GGUF without exposing its path in output."""
+    if model_path.suffix.lower() != ".gguf":
+        raise typer.BadParameter("selected model must be a GGUF file")
+    if preset not in MODEL_PRESETS:
+        raise typer.BadParameter("unknown model preset")
+    current = load_model_settings()
+    save_model_settings(
+        current.model_copy(
+            update={"selected_model_path": str(model_path), "preset": preset}
+        )
+    )
+    typer.echo(
+        json.dumps(
+            {"selected": True, "model_filename": model_path.name, "preset": preset},
+            sort_keys=True,
+        )
+    )
 
 
 @app.command("replay-model-download")
