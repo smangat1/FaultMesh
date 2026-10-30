@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import type { HistoryRoot, HistorySession } from '../spectate/types';
 import type { RunSummary } from '../types';
+import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from './FirstUseTipOverlay';
+import { isScreenTipSeen } from '../utils/firstUseTipsStorage';
 
 export interface AutodetectHomeScreenProps {
   onSelectProject: () => void;
@@ -98,6 +100,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
 }) => {
   const [internalSelectedTool, setInternalSelectedTool] = useState<string | null>(initialSelectedTool);
   const activeTool = propSelectedTool !== undefined ? propSelectedTool : internalSelectedTool;
+  const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen('home'));
 
   const handleSelectTool = useCallback(
     (tool: string | null) => {
@@ -371,6 +374,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
       >
         {/* Header Section */}
         <div
+          data-testid="autodetect-home-header"
           style={{
             display: 'flex',
             alignItems: 'flex-start',
@@ -421,6 +425,16 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              className="first-use-help-btn"
+              data-testid="home-help-tips-btn"
+              onClick={() => setShowTips(true)}
+              title="First-use guide (?)"
+              aria-label="First-use guide"
+            >
+              ?
+            </button>
             {hasHistoryBridge && (
               <button
                 data-testid="autodetect-refresh-btn"
@@ -1516,6 +1530,13 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
           )}
         </div>
       </div>
+
+      <FirstUseTipOverlay
+        screenId="home"
+        steps={SCREEN_DEFAULT_STEPS.home}
+        active={showTips}
+        onDismiss={() => setShowTips(false)}
+      />
     </div>
   );
 };

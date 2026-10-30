@@ -847,6 +847,45 @@ describe('ReplayTimelineBar Component', () => {
       expect(onSelect).toHaveBeenCalledWith(7);
     });
 
+    it('clears hovered step upon drag release so cursor label does not show stale position', () => {
+      const timeline = createMockTimeline();
+      const onSelect = vi.fn();
+
+      render(
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={1}
+          onSelectSequence={onSelect}
+          options={{ timeZone: 'UTC' }}
+        />
+      );
+
+      const track = screen.getByTestId('timeline-track-lane');
+
+      vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 100,
+        right: 1000,
+        bottom: 132,
+        width: 1000,
+        height: 32,
+        x: 0,
+        y: 100,
+        toJSON: () => {},
+      });
+
+      // Drag from start to clientX = 500
+      fireEvent.pointerDown(track, { clientX: 0, button: 0 });
+      fireEvent.pointerMove(track, { clientX: 500 });
+      expect(screen.getByTestId('timeline-cursor-label')).toBeDefined();
+
+      // Release at 500
+      fireEvent.pointerUp(track, { clientX: 500 });
+
+      // Cursor label is cleared on release (not showing stale position)
+      expect(screen.queryByTestId('timeline-cursor-label')).toBeNull();
+    });
+
     it('reduced motion and keyboard navigation work without regressions', () => {
       const timeline = createMockTimeline();
       const onSelect = vi.fn();

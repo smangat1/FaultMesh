@@ -429,9 +429,9 @@
 /* Floating Cursor Clock-Time Label at snap points */
 .replay-timeline-cursor-label {
   position: absolute;
-  top: 26px;
+  top: 24px;
   transform: translateX(-50%);
-  background-color: rgba(14, 17, 23, 0.92);
+  background-color: rgba(14, 17, 23, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 3px;
   padding: 2px 6px;
@@ -451,7 +451,7 @@
   align-items: center;
   justify-content: space-between;
   height: 18px;
-  margin-top: 4px;
+  margin-top: 18px; /* Clear spacing so floating cursor label never overlaps footer text */
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--replay-text-muted);

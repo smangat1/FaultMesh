@@ -62,13 +62,13 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   - [x] Tests and screenshots for Phase 2.
   - [x] Phase 2 commit: "Phase 2: timeline restyle".
 
-- [ ] **Phase 3: First-Use Tips**
-  - [ ] First-use spotlight tour / tip cards for autodetect home, live entrance, and replay view.
-  - [ ] Skip, Escape, and persistent seen-state in `localStorage`.
-  - [ ] Replay tips via `?` button in header/chrome.
-  - [ ] Respect `prefers-reduced-motion` and desktop drag clearance.
-  - [ ] Tests and screenshots for Phase 3.
-  - [ ] Phase 3 commit: "Phase 3: first-use tips".
+- [x] **Phase 3: First-Use Tips**
+  - [x] First-use spotlight tour / tip cards for autodetect home, live entrance, and replay view.
+  - [x] Skip, Escape, and persistent seen-state in `localStorage`.
+  - [x] Replay tips via `?` button in header/chrome.
+  - [x] Respect `prefers-reduced-motion` and desktop drag clearance.
+  - [x] Tests and screenshots for Phase 3.
+  - [x] Phase 3 commit: "Phase 3: first-use tips".
 
 ---
 
@@ -150,7 +150,7 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `asserted autodetect-no-bridge-empty-state and startup-open-recording-btn in DOM` | `f09af2ee719b84445bdfddab5610bf0839586bf12772b05bb908245593ae2fd3` |
 
 ### Phase 2: timeline restyle
-- **Commit SHA**: `153ffa5` (or final HEAD after amend)
+- **Commit SHA**: `153ffa5`
 - **Files Changed (11 files)**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/04-timeline-resting.png`
@@ -179,8 +179,51 @@ controls. This note does not alter the parallel branch's phase ownership or chec
 - **Screenshots Captured (Headless Chrome against real built bundle with zero duplicate hashes)**:
   | File | What it shows | DOM Assertion | SHA-256 Checksum |
   |---|---|---|---|
-  | `04-timeline-resting.png` | Timeline bar at rest: clean white line streaking across the bar, end circles displaying only clock times (no "start"/"end"), subtle hairline ticks at every snap point, and filled circle thumb | `asserted clean 2px line, timeline-circle-start (0%), timeline-circle-end (100%), extent clock times without "start"/"end", 7 ticks, and no cursor label at rest` | `6df290f7a1d8a6910f549bcf74599b3ad323f5283e9e47894a0955a4a9964e63` |
-  | `05-timeline-hover-label.png` | Timeline bar during hover: floating small muted-white clock-time label appears under cursor at nearest snap point without shifting layout | `asserted timeline-cursor-label appears under cursor at snap point displaying valid clock time while thumb remains at initial checkpoint` | `c8ebd675866ab22a3d701ef5b0d0a7f509ad35f1f116022f55171288768a5868` |
-  | `06-timeline-mid-drag.png` | Timeline bar mid-drag: thumb continuously tracks pointer position without jumping, cursor label shows nearest snap clock time, and current selected checkpoint remains strictly unchanged until release | `asserted timeline-thumb has class "dragging", left matches drag pointer (~60%), timeline-cursor-label visible, and header badge strictly remains Checkpoint #1` | `8677f18de5285b03361462e96004e320f6cff5342418379ef4c6c99b3dd22552` |
-  | `07-timeline-after-release.png` | Timeline bar after drag release: thumb smoothly eased onto nearest recorded checkpoint (180ms ease-out), dragging class removed, and current checkpoint updated in workspace | `asserted timeline-thumb lacks "dragging" class, checkpoint advanced to nearest recorded step (#5), and thumb snapped to checkpoint ratio` | `98d13a8517a3c404a4706667fab6f21e5415c8d090190a99012612455bc0b8f3` |
+  | `04-timeline-resting.png` | Timeline bar at rest: clean white line streaking across the bar, end circles displaying only clock times (no "start"/"end"), subtle hairline ticks at every snap point, and filled circle thumb | `asserted clean 2px line, timeline-circle-start (0%), timeline-circle-end (100%), extent clock times without "start"/"end", 7 ticks, and no cursor label at rest` | `b4a7528dd00599bd9bfcb10902bf252c8b35a0f0b4123b2171ec1b4c40920e33` |
+  | `05-timeline-hover-label.png` | Timeline bar during hover: floating small muted-white clock-time label appears under cursor at nearest snap point without shifting layout | `asserted timeline-cursor-label appears under cursor at snap point displaying valid clock time while thumb remains at initial checkpoint` | `ed9ae54f742d9a9e2551e0e781bc9002f3ef0aaa6db885be9e96232935dd5214` |
+  | `06-timeline-mid-drag.png` | Timeline bar mid-drag: thumb continuously tracks pointer position without jumping, cursor label shows nearest snap clock time, and current selected checkpoint remains strictly unchanged until release | `asserted timeline-thumb has class "dragging", left matches drag pointer (~60%), timeline-cursor-label visible, and header badge strictly remains Checkpoint #1` | `1968c033d17ef070eb3072d73873671e8447b8659fa3f3826a91b02507e68002` |
+  | `07-timeline-after-release.png` | Timeline bar after drag release: thumb smoothly eased onto nearest recorded checkpoint (180ms ease-out), dragging class removed, and current checkpoint updated in workspace | `asserted timeline-thumb lacks "dragging" class, checkpoint advanced to nearest recorded step (#5), and thumb snapped to checkpoint ratio` | `e5f8d5d899e95820969159bbc676140621eeb5c233afbf08b97cfbcd67544bc4` |
+
+### Phase 3: first-use tips
+- **Commit**: "Phase 3: first-use tips"
+- **Files Changed (14 files)**:
+  - `docs/session-list-progress.md`
+  - `docs/screenshots/session-list/04-timeline-resting.png`
+  - `docs/screenshots/session-list/05-timeline-hover-label.png`
+  - `docs/screenshots/session-list/06-timeline-mid-drag.png`
+  - `docs/screenshots/session-list/07-timeline-after-release.png`
+  - `docs/screenshots/session-list/08-tip-session-list.png`
+  - `docs/screenshots/session-list/09-tip-replay-timeline.png`
+  - `ui/scripts/capture_tips_screenshots.js`
+  - `ui/src/components/AutodetectHomeScreen.tsx`
+  - `ui/src/components/FirstUseTipOverlay.tsx`
+  - `ui/src/components/LiveEntranceScreen.tsx`
+  - `ui/src/components/replay/ReplayTimelineBar.tsx`
+  - `ui/src/components/replay/ReplayWorkspace.tsx`
+  - `ui/src/styles/replay.css`
+  - `ui/src/styles/theme.css`
+  - `ui/src/test/firstUseTips.test.tsx`
+  - `ui/src/test/replayTimelineBar.test.tsx`
+  - `ui/src/test/setup.ts`
+  - `ui/src/utils/firstUseTipsStorage.ts`
+- **Verification Commands & Results**:
+  - `npx tsc --noEmit`: Clean (0 errors).
+  - `npm test`: 29 test files passed (263 Vitest tests, 10 Electron node tests, 0 failed). Total: 273 tests passing.
+  - `npm run build`: `tsc && vite build` built cleanly with zero errors in 1.56s.
+- **Visual & Behavioral First-Use Tips Confirmation**:
+  - First-use spotlight tour overlay (`FirstUseTipOverlay`) with dimmed backdrop, SVG mask cutout, and focus ring around target element.
+  - Interactive tip card showing title, description, step dots, Skip button, and Next ("Got it") button.
+  - Keyboard navigation: Escape key dismisses tips and marks screen as seen.
+  - Persistent seen-state stored per screen under namespaced localStorage key (`faultmesh:first_use_tips:seen`), with corrupt or missing storage safely treated as unseen.
+  - Replay tips on demand via small "?" button (`.first-use-help-btn`) in header across Autodetect Home, Live Entrance, and Replay Workspace.
+  - Gracefully skips missing targets without crashes or blocking user actions.
+  - Does not block the app: pointer events pass through overlay to underlying components except on tip card.
+  - Avoids mac traffic lights and desktop window drag clearance (`top >= 50px`, `left >= 20px`).
+  - Respects `prefers-reduced-motion` with transition suppression.
+  - Phase 2 follow-ups verified: pointer release clears hovered step to prevent stale cursor label, and cursor label is positioned 7px above footer text with zero overlap.
+- **Screenshots Captured (Headless Chrome against real built bundle with zero duplicate hashes)**:
+  | File | What it shows | DOM Assertion | SHA-256 Checksum |
+  |---|---|---|---|
+  | `08-tip-session-list.png` | Autodetect Home first-use tip overlay: dimmed backdrop, SVG cutout, tip card with title ("Welcome to FaultMesh"), description, step dots, Skip, and header "?" button | `asserted first-use-tip-overlay, first-use-spotlight-svg, first-use-tip-card, tip-card-title is "Welcome to FaultMesh", desc contains autodetect explanation, and home-help-tips-btn present in header` | `c5e4595238cc7d89d381eccc81f78fd411495167af818b15b6e507b056712b5c` |
+  | `09-tip-replay-timeline.png` | Replay Workspace first-use tip overlay: spotlight ring highlighting Hero Timeline bar (`replay-timeline-bar`), tip card with title ("Hero Timeline"), description, and header "?" button in toolbar | `asserted first-use-tip-overlay with data-screen="replay", first-use-spotlight-ring, replay-timeline-bar, tip-card-title is "Hero Timeline", and replay-help-tips-btn in header tools` | `d55547f4c7f294fa803e41b2ef2ecd959ec89f84a3a3f26d57da75966fcd6672` |
 

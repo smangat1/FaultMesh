@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Layers, FileText, FileDiff, ArrowRight, ChevronLeft, AlertTriangle, FolderOpen } from 'lucide-react';
+import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from './FirstUseTipOverlay';
+import { isScreenTipSeen } from '../utils/firstUseTipsStorage';
 
 export interface LiveEntranceScreenProps {
   projectName?: string | null;
@@ -30,6 +32,7 @@ export const LiveEntranceScreen: React.FC<LiveEntranceScreenProps> = ({
     (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
 
   const isLive = liveStatus === 'live';
+  const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen('entrance'));
 
   return (
     <div
@@ -129,12 +132,12 @@ export const LiveEntranceScreen: React.FC<LiveEntranceScreenProps> = ({
             </div>
           </div>
 
-          {/* Right: Spectate Status context note */}
+          {/* Right: Spectate Status context note & Help */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
+              gap: '10px',
               fontSize: '11px',
               color: 'var(--text-muted)',
               fontFamily: 'var(--font-mono)',
@@ -142,22 +145,34 @@ export const LiveEntranceScreen: React.FC<LiveEntranceScreenProps> = ({
               WebkitAppRegion: 'no-drag',
             }}
           >
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                backgroundColor: filesCount === 0 ? '#ef4444' : isLive ? '#22c55e' : '#64748b',
-                display: 'inline-block',
-              }}
-            />
-            <span>
-              {filesCount === 0
-                ? '0 Python files found'
-                : isLive
-                ? `Watching ${filesCount} Python ${filesCount === 1 ? 'file' : 'files'} (saved changes update live)`
-                : 'Spectate stopped'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: filesCount === 0 ? '#ef4444' : isLive ? '#22c55e' : '#64748b',
+                  display: 'inline-block',
+                }}
+              />
+              <span>
+                {filesCount === 0
+                  ? '0 Python files found'
+                  : isLive
+                  ? `Watching ${filesCount} Python ${filesCount === 1 ? 'file' : 'files'} (saved changes update live)`
+                  : 'Spectate stopped'}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="first-use-help-btn"
+              data-testid="entrance-help-tips-btn"
+              onClick={() => setShowTips(true)}
+              title="First-use guide (?)"
+              aria-label="First-use guide"
+            >
+              ?
+            </button>
           </div>
         </div>
       </header>
@@ -634,6 +649,13 @@ export const LiveEntranceScreen: React.FC<LiveEntranceScreenProps> = ({
           )}
         </div>
       </main>
+
+      <FirstUseTipOverlay
+        screenId="entrance"
+        steps={SCREEN_DEFAULT_STEPS.entrance}
+        active={showTips}
+        onDismiss={() => setShowTips(false)}
+      />
     </div>
   );
 };

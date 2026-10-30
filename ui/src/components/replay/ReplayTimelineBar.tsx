@@ -119,6 +119,8 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
       dragRatioRef.current = ratio;
       setIsDragging(true);
       setDragRatio(ratio);
+      const nearest = geometry.findNearestStep(ratio);
+      setHoveredStep(nearest);
 
       try {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -126,7 +128,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         // Fallback for jsdom / tests
       }
     },
-    [getRatioFromClientX]
+    [getRatioFromClientX, geometry]
   );
 
   const handlePointerMove = useCallback(
@@ -186,6 +188,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         dragRatioRef.current = null;
         setIsDragging(false);
         setDragRatio(null);
+        setHoveredStep(null);
         try {
           (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
         } catch {
@@ -215,6 +218,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         dragRatioRef.current = null;
         setIsDragging(false);
         setDragRatio(null);
+        setHoveredStep(null);
       }
     };
     window.addEventListener('pointerup', handleGlobalPointerUp);
