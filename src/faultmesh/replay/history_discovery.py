@@ -20,6 +20,7 @@ from faultmesh.replay.claude_history import KNOWN_CLAUDE_FORMAT_VERSIONS
 from faultmesh.replay.codex_history import KNOWN_CODEX_FORMAT_VERSIONS
 from faultmesh.replay.history_context import strip_injected_context
 from faultmesh.replay.privacy import redact_history_text
+from faultmesh.replay.thread_history import ThreadHistoryError, ThreadHistoryReader
 
 DEFAULT_MAX_SOURCE_BYTES = 64 * 1024 * 1024
 DEFAULT_PREVIEW_CHARACTERS = 160
@@ -41,6 +42,8 @@ class HistoryRootStatus(BaseModel):
     archived_file_count: int | None = Field(default=None, ge=0)
     catalog_status: CatalogStatus | None = None
     catalog_message: str | None = None
+    thread_history_status: CatalogStatus | None = None
+    thread_history_message: str | None = None
 
 
 class HistorySessionIndex(BaseModel):
@@ -99,6 +102,13 @@ def default_codex_catalog_path() -> Path:
     if sqlite_home:
         return Path(sqlite_home).expanduser() / "state_5.sqlite"
     return default_codex_history_root().parent / "state_5.sqlite"
+
+
+def default_codex_thread_history_path() -> Path:
+    sqlite_home = os.environ.get("CODEX_SQLITE_HOME")
+    if sqlite_home:
+        return Path(sqlite_home).expanduser() / "thread_history_1.sqlite"
+    return default_codex_history_root().parent / "thread_history_1.sqlite"
 
 
 def default_claude_history_root() -> Path:
@@ -609,6 +619,9 @@ def _catalog_fields(thread: _CatalogThread) -> tuple[dict[str, object], list[str
 def _enrich_from_catalog(
     indexed: list[tuple[HistorySessionIndex, Path]],
     threads: list[_CatalogThread],
+    *,
+    projection: ThreadHistoryReader | None = None,
+    preview_characters: int = DEFAULT_PREVIEW_CHARACTERS,
 ) -> list[HistorySessionIndex]:
     by_id = {session.session_id: position for position, (session, _path) in enumerate(indexed)}
     by_path = {
@@ -629,32 +642,59 @@ def _enrich_from_catalog(
                 }
             )
             continue
-        if not thread.rollout_path:
-            continue
-        if Path(thread.rollout_path).expanduser().is_file():
+        if thread.rollout_path and Path(thread.rollout_path).expanduser().is_file():
             continue
         timestamp = thread.created_at or datetime.fromtimestamp(0, tz=UTC)
         project_key, project_display = _project_identity(thread.cwd, "Unknown project")
         digest = hashlib.sha256(
             f"catalog-thread:{thread.session_id}:{thread.rollout_path or ''}".encode()
         ).hexdigest()
+        prompt_count = 0
+        first_prompt_preview: str | None = None
+        preview_redactions: list[str] = []
+        started_at = timestamp
+        ended_at = timestamp
+        parse_status: ParseStatus = "unsupported"
+        unsupported_reason: str | None = "rollout_file_missing"
+        injected_context_messages = 0
+        format_version: str | None = None
+        if projection is not None:
+            facts = projection.thread_facts(thread.session_id)
+            if facts.exists:
+                prompt_count = facts.user_message_count
+                if facts.first_user_message is not None:
+                    first_prompt_preview, preview_redactions = _preview(
+                        [facts.first_user_message], preview_characters
+                    )
+                started_at = (
+                    _catalog_datetime(facts.created_at_ms_min) or thread.created_at or timestamp
+                )
+                ended_at = _catalog_datetime(facts.created_at_ms_max) or started_at
+                parse_status = "partial"
+                unsupported_reason = None
+                injected_context_messages = facts.injected_context_messages
+                migration = projection.schema.latest_migration_version
+                format_version = (
+                    f"thread-history-{migration}" if migration is not None else "thread-history"
+                )
         output.append(
             HistorySessionIndex(
                 session_id=thread.session_id,
                 tool="codex",
                 project_group_key=project_key,
                 project_display_name=project_display,
-                started_at=timestamp,
-                ended_at=timestamp,
-                prompt_count=0,
-                first_prompt_preview=None,
-                parse_status="unsupported",
-                unsupported_reason="rollout_file_missing",
+                started_at=started_at,
+                ended_at=ended_at,
+                prompt_count=prompt_count,
+                first_prompt_preview=first_prompt_preview,
+                format_version=format_version,
+                parse_status=parse_status,
+                unsupported_reason=unsupported_reason,
                 source_file_sha256=digest,
-                redaction_types=catalog_redactions,
+                redaction_types=sorted(set(catalog_redactions + preview_redactions)),
                 history_state="archived" if thread.archived else "active",
                 project_visibility=_project_visibility(thread.cwd),
-                injected_context_messages=0,
+                injected_context_messages=injected_context_messages,
                 source_title=(
                     fields["source_title"] if isinstance(fields["source_title"], str) else None
                 ),
@@ -682,14 +722,29 @@ def discover_history(
     preview_characters: int = DEFAULT_PREVIEW_CHARACTERS,
     zstd_executable: Path | str | None = None,
     allow_zstd_lookup: bool = True,
+    catalog_path: Path | None = None,
+    thread_history_path: Path | None = None,
 ) -> HistoryDiscoveryResult:
     """Index supported dotfolder histories without constructing full replay records."""
     active_codex_root = codex_root or default_codex_history_root()
     archived_codex_root = active_codex_root.parent / "archived_sessions"
-    catalog_path = (
-        active_codex_root.parent / "state_5.sqlite"
-        if codex_root is not None
-        else default_codex_catalog_path()
+    resolved_catalog_path = (
+        catalog_path
+        if catalog_path is not None
+        else (
+            active_codex_root.parent / "state_5.sqlite"
+            if codex_root is not None
+            else default_codex_catalog_path()
+        )
+    )
+    resolved_thread_history_path = (
+        thread_history_path
+        if thread_history_path is not None
+        else (
+            active_codex_root.parent / "thread_history_1.sqlite"
+            if codex_root is not None
+            else default_codex_thread_history_path()
+        )
     )
     active_files, active_unreadable = (
         _history_files(active_codex_root, "codex") if active_codex_root.is_dir() else ([], False)
@@ -699,7 +754,63 @@ def discover_history(
         if archived_codex_root.is_dir()
         else ([], False)
     )
-    catalog_threads, catalog_status, catalog_message = _read_catalog(catalog_path)
+    catalog_threads, catalog_status, catalog_message = _read_catalog(resolved_catalog_path)
+    projection: ThreadHistoryReader | None = None
+    thread_history_status: CatalogStatus
+    thread_history_message: str
+    if not resolved_thread_history_path.is_file():
+        thread_history_status = "missing"
+        thread_history_message = "Codex projected thread history is absent"
+    else:
+        try:
+            projection = ThreadHistoryReader(resolved_thread_history_path)
+            if projection.schema.items_available:
+                thread_history_status = "ok"
+                thread_history_message = "Codex projected thread history indexed"
+            else:
+                projection.close()
+                projection = None
+                thread_history_status = "unsupported"
+                thread_history_message = "Codex projected thread history schema is unsupported"
+        except (ThreadHistoryError, OSError):
+            thread_history_status = "unreadable"
+            thread_history_message = "Codex projected thread history could not be read immutably"
+
+    indexed_codex: list[tuple[HistorySessionIndex, Path]] = []
+    seen_codex_ids: set[str] = set()
+    codex_trees: tuple[tuple[HistoryState, list[Path]], ...] = (
+        ("active", active_files),
+        ("archived", archived_files),
+    )
+    for history_state, files in codex_trees:
+        for path in files:
+            indexed = _index_codex(
+                path,
+                history_state=history_state,
+                max_source_bytes=max_source_bytes,
+                preview_characters=preview_characters,
+                zstd_executable=zstd_executable,
+                allow_zstd_lookup=allow_zstd_lookup,
+            )
+            if indexed.session_id in seen_codex_ids:
+                continue
+            seen_codex_ids.add(indexed.session_id)
+            indexed_codex.append((indexed, path))
+
+    try:
+        sessions = _enrich_from_catalog(
+            indexed_codex,
+            catalog_threads,
+            projection=projection,
+            preview_characters=preview_characters,
+        )
+    except ThreadHistoryError:
+        thread_history_status = "unreadable"
+        thread_history_message = "Codex projected thread history could not be read immutably"
+        sessions = _enrich_from_catalog(indexed_codex, catalog_threads)
+    finally:
+        if projection is not None:
+            projection.close()
 
     roots: list[HistoryRootStatus] = []
     codex_root_missing = not active_codex_root.is_dir() and not archived_codex_root.is_dir()
@@ -724,31 +835,10 @@ def discover_history(
             archived_file_count=len(archived_files),
             catalog_status=catalog_status,
             catalog_message=catalog_message,
+            thread_history_status=thread_history_status,
+            thread_history_message=thread_history_message,
         )
     )
-
-    indexed_codex: list[tuple[HistorySessionIndex, Path]] = []
-    seen_codex_ids: set[str] = set()
-    codex_trees: tuple[tuple[HistoryState, list[Path]], ...] = (
-        ("active", active_files),
-        ("archived", archived_files),
-    )
-    for history_state, files in codex_trees:
-        for path in files:
-            indexed = _index_codex(
-                path,
-                history_state=history_state,
-                max_source_bytes=max_source_bytes,
-                preview_characters=preview_characters,
-                zstd_executable=zstd_executable,
-                allow_zstd_lookup=allow_zstd_lookup,
-            )
-            if indexed.session_id in seen_codex_ids:
-                continue
-            seen_codex_ids.add(indexed.session_id)
-            indexed_codex.append((indexed, path))
-
-    sessions = _enrich_from_catalog(indexed_codex, catalog_threads)
 
     configured_claude_root = claude_root or default_claude_history_root()
     if not configured_claude_root.is_dir():
