@@ -32,9 +32,11 @@ const EvidenceBlock: React.FC<{ label: string; value: string; testId: string }> 
       data-testid={testId}
       style={{
         margin: 0,
-        padding: '8px',
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'anywhere',
+        padding: '9px 12px',
+        whiteSpace: 'pre',
+        overflowX: 'auto',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
         fontFamily: 'var(--font-mono, monospace)',
         fontSize: '10px',
         color: 'var(--replay-text-primary, #e6edf8)',
@@ -92,8 +94,6 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
 
   if (!currentPath && changedFiles.length === 0) {
     const isPartial = entry?.completeness === 'partial' || completenessInfo?.completeness === 'partial';
-    const isTool = entry?.attribution_status === 'tool_boundary';
-
     return (
       <div
         style={{
@@ -145,7 +145,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                 Checkpoint #{entry?.sequence ?? 1} Overview
               </div>
               <div style={{ fontSize: '11px', color: 'var(--replay-text-faint, #4d576a)', fontFamily: 'var(--font-mono, monospace)', marginTop: '2px' }}>
-                record:{entry?.record_id ?? 'unknown'} {entry?.captured_at ? `· ${formatReplayTime(entry.captured_at)}` : ''}
+                {entry?.captured_at ? formatReplayTime(entry.captured_at) : ''}
               </div>
             </div>
           </div>
@@ -199,25 +199,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
               </div>
             )}
 
-            {/* Step Boundary & Attribution */}
-            <div
-              style={{
-                padding: '8px 12px',
-                borderRadius: 'var(--replay-radius-control, 7px)',
-                backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-                border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ color: 'var(--replay-text-muted, #8b97ad)' }}>Attribution status:</span>
-              <span style={{ color: isTool ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-primary, #e6edf8)', fontWeight: 500 }}>
-                {isTool ? `Tool boundary (${entry?.tool_name || 'attributed step'})` : 'Observed checkpoint (timer / non-tool event)'}
-              </span>
-            </div>
-
-            {/* Completeness / Snapshot state */}
+            {/* Plain recording state; technical provenance lives in the focus-strip disclosure. */}
             <div
               style={{
                 padding: '8px 12px',
@@ -226,12 +208,6 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                 border: isPartial ? '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))' : '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--replay-text-muted, #8b97ad)' }}>Recording completeness:</span>
-                <span style={{ color: isPartial ? 'var(--replay-status-warning, #946c32)' : 'var(--replay-status-complete, #4a7bb0)', fontWeight: 600, textTransform: 'uppercase' }}>
-                  {entry?.completeness ?? 'complete'}
-                </span>
-              </div>
               <div style={{ color: isPartial ? 'var(--replay-status-warning, #946c32)' : 'var(--replay-text-muted, #8b97ad)', fontSize: '10px' }}>
                 {entry?.gap_reason
                   ? `Gap details: ${entry.gap_reason}`
@@ -293,7 +269,8 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           fontSize: '11px',
           lineHeight: '1.5',
           overflowX: 'auto',
-          padding: '8px 0',
+          padding: '8px 2px',
+          scrollbarGutter: 'stable',
           backgroundColor: 'var(--replay-bg-code, #090c12)',
         }}
         data-testid="replay-unified-diff-content"
@@ -326,7 +303,8 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                 display: 'flex',
                 backgroundColor: bg,
                 borderLeft,
-                padding: '1px 12px',
+                padding: '1px 16px 1px 14px',
+                boxSizing: 'border-box',
                 minWidth: 'fit-content',
               }}
             >
@@ -366,7 +344,8 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           fontSize: '11px',
           lineHeight: '1.5',
           overflowX: 'auto',
-          padding: '8px 0',
+          padding: '8px 2px',
+          scrollbarGutter: 'stable',
           backgroundColor: 'var(--replay-bg-code, #090c12)',
         }}
         data-testid="replay-historical-source-content"
@@ -376,7 +355,8 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
             key={idx}
             style={{
               display: 'flex',
-              padding: '1px 12px',
+              padding: '1px 16px 1px 14px',
+              boxSizing: 'border-box',
               minWidth: 'fit-content',
             }}
           >
@@ -595,6 +575,38 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
               <span>Stale AST / Syntax error</span>
             </div>
           )}
+        </div>
+      )}
+
+      {activeChangedFile?.file_state === 'reconstructed_from_current_checkout_unverified' && (
+        <div
+          data-testid="replay-derived-file-state"
+          style={{
+            padding: '6px 12px',
+            borderBottom: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
+            backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+            color: 'var(--replay-status-warning, #946c32)',
+            fontSize: '10px',
+            flexShrink: 0,
+          }}
+        >
+          Derived: {activeChangedFile.reconstruction_label}
+        </div>
+      )}
+
+      {activeChangedFile?.file_state === 'unknown' && (
+        <div
+          data-testid="replay-unknown-file-state"
+          style={{
+            padding: '6px 12px',
+            borderBottom: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
+            backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+            color: 'var(--replay-status-warning, #946c32)',
+            fontSize: '10px',
+            flexShrink: 0,
+          }}
+        >
+          Derived file state: unknown — the recorded patch could not be reconstructed.
         </div>
       )}
 

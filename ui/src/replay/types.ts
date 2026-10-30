@@ -6,7 +6,7 @@
  * likely-reason inferences, and summary audits.
  */
 
-export type ReplaySchemaVersion = 'replay-export-1.0' | 'replay-export-2.0';
+export type ReplaySchemaVersion = 'replay-export-1.0' | 'replay-export-1.1' | 'replay-export-2.0';
 
 export type ReplayOrigin = 'real_recording' | 'synthetic_fixture' | 'simulated_demo';
 
@@ -142,7 +142,7 @@ export interface ReplayRecord {
   source_item_id?: string | null;
   prompt_id?: string | null;
   prompt_text?: string | null;
-  file_state?: 'unknown' | null;
+  file_state?: 'unknown' | 'reconstructed_from_current_checkout_unverified' | null;
   edit_patch?: string | null;
   edit_command?: string | null;
   redaction_types?: string[] | null;
@@ -171,6 +171,23 @@ export interface ChangedFileView {
   before_sha256: string | null;
   after_sha256: string | null;
   unified_diff: string | null;
+  derived_from?: 'recorded_patch' | null;
+  file_state?: 'recorded' | 'reconstructed_from_current_checkout_unverified' | 'unknown';
+  reconstruction_label?: 'reconstructed from current checkout (unverified)' | null;
+  before_text?: string | null;
+  after_text?: string | null;
+}
+
+export interface TranscriptSpan {
+  id: string;
+  record_id: string;
+  sequence: number;
+  kind: 'prompt' | 'agent_message' | 'command_output';
+  text: string;
+  start_offset: number;
+  end_offset: number;
+  redacted: boolean;
+  truncated: boolean;
 }
 
 export interface ChangedSymbolView {
@@ -235,7 +252,7 @@ export interface TimelineEntry {
 }
 
 export interface ReplayExportV1 {
-  schema_version: 'replay-export-1.0';
+  schema_version: 'replay-export-1.0' | 'replay-export-1.1';
   exported_at: string;
   session: ReplaySession;
   records: ReplayRecord[];
@@ -244,6 +261,7 @@ export interface ReplayExportV1 {
   tests: StructuredTestEvidence[];
   timeline: TimelineEntry[];
   limitations: string[];
+  transcript_spans?: TranscriptSpan[];
   sanitized?: boolean;
 }
 

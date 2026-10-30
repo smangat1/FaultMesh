@@ -7,9 +7,18 @@ import { ReplayEvidenceInspector } from './ReplayEvidenceInspector';
 import { ReplayTimelineBar } from './ReplayTimelineBar';
 import { ReplayMiniMapDock } from './ReplayMiniMapDock';
 import type { TimeModelOptions } from '../../replay/timeModel';
-import { formatRecordedAt } from '../../replay/timeModel';
+import { formatClockTime, formatRecordedAt } from '../../replay/timeModel';
+import { plainReplayStepLabel } from '../../replay/stepLabel';
 import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from '../FirstUseTipOverlay';
 import { isScreenTipSeen } from '../../utils/firstUseTipsStorage';
+import { WatchProjectPrompt } from '../WatchProjectPrompt';
+import type { ProjectChoice } from '../../spectate/types';
+import {
+  dismissSessionWatchPrompt,
+  isSessionProjectLinked,
+  isSessionWatchPromptDismissed,
+  storeSessionProjectLink,
+} from '../../utils/replayProjectLinksStorage';
 import {
   ChevronLeft,
   ChevronRight,
@@ -26,6 +35,11 @@ export interface ReplayWorkspaceProps {
   defaultChaptersOpen?: boolean;
   defaultEvidenceOpen?: boolean;
   defaultMiniMapOpen?: boolean;
+  importedSessionId?: string | null;
+  hasSpectateBridge?: boolean;
+  watchProjectBusy?: boolean;
+  onWatchProject?: () => Promise<ProjectChoice | null>;
+  onLinkSessionProject?: (sessionId: string, projectHandle: string) => Promise<void>;
 }
 
 export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
@@ -35,6 +49,11 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   defaultChaptersOpen = false,
   defaultEvidenceOpen = false,
   defaultMiniMapOpen,
+  importedSessionId = null,
+  hasSpectateBridge = false,
+  watchProjectBusy = false,
+  onWatchProject,
+  onLinkSessionProject,
 }) => {
   const timeline = useMemo(() => adapter.getTimeline(), [adapter]);
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
@@ -42,7 +61,13 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [isNarrationOn, setIsNarrationOn] = useState<boolean>(true);
   const [isBaselineMode, setIsBaselineMode] = useState<boolean>(false);
-  const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen('replay'));
+  const tipScreenId = importedSessionId ? 'replayHistory' : 'replay';
+  const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen(tipScreenId));
+  const [showWatchPrompt, setShowWatchPrompt] = useState<boolean>(() => Boolean(
+    importedSessionId
+    && !isSessionProjectLinked(importedSessionId)
+    && !isSessionWatchPromptDismissed(importedSessionId)
+  ));
 
   // On-demand panel visibility states (Rule 2 + Visual Direction: closed by default)
   const [isChaptersOpen, setIsChaptersOpen] = useState<boolean>(defaultChaptersOpen);
@@ -70,13 +95,39 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const granularity = adapter.detectCaptureGranularity();
   const hasModelChapters = adapter.isModelNarrationAvailable();
 
+  const stepLabels = useMemo(() => new Map(
+    timeline.map((entry) => [
+      entry.sequence,
+      plainReplayStepLabel(adapter.getRecordForSequence(entry.sequence), entry),
+    ])
+  ), [adapter, timeline]);
+
+  useEffect(() => {
+    if (!importedSessionId) return;
+    setShowTips(!isScreenTipSeen('replayHistory'));
+    setShowWatchPrompt(
+      !isSessionProjectLinked(importedSessionId)
+      && !isSessionWatchPromptDismissed(importedSessionId)
+    );
+  }, [importedSessionId]);
+
+  const handleDismissWatchPrompt = useCallback(() => {
+    if (importedSessionId) dismissSessionWatchPrompt(importedSessionId);
+    setShowWatchPrompt(false);
+  }, [importedSessionId]);
+
+  const handleWatchProject = useCallback(async () => {
+    if (!importedSessionId || !onWatchProject) return;
+    const project = await onWatchProject();
+    if (!project) return;
+    await onLinkSessionProject?.(importedSessionId, project.handle);
+    storeSessionProjectLink(importedSessionId, project);
+    setShowWatchPrompt(false);
+  }, [importedSessionId, onLinkSessionProject, onWatchProject]);
+
   const chapters = useMemo(() => {
     return isBaselineMode ? adapter.getBaselineChapters() : adapter.getChapters();
   }, [adapter, isBaselineMode]);
-
-  const currentChapter = useMemo(() => {
-    return chapters.find((ch) => currentSeq >= ch.start_sequence && currentSeq <= ch.end_sequence) || null;
-  }, [chapters, currentSeq]);
 
   const narration = useMemo(() => {
     return adapter.getNarration(currentSeq);
@@ -308,25 +359,6 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               : 'REAL RECORDING'}
           </span>
 
-          {/* Completeness Warning Badge (Calmly shown only when incomplete) */}
-          {completenessInfo.completeness !== 'complete' && (
-            <span
-              style={{
-                fontSize: '10px',
-                fontFamily: 'var(--font-mono, monospace)',
-                fontWeight: 600,
-                padding: '2px 7px',
-                borderRadius: 'var(--replay-radius-control, 7px)',
-                backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
-                border: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
-                color: 'var(--replay-status-warning, #946c32)',
-              }}
-              title={completenessInfo.gaps.join('\n')}
-              data-testid="replay-completeness-badge"
-            >
-              {completenessInfo.completeness.toUpperCase()}
-            </span>
-          )}
         </div>
 
         {/* Right: On-Demand Controls (Chapters [C], Evidence [E], Mini Map [M]) & Help */}
@@ -403,122 +435,35 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           chapters={chapters}
           tests={allTests}
           options={timelineOptions}
+          stepLabels={stepLabels}
         />
       </div>
 
-      {/* 3. Calm Step Focus & Chapter Info Strip (Directly Below Hero Bar) */}
+      {/* 3. Plain-language focus strip. Technical provenance stays collapsed. */}
       <div className="replay-step-focus-strip" data-testid="replay-step-focus-strip">
         <div className="replay-step-focus-left">
-          {currentChapter ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: 'var(--replay-text-faint, #4d576a)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Chapter:
-              </span>
-              <span style={{ fontWeight: 600, color: 'var(--replay-text-primary, #e6edf8)' }}>
-                {currentChapter.title}
-              </span>
-              <span
-                style={{
-                  fontSize: '9px',
-                  fontWeight: 600,
-                  fontFamily: 'var(--font-mono, monospace)',
-                  padding: '1px 6px',
-                  borderRadius: 'var(--replay-radius-control, 7px)',
-                  backgroundColor:
-                    currentChapter.title_status === 'model interpretation'
-                      ? 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))'
-                      : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
-                  border:
-                    currentChapter.title_status === 'model interpretation'
-                      ? '1px dashed var(--replay-status-complete-border, rgba(74, 123, 176, 0.40))'
-                      : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
-                  color:
-                    currentChapter.title_status === 'model interpretation'
-                      ? 'var(--replay-accent, #4a7bb0)'
-                      : 'var(--replay-text-muted, #8b97ad)',
-                }}
-                data-testid="replay-current-chapter-status"
-              >
-                {currentChapter.title_status.toUpperCase()}
-              </span>
-            </div>
-          ) : (
-            <span style={{ color: 'var(--replay-text-faint, #4d576a)', fontSize: '11px' }}>
-              No chapter assigned for this step
-            </span>
-          )}
-
+          <span className="replay-step-plain-label" data-testid="replay-step-plain-label">
+            {currentEntry ? stepLabels.get(currentEntry.sequence) : 'Recorded step'}
+          </span>
           {currentEntry && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--replay-text-muted, #8b97ad)' }}>
-              <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--replay-text-faint, #4d576a)' }}>
-                record:{currentEntry.record_id}
-              </span>
-              {currentEntry.tool_name && (
-                <span
-                  style={{
-                    fontFamily: 'var(--font-mono, monospace)',
-                    color: 'var(--replay-text-primary, #e6edf8)',
-                    backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-                    border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-                    padding: '1px 6px',
-                    borderRadius: 'var(--replay-radius-control, 7px)',
-                  }}
-                >
-                  tool: {currentEntry.tool_name}
-                </span>
-              )}
-            </div>
+            <time className="replay-step-clock" dateTime={currentEntry.captured_at}>
+              {formatClockTime(currentEntry.captured_at, timelineOptions?.timeZone)}
+            </time>
           )}
         </div>
 
-        <div className="replay-step-focus-right">
-          {/* Historical Status */}
-          <span
-            style={{
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono, monospace)',
-              padding: '2px 7px',
-              borderRadius: 'var(--replay-radius-control, 7px)',
-              backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-              border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-              color: 'var(--replay-text-muted, #8b97ad)',
-            }}
-            data-testid="replay-historical-status"
-          >
-            {session.status === 'active' ? 'IN-PROGRESS SNAPSHOT' : 'HISTORICAL (STOPPED)'}
-          </span>
-
-          {/* Granularity badge */}
-          <span
-            style={{
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono, monospace)',
-              padding: '2px 7px',
-              borderRadius: 'var(--replay-radius-control, 7px)',
-              backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-              border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-              color: 'var(--replay-text-muted, #8b97ad)',
-            }}
-            data-testid="replay-granularity-badge"
-          >
-            {granularity === 'tool_boundary' ? 'TOOL BOUNDARY' : 'OBSERVED CHECKPOINT'}
-          </span>
-
-          {/* Codex Agent Version */}
-          {session.codex_version && (
-            <span
-              style={{
-                fontSize: '10px',
-                fontFamily: 'var(--font-mono, monospace)',
-                color: 'var(--replay-text-faint, #4d576a)',
-                padding: '2px 6px',
-              }}
-              data-testid="replay-agent-version"
-            >
-              {session.codex_version}
-            </span>
-          )}
-        </div>
+        {currentEntry && (
+          <details className="replay-step-details" data-testid="replay-step-details">
+            <summary>Details</summary>
+            <dl>
+              <div><dt>Record</dt><dd>{currentEntry.record_id}</dd></div>
+              <div><dt>Attribution</dt><dd>{currentEntry.attribution_status.replace(/_/g, ' ')}</dd></div>
+              <div><dt>Completeness</dt><dd>{currentEntry.completeness}</dd></div>
+              {session.codex_version && <div><dt>Codex version</dt><dd>{session.codex_version}</dd></div>}
+              <div><dt>Capture</dt><dd>{granularity.replace(/_/g, ' ')}</dd></div>
+            </dl>
+          </details>
+        )}
       </div>
 
       {/* 4. Main Body: Timeline-First Focus Layout (Diff is Hero, On-Demand Panels Slide In) */}
@@ -642,10 +587,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
       </div>
 
       <FirstUseTipOverlay
-        screenId="replay"
-        steps={SCREEN_DEFAULT_STEPS.replay}
+        screenId={tipScreenId}
+        steps={SCREEN_DEFAULT_STEPS[tipScreenId]}
         active={showTips}
         onDismiss={() => setShowTips(false)}
+      />
+      <WatchProjectPrompt
+        open={showWatchPrompt}
+        hasBridge={hasSpectateBridge}
+        busy={watchProjectBusy}
+        onChoose={() => void handleWatchProject()}
+        onDismiss={handleDismissWatchPrompt}
       />
     </div>
   );

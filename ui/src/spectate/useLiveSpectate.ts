@@ -62,18 +62,20 @@ export function useLiveSpectate({ onLiveStateChange }: UseLiveSpectateOptions = 
     };
   }, [bridge]);
 
-  const startWatching = async () => {
-    if (!bridge) return;
+  const startWatching = async (): Promise<ProjectChoice | null> => {
+    if (!bridge) return null;
     setBusy(true);
     setStatusNote(null);
     try {
       const selected = await bridge.chooseProjectFolder();
-      if (!selected) return;
+      if (!selected) return null;
       setProject(selected);
       await bridge.startWatch();
       setWatching(true);
+      return selected;
     } catch (error) {
       setStatusNote(error instanceof Error ? error.message : 'Unable to start watching.');
+      return null;
     } finally {
       setBusy(false);
     }

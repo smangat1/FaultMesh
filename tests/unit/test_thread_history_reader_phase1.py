@@ -595,7 +595,10 @@ def test_thread_history_import_builds_a_valid_existing_replay_export(full_databa
     assert ReplayExport.model_validate_json(exported.model_dump_json()) == exported
     assert exported.session.id == "thread-complete"
     assert len(exported.timeline) == len(exported.records)
-    assert all(not entry.changed_files for entry in exported.timeline)
+    changed = [item for entry in exported.timeline for item in entry.changed_files]
+    assert changed
+    assert all(item.derived_from == "recorded_patch" for item in changed)
+    assert all(item.file_state == "unknown" for item in changed)
 
 
 def test_aggregate_smoke_summary_and_cli_never_emit_row_content(full_database: Path) -> None:

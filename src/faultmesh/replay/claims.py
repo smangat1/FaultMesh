@@ -56,6 +56,7 @@ class EvidenceSource(StrictModel):
     text: str | None = None
     redacted: bool = False
     truncated: bool = False
+    derived_from: Literal["recorded_patch"] | None = None
 
 
 class FileState(StrictModel):
@@ -63,6 +64,8 @@ class FileState(StrictModel):
     before_sha256: str | None = None
     after_sha256: str | None = None
     change: Literal["added", "modified", "deleted", "unchanged"]
+    complete: bool = True
+    derived_from: Literal["recorded_patch"] | None = None
 
 
 class FunctionState(StrictModel):
@@ -73,6 +76,7 @@ class FunctionState(StrictModel):
     after_functions: list[str] = Field(default_factory=list)
     before_ast_complete: bool
     after_ast_complete: bool
+    derived_from: Literal["recorded_patch"] | None = None
 
 
 class CommandExitFact(StrictModel):
@@ -417,6 +421,79 @@ def build_evidence_packet(
                     truncated=not (before_ok and after_ok),
                 )
             )
+    if not all_paths and entry.changed_files:
+        selected_changes = entry.changed_files[: selected_limits.max_files]
+        selection_truncated = len(selected_changes) != len(entry.changed_files)
+        for changed in selected_changes:
+            reconstructed = (
+                changed.file_state == "reconstructed_from_current_checkout_unverified"
+            )
+            files.append(
+                FileState(
+                    path=changed.path,
+                    before_sha256=changed.before_sha256,
+                    after_sha256=changed.after_sha256,
+                    change=changed.change,
+                    complete=reconstructed,
+                    derived_from=changed.derived_from,
+                )
+            )
+            before_text = changed.before_text if reconstructed else None
+            after_text = changed.after_text if reconstructed else None
+            before_names, before_ok = _function_names(
+                changed.path,
+                before_text.encode("utf-8") if before_text is not None else None,
+            )
+            after_names, after_ok = _function_names(
+                changed.path,
+                after_text.encode("utf-8") if after_text is not None else None,
+            )
+            if not reconstructed:
+                before_ok = False
+                after_ok = False
+            functions.append(
+                FunctionState(
+                    path=changed.path,
+                    before_content_sha256=changed.before_sha256,
+                    after_content_sha256=changed.after_sha256,
+                    before_functions=before_names,
+                    after_functions=after_names,
+                    before_ast_complete=before_ok,
+                    after_ast_complete=after_ok,
+                    derived_from=changed.derived_from,
+                )
+            )
+            for side, digest in (
+                ("before", changed.before_sha256),
+                ("after", changed.after_sha256),
+            ):
+                if digest is not None and len(sources) < selected_limits.max_sources:
+                    sources.append(
+                        EvidenceSource(
+                            id=f"file:{changed.path}:{side}:{digest}",
+                            kind="file",
+                            session_id=record.session_id,
+                            sequence=sequence,
+                            content_sha256=digest,
+                            truncated=not reconstructed,
+                            derived_from=changed.derived_from,
+                        )
+                    )
+            if len(sources) < selected_limits.max_sources:
+                sources.append(
+                    EvidenceSource(
+                        id=(
+                            f"ast:{changed.path}:"
+                            f"{changed.before_sha256 or 'missing'}:"
+                            f"{changed.after_sha256 or 'missing'}"
+                        ),
+                        kind="ast",
+                        session_id=record.session_id,
+                        sequence=sequence,
+                        truncated=not (before_ok and after_ok),
+                        derived_from=changed.derived_from,
+                    )
+                )
     command_exit: CommandExitFact | None = None
     if isinstance(record.tool_response, dict):
         exit_code = record.tool_response.get("exit_code")
@@ -533,8 +610,6 @@ class ClaimChecker:
                 "referenced_source_incomplete",
                 "A referenced source is truncated or incomplete.",
             )
-        if not packet.record_complete:
-            return _unknown(claim, "incomplete_record", "The selected source record is incomplete.")
         assertion = claim.assertion
         if isinstance(assertion, FileChangedAssertion):
             if not any(source.kind in {"file", "manifest"} for source in referenced):
@@ -553,6 +628,12 @@ class ClaimChecker:
                     )
                 return _verdict(
                     claim, False, "complete_path_absence", "The path is absent from both manifests."
+                )
+            if not file_state.complete:
+                return _unknown(
+                    claim,
+                    "derived_file_state_unavailable",
+                    "The recorded patch did not yield complete before and after file state.",
                 )
             if file_state.change == "unchanged":
                 return _verdict(
@@ -576,11 +657,15 @@ class ClaimChecker:
                     if file_expected == file_proposed
                     else "file_fact_conflict"
                 ),
-                "The atomic file claim matches complete manifests."
+                (
+                    "The atomic file claim matches derived patch reconstruction."
+                    if file_state.derived_from == "recorded_patch"
+                    else "The atomic file claim matches complete manifests."
+                )
                 if file_expected == file_proposed
                 else (
-                    "Complete manifests directly conflict with the proposed path, hashes, "
-                    "or change."
+                    "The available file state directly conflicts with the proposed path, "
+                    "hashes, or change."
                 ),
             )
         if isinstance(assertion, (FunctionAddedAssertion, FunctionRemovedAssertion)):
@@ -627,13 +712,20 @@ class ClaimChecker:
                 claim,
                 matches,
                 reason,
-                "Complete AST identities support the function transition."
+                (
+                    "AST identities from derived patch reconstruction support the function "
+                    "transition."
+                    if function_state.derived_from == "recorded_patch"
+                    else "Complete AST identities support the function transition."
+                )
                 if matches
                 else (
                     "Complete AST identities directly conflict with the proposed transition; "
                     "renames are not inferred."
                 ),
             )
+        if not packet.record_complete:
+            return _unknown(claim, "incomplete_record", "The selected source record is incomplete.")
         if isinstance(assertion, CommandExitAssertion):
             if not any(source.kind == "record" for source in referenced):
                 return _unknown(

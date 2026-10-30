@@ -549,7 +549,7 @@ def replay_history_watch(
 @app.command("replay-history-import")
 def replay_history_import(
     session_id: Annotated[str, typer.Argument(help="Session id returned by replay-history-list.")],
-    out: Annotated[Path, typer.Option(help="Write a validated replay-export-1.0 JSON file here.")],
+    out: Annotated[Path, typer.Option(help="Write a validated replay-export JSON file here.")],
     tool: Annotated[
         str | None,
         typer.Option(help="Optional disambiguator: codex or claude_code."),
@@ -579,8 +579,18 @@ def replay_history_import(
             help="Override Codex state_5.sqlite catalog path.",
         ),
     ] = None,
+    project_root: Annotated[
+        Path | None,
+        typer.Option(
+            file_okay=False,
+            resolve_path=True,
+            help=(
+                "Optional linked checkout used read-only for unverified patch reconstruction."
+            ),
+        ),
+    ] = None,
 ) -> None:
-    """Import one selected local history session without reconstructing file bytes."""
+    """Import one selected local history session with optional read-only reconstruction."""
     if tool not in {None, "codex", "claude_code"}:
         raise typer.BadParameter("tool must be codex or claude_code")
     try:
@@ -592,6 +602,7 @@ def replay_history_import(
             max_source_bytes=max_source_bytes,
             thread_history_path=thread_history,
             catalog_path=catalog,
+            project_root=project_root,
         )
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(exported.model_dump_json(indent=2) + "\n", encoding="utf-8")

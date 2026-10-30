@@ -8,7 +8,7 @@ const seedTips = () => {
     if (typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.setItem(
         'faultmesh:first_use_tips:seen',
-        JSON.stringify({ home: true, entrance: true, replay: true })
+        JSON.stringify({ home: true, entrance: true, replay: true, replayHistory: true })
       );
     }
   } catch {

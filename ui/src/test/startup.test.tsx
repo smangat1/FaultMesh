@@ -73,7 +73,7 @@ describe('Real-project-first Startup Screen', () => {
 
     const selectBtn = screen.getByRole('button', { name: /select project/i });
     expect(selectBtn.getAttribute('disabled')).not.toBeNull();
-    expect(screen.getByText('Desktop app required to watch local projects')).toBeDefined();
+    expect(screen.getAllByText('Desktop app required to watch local projects').length).toBeGreaterThan(0);
   });
 
   it('enables Select project directly from startup screen with Electron bridge and starts watch without Explore Project Map detour', async () => {

@@ -20,15 +20,28 @@ from faultmesh.replay.history_discovery import (
     discover_history,
     find_history_source,
 )
-from faultmesh.replay.models import ReplayExport, ReplayRecord, ReplaySession, TimelineEntry
+from faultmesh.replay.history_reconstruction import (
+    reconstruct_history_file_state,
+    transcript_spans,
+)
+from faultmesh.replay.models import (
+    ChangedFileView,
+    ReplayExport,
+    ReplayRecord,
+    ReplaySession,
+    TimelineEntry,
+)
 from faultmesh.replay.thread_history import ThreadHistoryError, ThreadHistoryReader
 from faultmesh.replay.thread_history_import import parse_thread_history_thread
 
 HISTORY_IMPORT_LIMITATIONS = [
-    "History import is read-only and does not inspect or modify a project checkout.",
+    "History import and optional reconstruction are read-only and never modify a project checkout.",
     "Historical prompts and steps are source evidence after best-effort typed redaction.",
-    "Historical file bytes are unknown; no manifests, checkpoints, or byte reconstruction exist.",
-    "Patch and command evidence does not prove resulting file state, causality, or correctness.",
+    "File text reconstructed from a linked current checkout is derived and unverified, not "
+    "recorded historical bytes.",
+    "Unappliable patches, missing files, and write commands without reversible patches remain "
+    "unknown.",
+    "Patch and command evidence does not prove causality, intent, or correctness.",
     "Unsupported versions and corrupt source records remain visible as unsupported or gap steps.",
 ]
 
@@ -69,7 +82,9 @@ class HistorySmokeSummary(BaseModel):
     timeline_ended_at: str | None = None
 
 
-def _timeline_entry(record: ReplayRecord) -> TimelineEntry:
+def _timeline_entry(
+    record: ReplayRecord, *, changed_files: list[ChangedFileView] | None = None
+) -> TimelineEntry:
     return TimelineEntry(
         sequence=record.sequence,
         record_id=record.id,
@@ -82,7 +97,7 @@ def _timeline_entry(record: ReplayRecord) -> TimelineEntry:
         tool_use_id=record.tool_use_id,
         before_manifest_id=None,
         after_manifest_id=None,
-        changed_files=[],
+        changed_files=changed_files or [],
         changed_symbols=[],
         test_evidence=[],
         prompt_or_tool_evidence_redacted=record.redaction_applied,
@@ -90,7 +105,18 @@ def _timeline_entry(record: ReplayRecord) -> TimelineEntry:
     )
 
 
-def _build_export(session: ReplaySession, records: tuple[ReplayRecord, ...]) -> ReplayExport:
+def _build_export(
+    session: ReplaySession,
+    records: tuple[ReplayRecord, ...],
+    *,
+    project_root: Path | None = None,
+) -> ReplayExport:
+    reconstruction = reconstruct_history_file_state(
+        records,
+        project_root,
+        max_file_bytes=session.limits.max_file_bytes,
+    )
+    records = reconstruction.records
     timeline_started_at = min(
         (record.captured_at for record in records), default=session.created_at
     )
@@ -111,8 +137,17 @@ def _build_export(session: ReplaySession, records: tuple[ReplayRecord, ...]) -> 
         manifests=[],
         content_base64_by_sha256={},
         tests=[],
-        timeline=[_timeline_entry(record) for record in records],
+        timeline=[
+            _timeline_entry(
+                record,
+                changed_files=list(
+                    reconstruction.changed_files_by_sequence.get(record.sequence, ())
+                ),
+            )
+            for record in records
+        ],
         limitations=HISTORY_IMPORT_LIMITATIONS,
+        transcript_spans=transcript_spans(records),
     )
     return ReplayExport.model_validate_json(exported.model_dump_json())
 
@@ -128,6 +163,7 @@ def import_history_session(
     allow_zstd_lookup: bool = True,
     thread_history_path: Path | None = None,
     catalog_path: Path | None = None,
+    project_root: Path | None = None,
 ) -> ReplayExport:
     """Parse and validate one selected session; listing alone never calls this function."""
     discovered = discover_history(
@@ -213,12 +249,13 @@ def import_history_session(
                     else "active"
                 )
             ),
+            project_root=project_root,
         )
         if indexed is not None and indexed.source_title is not None:
             updated_session = exported.session.model_copy(
                 update={"source_title": indexed.source_title}
             )
-            return _build_export(updated_session, tuple(exported.records))
+            return exported.model_copy(update={"session": updated_session})
         return exported
     if source_tool == "codex":
         codex_parsed = parse_codex_history(
@@ -233,9 +270,11 @@ def import_history_session(
                 "source_title": indexed.source_title if indexed else None,
             }
         )
-        return _build_export(session, codex_parsed.records)
+        return _build_export(session, codex_parsed.records, project_root=project_root)
     claude_parsed = parse_claude_history(source, max_source_bytes=max_source_bytes)
-    return _build_export(claude_parsed.session, claude_parsed.records)
+    return _build_export(
+        claude_parsed.session, claude_parsed.records, project_root=project_root
+    )
 
 
 def import_thread_history_session(
@@ -245,13 +284,14 @@ def import_thread_history_session(
     cwd: str | None = None,
     title: str | None = None,
     history_state: HistoryState | None = None,
+    project_root: Path | None = None,
 ) -> ReplayExport:
     """Import one projected Codex thread when its rollout file is unavailable."""
     parsed = parse_thread_history_thread(database, thread_id, cwd=cwd, title=title)
     session = parsed.session
     if history_state is not None:
         session = session.model_copy(update={"history_state": history_state})
-    return _build_export(session, parsed.records)
+    return _build_export(session, parsed.records, project_root=project_root)
 
 
 def real_history_smoke_summary(

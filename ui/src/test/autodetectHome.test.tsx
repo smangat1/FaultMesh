@@ -335,6 +335,27 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     });
   });
 
+  it('starts imported-session tips and the project-link prompt when opening from a home widget', async () => {
+    window.localStorage.setItem(
+      'faultmesh:first_use_tips:seen',
+      JSON.stringify({ home: true, entrance: true, replay: true })
+    );
+    window.localStorage.removeItem('faultmesh:replay:project_links:v1');
+    installHistoryBridge();
+    render(<App />);
+
+    await openTool('codex');
+    fireEvent.click(await screen.findByTestId('session-row-codex-sess-1'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-workspace')).toBeDefined();
+      expect(screen.getByTestId('watch-project-prompt')).toBeDefined();
+      expect(screen.getByTestId('first-use-tip-overlay').getAttribute('data-screen')).toBe(
+        'replayHistory'
+      );
+    });
+  });
+
   it('shows inline error on import failure without crashing or dropping prior workspace', async () => {
     const harness = installHistoryBridge();
     harness.importSession.mockRejectedValueOnce(new Error('corrupt export file'));

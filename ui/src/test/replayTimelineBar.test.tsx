@@ -335,8 +335,9 @@ describe('ReplayTimelineBar Component', () => {
     // 8. Footer Strip
     expect(screen.getByTestId('timeline-bar-footer')).toBeDefined();
     expect(screen.getByTestId('timeline-step-indicator').textContent).toContain('Step #3 of 7');
-    expect(screen.getByTestId('timeline-step-indicator').textContent).toContain('tool: write_file');
-    expect(screen.getByTestId('timeline-step-indicator').textContent).toContain('(4.5s)');
+    expect(screen.getByTestId('timeline-step-indicator').textContent).toContain('Recorded step');
+    expect(screen.getByTestId('timeline-step-indicator').textContent).not.toContain('tool:');
+    expect(screen.getByTestId('timeline-step-indicator').textContent).not.toContain('write_file');
   });
 
   it('honors Rule 2: clicking track snaps to the nearest recorded step', () => {

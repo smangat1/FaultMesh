@@ -15,6 +15,7 @@ const CHANNELS = Object.freeze({
   event: 'faultmesh:spectate:event',
   listHistory: 'faultmesh:spectate:list-history',
   importSession: 'faultmesh:spectate:import-session',
+  linkSessionProject: 'faultmesh:spectate:link-session-project',
 });
 
 const EVENTS = new Set([
@@ -33,6 +34,14 @@ const EVENTS = new Set([
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readProjectLinks(projectLinksPath) {
+  if (!projectLinksPath || !fs.existsSync(projectLinksPath)) return {};
+  const stat = fs.statSync(projectLinksPath);
+  if (stat.size > 1024 * 1024) throw new Error('project link storage exceeds size limit');
+  const parsed = JSON.parse(fs.readFileSync(projectLinksPath, 'utf8'));
+  return isPlainObject(parsed) ? parsed : {};
 }
 
 function requireKeys(record, keys) {
@@ -234,6 +243,7 @@ function attachSpectateBridge({
   spawn = spawnProcess,
   maxLineBytes = 1024 * 1024,
   terminationGraceMs = 750,
+  projectLinksPath = null,
 }) {
   const expectedUrl = pathToFileURL(path.resolve(indexPath)).href;
   let selectedProject = null;
@@ -380,6 +390,43 @@ function attachSpectateBridge({
       stopping = false;
     });
     return { watching: true, displayName: selectedProject.displayName };
+  });
+
+  ipcMain.handle(CHANNELS.linkSessionProject, async (event, ...args) => {
+    assertTrustedSender(event);
+    if (args.length !== 2) {
+      throw new Error('linkSessionProject requires exactly (sessionId, projectHandle) arguments');
+    }
+    const [sessionId, projectHandle] = args;
+    if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 128 || /[\/\\]/.test(sessionId) || sessionId.includes('..')) {
+      throw new Error('invalid or unsafe sessionId');
+    }
+    if (!selectedProject || typeof projectHandle !== 'string' || projectHandle !== selectedProject.handle) {
+      throw new Error('project handle is not the selected project');
+    }
+    if (!projectLinksPath) throw new Error('project link storage is unavailable');
+
+    let links = {};
+    try {
+      links = readProjectLinks(projectLinksPath);
+    } catch (error) {
+      if (error instanceof SyntaxError) links = {};
+      else throw error;
+    }
+
+    const nextLinks = {
+      ...links,
+      [sessionId]: {
+        root: selectedProject.root,
+        displayName: selectedProject.displayName,
+        linkedAt: new Date().toISOString(),
+      },
+    };
+    fs.mkdirSync(path.dirname(projectLinksPath), { recursive: true, mode: 0o700 });
+    const temporaryPath = `${projectLinksPath}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(temporaryPath, JSON.stringify(nextLinks), { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(temporaryPath, projectLinksPath);
+    return { linked: true, displayName: selectedProject.displayName };
   });
 
   ipcMain.handle(CHANNELS.stop, async (event, ...args) => {
@@ -536,14 +583,31 @@ function attachSpectateBridge({
       let timer = null;
       let proc = null;
       try {
-        proc = spawn(command, [
+        const args = [
           'replay-history-import',
           sessionId,
           '--tool',
           tool,
           '--out',
           tempOut,
-        ], {
+        ];
+        try {
+          const links = readProjectLinks(projectLinksPath);
+          const linked = links[sessionId];
+          if (
+            isPlainObject(linked)
+            && typeof linked.root === 'string'
+            && path.isAbsolute(linked.root)
+          ) {
+            const linkedRoot = fs.realpathSync(linked.root);
+            if (fs.statSync(linkedRoot).isDirectory()) {
+              args.push('--project-root', linkedRoot);
+            }
+          }
+        } catch (error) {
+          if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
+        }
+        proc = spawn(command, args, {
           shell: false,
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -614,6 +678,7 @@ function attachSpectateBridge({
       ipcMain.removeHandler(CHANNELS.openRecording);
       ipcMain.removeHandler(CHANNELS.listHistory);
       ipcMain.removeHandler(CHANNELS.importSession);
+      ipcMain.removeHandler(CHANNELS.linkSessionProject);
       disposed = true;
     },
   };

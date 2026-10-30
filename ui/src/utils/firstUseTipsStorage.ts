@@ -4,7 +4,7 @@
  * Missing or corrupt values are treated strictly as "not seen".
  */
 
-export type ScreenId = 'home' | 'entrance' | 'replay';
+export type ScreenId = 'home' | 'entrance' | 'replay' | 'replayHistory';
 
 export const FIRST_USE_TIPS_STORAGE_KEY = 'faultmesh:first_use_tips:seen';
 
@@ -12,6 +12,7 @@ export interface SeenState {
   home?: boolean;
   entrance?: boolean;
   replay?: boolean;
+  replayHistory?: boolean;
 }
 
 export function getSeenState(): SeenState {

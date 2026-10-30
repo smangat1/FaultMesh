@@ -131,7 +131,10 @@ def test_no_model_enriched_export_round_trip_and_old_export_compatibility(
     exported = _export(tmp_path)
     old_path = tmp_path / "old.json"
     new_path = tmp_path / "new.json"
-    old_path.write_text(exported.model_dump_json(indent=2), encoding="utf-8")
+    legacy = exported.model_copy(
+        update={"schema_version": "replay-export-1.0", "transcript_spans": []}
+    )
+    old_path.write_text(legacy.model_dump_json(indent=2), encoding="utf-8")
     enriched = build_no_model_narration(exported)
     new_path.write_text(enriched.model_dump_json(indent=2), encoding="utf-8")
     loaded_old = load_replay_document(old_path)

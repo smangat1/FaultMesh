@@ -528,6 +528,69 @@
   flex-wrap: wrap;
 }
 
+.replay-step-plain-label {
+  color: var(--replay-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(760px, 66vw);
+}
+
+.replay-step-clock {
+  color: var(--replay-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.replay-step-details {
+  color: var(--replay-text-muted);
+  font-size: 10px;
+  position: relative;
+}
+
+.replay-step-details > summary {
+  cursor: pointer;
+  padding: 3px 7px;
+  border: 1px solid var(--replay-border-subtle);
+  border-radius: var(--replay-radius-control);
+  list-style-position: inside;
+}
+
+.replay-step-details[open] > dl {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 60;
+  width: min(420px, 72vw);
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--replay-bg-surface-1);
+  border: 1px solid var(--replay-border-card);
+  border-radius: var(--replay-radius-card);
+  box-shadow: var(--replay-shadow-ambient);
+}
+
+.replay-step-details dl > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.replay-step-details dt {
+  color: var(--replay-text-faint);
+}
+
+.replay-step-details dd {
+  margin: 0;
+  color: var(--replay-text-primary);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 .replay-step-focus-right {
   display: flex;
   align-items: center;

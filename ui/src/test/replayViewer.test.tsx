@@ -340,12 +340,14 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     const adapter = new ReplayAdapter(v1, 'real_recording');
     render(<ReplayWorkspace adapter={adapter} />);
 
-    // Honesty badges
+    // Recording origin remains visible; internal provenance stays collapsed.
     expect(screen.getByTestId('replay-header-origin').textContent).toContain('REAL RECORDING');
-    expect(screen.getByText('HISTORICAL (STOPPED)')).toBeDefined();
     expect(screen.queryByText(/LIVE:/i)).toBeNull();
-    expect(screen.getByText('TOOL BOUNDARY')).toBeDefined();
-    expect(screen.getByText('codex-cli 0.165.0-alpha.1.2')).toBeDefined();
+    const details = screen.getByTestId('replay-step-details');
+    expect(details.hasAttribute('open')).toBe(false);
+    fireEvent.click(screen.getByText('Details'));
+    expect(details.hasAttribute('open')).toBe(true);
+    expect(details.textContent).toContain('codex-cli 0.165.0-alpha.1.2');
 
     // Checkpoint count
     expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #1 of 2');

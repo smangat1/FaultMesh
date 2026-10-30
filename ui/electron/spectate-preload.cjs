@@ -10,6 +10,7 @@ const CHANNELS = Object.freeze({
   event: 'faultmesh:spectate:event',
   listHistory: 'faultmesh:spectate:list-history',
   importSession: 'faultmesh:spectate:import-session',
+  linkSessionProject: 'faultmesh:spectate:link-session-project',
 });
 
 contextBridge.exposeInMainWorld('faultmeshSpectate', Object.freeze({
@@ -19,6 +20,11 @@ contextBridge.exposeInMainWorld('faultmeshSpectate', Object.freeze({
   openRecording: () => ipcRenderer.invoke(CHANNELS.openRecording),
   listHistory: () => ipcRenderer.invoke(CHANNELS.listHistory),
   importSession: (sessionId, tool) => ipcRenderer.invoke(CHANNELS.importSession, sessionId, tool),
+  linkSessionProject: (sessionId, projectHandle) => ipcRenderer.invoke(
+    CHANNELS.linkSessionProject,
+    sessionId,
+    projectHandle,
+  ),
   onSpectateEvent: (callback) => {
     if (typeof callback !== 'function') throw new TypeError('spectate callback must be a function');
     const listener = (_event, record) => callback(record);

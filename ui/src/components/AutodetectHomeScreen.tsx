@@ -20,9 +20,15 @@ import type { HistoryRoot, HistorySession } from '../spectate/types';
 import type { RunSummary } from '../types';
 import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from './FirstUseTipOverlay';
 import { isScreenTipSeen } from '../utils/firstUseTipsStorage';
+import { WatchProjectPrompt } from './WatchProjectPrompt';
+import type { ProjectChoice } from '../spectate/types';
+import {
+  dismissHomeWatchPrompt,
+  isHomeWatchPromptDismissed,
+} from '../utils/replayProjectLinksStorage';
 
 export interface AutodetectHomeScreenProps {
-  onSelectProject: () => void;
+  onSelectProject: () => void | Promise<ProjectChoice | null>;
   isBusy?: boolean;
   hasBridge: boolean;
   statusNote?: string | null;
@@ -38,6 +44,7 @@ export interface AutodetectHomeScreenProps {
   selectedTool?: string | null;
   onSelectTool?: (tool: string | null) => void;
   initialSelectedTool?: string | null;
+  showWatchProjectPrompt?: boolean;
 }
 
 export function formatRelativeTime(isoString?: string | null): string {
@@ -97,10 +104,27 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
   selectedTool: propSelectedTool,
   onSelectTool,
   initialSelectedTool = null,
+  showWatchProjectPrompt = false,
 }) => {
   const [internalSelectedTool, setInternalSelectedTool] = useState<string | null>(initialSelectedTool);
   const activeTool = propSelectedTool !== undefined ? propSelectedTool : internalSelectedTool;
   const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen('home'));
+  const [showWatchPrompt, setShowWatchPrompt] = useState<boolean>(() => (
+    showWatchProjectPrompt && !isHomeWatchPromptDismissed()
+  ));
+
+  const handleDismissWatchPrompt = useCallback(() => {
+    dismissHomeWatchPrompt();
+    setShowWatchPrompt(false);
+  }, []);
+
+  const handleChooseWatchProject = useCallback(async () => {
+    const selected = await onSelectProject();
+    if (selected) {
+      dismissHomeWatchPrompt();
+      setShowWatchPrompt(false);
+    }
+  }, [onSelectProject]);
 
   const handleSelectTool = useCallback(
     (tool: string | null) => {
@@ -1530,6 +1554,14 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
           )}
         </div>
       </div>
+
+      <WatchProjectPrompt
+        open={showWatchPrompt}
+        hasBridge={hasBridge}
+        busy={isBusy}
+        onChoose={() => void handleChooseWatchProject()}
+        onDismiss={handleDismissWatchPrompt}
+      />
 
       <FirstUseTipOverlay
         screenId="home"
