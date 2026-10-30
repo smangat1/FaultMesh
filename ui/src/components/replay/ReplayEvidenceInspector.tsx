@@ -32,6 +32,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
   const claimRun = narration?.claims || null;
   const reasonRun = narration?.reason || null;
   const summaryAudit = narration?.summary_audit || null;
+  const visibleTabCount = 2 + (isNarrationOn ? 1 : 0) + (isNarrationOn && summaryAudit ? 1 : 0);
 
   const rawClaims = claimRun?.final_claims;
   const finalClaims: TypedClaim[] = Array.isArray(rawClaims)
@@ -55,7 +56,8 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
         height: '100%',
         backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
         borderLeft: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-        width: '360px',
+        width: '100%',
+        minWidth: 0,
         flexShrink: 0,
         overflow: 'hidden',
         color: 'var(--replay-text-primary, #e6edf8)',
@@ -65,19 +67,22 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
       {/* Inspector Tabs */}
       <div
         style={{
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: `repeat(${visibleTabCount}, minmax(0, 1fr))`,
           backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
           borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
           padding: '4px',
           gap: '2px',
           flexShrink: 0,
+          width: '100%',
+          boxSizing: 'border-box',
         }}
       >
         {isNarrationOn && (
           <button
             onClick={() => setActiveTab('claims')}
             style={{
-              flex: 1,
+              minWidth: 0,
               padding: '6px 4px',
               fontSize: '11px',
               fontWeight: activeTab === 'claims' ? 600 : 400,
@@ -98,7 +103,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
         <button
           onClick={() => setActiveTab('tests')}
           style={{
-            flex: 1,
+            minWidth: 0,
             padding: '6px 4px',
             fontSize: '11px',
             fontWeight: activeTab === 'tests' ? 600 : 400,
@@ -119,7 +124,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
           <button
             onClick={() => setActiveTab('summary')}
             style={{
-              flex: 1,
+              minWidth: 0,
               padding: '6px 4px',
               fontSize: '11px',
               fontWeight: activeTab === 'summary' ? 600 : 400,
@@ -162,11 +167,15 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
         style={{
           flex: 1,
           overflowY: 'auto',
+          overflowX: 'auto',
           minHeight: 0,
-          padding: '12px',
+          minWidth: 0,
+          padding: '12px 14px 12px 16px',
+          boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
+          overflowWrap: 'anywhere',
         }}
       >
         {record?.provenance === 'history_import' && (

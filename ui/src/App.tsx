@@ -126,6 +126,7 @@ export const App: React.FC<AppProps> = ({
   const [cachedHistorySessions, setCachedHistorySessions] = useState<HistorySession[] | null>(null);
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<Set<string>>(() => new Set());
   const [selectedHistoryTool, setSelectedHistoryTool] = useState<string | null>(null);
+  const [importedHistorySessionId, setImportedHistorySessionId] = useState<string | null>(null);
 
   const handleToggleFolderExpanded = useCallback((folderKey: string) => {
     setExpandedFolderKeys((prev) => {
@@ -351,6 +352,7 @@ export const App: React.FC<AppProps> = ({
   // File import handler for local V3 and V2 JSON exports
   const handleImportFiles = async (files: FileList | File[]) => {
     setImportError(null);
+    setImportedHistorySessionId(null);
     try {
       const fileList = Array.from(files);
       if (fileList.length === 0) return;
@@ -500,6 +502,7 @@ export const App: React.FC<AppProps> = ({
       if (bridge?.openRecording) {
         const result = await bridge.openRecording();
         if (!result) return;
+        setImportedHistorySessionId(null);
         await loadValidatedRecording(result);
       } else {
         recordingFileInputRef.current?.click();
@@ -518,6 +521,7 @@ export const App: React.FC<AppProps> = ({
       }
       const result = await bridge.importSession(sessionId, tool);
       await loadValidatedRecording(result);
+      setImportedHistorySessionId(sessionId);
     },
     [loadValidatedRecording]
   );
@@ -532,6 +536,7 @@ export const App: React.FC<AppProps> = ({
     setSelectedFile(null);
     setPinnedSymbols([]);
     setIsAgentActive(false);
+    setImportedHistorySessionId(null);
   }, []);
 
   const handleLiveStateChange = useCallback((state: LiveSpectateState) => {
@@ -876,6 +881,7 @@ export const App: React.FC<AppProps> = ({
             onToggleFolderExpanded={handleToggleFolderExpanded}
             selectedTool={selectedHistoryTool}
             onSelectTool={setSelectedHistoryTool}
+            showWatchProjectPrompt={true}
           />
         )
       ) : currentScreen === 'entrance' ? (
@@ -984,6 +990,14 @@ export const App: React.FC<AppProps> = ({
                 <ReplayWorkspace
                   adapter={activeAdapter}
                   graphData={graphData}
+                  importedSessionId={importedHistorySessionId}
+                  hasSpectateBridge={spectate.hasBridge}
+                  watchProjectBusy={spectate.busy}
+                  onWatchProject={spectate.startWatching}
+                  onLinkSessionProject={async (sessionId, projectHandle) => {
+                    if (!spectate.bridge?.linkSessionProject) return;
+                    await spectate.bridge.linkSessionProject(sessionId, projectHandle);
+                  }}
                 />
               ) : (
                 <ReplayComparisonView

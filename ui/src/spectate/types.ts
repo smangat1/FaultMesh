@@ -143,6 +143,7 @@ export interface SpectateBridge {
   openRecording?(): Promise<HistoryImportPayload | null>;
   listHistory?(): Promise<HistoryListPayload>;
   importSession?(sessionId: string, tool: string): Promise<HistoryImportPayload>;
+  linkSessionProject?(sessionId: string, projectHandle: string): Promise<{ linked: true; displayName: string }>;
 }
 
 declare global {

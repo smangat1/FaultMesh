@@ -459,6 +459,128 @@ button:disabled {
 }
 
 /* First-Use Tutorial Tips Spotlight Overlay */
+.watch-project-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 5, 9, 0.74);
+  backdrop-filter: blur(4px);
+}
+
+.watch-project-prompt {
+  position: relative;
+  width: min(460px, calc(100vw - 48px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 26px;
+  border: 1px solid #293346;
+  border-radius: 14px;
+  background: #0d111a;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.68);
+  color: #e6edf8;
+}
+
+.watch-project-prompt h2 {
+  margin: 0;
+  max-width: 390px;
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.watch-project-prompt p {
+  margin: 0;
+  color: #8b97ad;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.watch-project-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: #7f9fc5;
+  background: #141c29;
+  border: 1px solid #2b3c52;
+  border-radius: 10px;
+}
+
+.watch-project-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #6f7c91;
+  cursor: pointer;
+}
+
+.watch-project-close:hover {
+  color: #e6edf8;
+  border-color: #293346;
+  background: #141a26;
+}
+
+.watch-project-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: 1px solid #385372;
+  border-radius: 8px;
+  background: #20344d;
+  color: #edf4fc;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.watch-project-primary:hover:not(:disabled) {
+  background: #29425f;
+}
+
+.watch-project-primary:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.watch-project-later {
+  align-self: center;
+  border: 0;
+  background: transparent;
+  color: #748198;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.watch-project-unavailable {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #29303d;
+  border-radius: 8px;
+  background: #111620;
+  color: #8b97ad;
+  font-size: 11px;
+  text-align: center;
+}
+
 .first-use-tips-overlay-root {
   position: fixed;
   inset: 0;

@@ -95,8 +95,9 @@ describe('Replay Backend Contract Regression Tests (Real Export Artifacts)', () 
 
     render(<ReplayWorkspace adapter={adapter} />);
 
-    // Honesty badge reflects IN-PROGRESS SNAPSHOT
-    expect(screen.getByTestId('replay-historical-status').textContent).toBe('IN-PROGRESS SNAPSHOT');
+    // Plain replay chrome avoids status jargon while retaining technical details on demand.
+    expect(screen.getByTestId('replay-step-plain-label')).toBeDefined();
+    expect(screen.getByTestId('replay-step-details').hasAttribute('open')).toBe(false);
 
     // Honest empty center state when no file diff is selected
     expect(screen.getByTestId('replay-empty-diff')).toBeDefined();

@@ -165,6 +165,7 @@ function harness() {
       return child;
     },
     terminationGraceMs: 10,
+    projectLinksPath: path.join(root, 'replay-project-links.json'),
   });
   return { ipcMain, sent, root, window, event, children, spawns, bridge };
 }
@@ -187,6 +188,7 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
       CHANNELS.openRecording,
       CHANNELS.listHistory,
       CHANNELS.importSession,
+      CHANNELS.linkSessionProject,
     ])
   );
   const project = await choose(value.event);
@@ -197,6 +199,28 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
   assert.equal(value.spawns[0][0], '/fixed/faultmesh');
   assert.deepEqual(value.spawns[0][1].slice(0, 2), ['spectate', fs.realpathSync(value.root)]);
   assert.equal(value.spawns[0][2].shell, false);
+});
+
+test('session project links persist in main without returning a local path', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const choose = value.ipcMain.handlers.get(CHANNELS.choose);
+  const link = value.ipcMain.handlers.get(CHANNELS.linkSessionProject);
+  const selected = await choose(value.event);
+
+  await assert.rejects(
+    () => link(value.event, 'session-1', 'wrong-handle'),
+    /not the selected project/,
+  );
+  const result = await link(value.event, 'session-1', selected.handle);
+  assert.deepEqual(result, { linked: true, displayName: path.basename(value.root) });
+  assert.equal('root' in result, false);
+
+  const stored = JSON.parse(fs.readFileSync(path.join(value.root, 'replay-project-links.json'), 'utf8'));
+  assert.equal(stored['session-1'].root, fs.realpathSync(value.root));
 });
 
 test('IPC rejects renderer paths, wrong frames, and unknown channels', async (context) => {

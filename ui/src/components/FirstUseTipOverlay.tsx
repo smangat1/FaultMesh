@@ -34,6 +34,11 @@ export const SCREEN_DEFAULT_STEPS: Record<ScreenId, TipStep[]> = {
       title: 'Recordings & Live Spectate',
       description: 'Open recorded JSON exports directly, or select a Python project to watch live.',
     },
+    {
+      targetTestId: 'watch-project-prompt',
+      title: 'Keep a Project Current',
+      description: 'Link a project folder when you want FaultMesh to watch future saved changes.',
+    },
   ],
   entrance: [
     {
@@ -67,6 +72,28 @@ export const SCREEN_DEFAULT_STEPS: Record<ScreenId, TipStep[]> = {
       targetTestId: 'replay-header-tools',
       title: 'Keyboard Navigation',
       description: 'Press C for Chapters, E for Evidence drawer, and M for Mini Map dock.',
+    },
+  ],
+  replayHistory: [
+    {
+      targetTestId: 'replay-timeline-bar',
+      title: 'Session Timeline',
+      description: 'Scrub through recorded steps using their original clock times.',
+    },
+    {
+      targetTestId: 'replay-main-stage',
+      title: 'Step View',
+      description: 'Inspect the evidence that was retained for the selected step.',
+    },
+    {
+      targetTestId: 'replay-header-tools',
+      title: 'More Session Context',
+      description: 'Open chapters, evidence, or the mini map without crowding the main view.',
+    },
+    {
+      targetTestId: 'watch-project-prompt',
+      title: 'Keep This Project Current',
+      description: 'Link its folder to watch future saved changes. The recorded session stays unchanged.',
     },
   ],
 };

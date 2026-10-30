@@ -30,6 +30,7 @@ function createWindow() {
     dialog,
     window: mainWindow,
     indexPath,
+    projectLinksPath: path.join(app.getPath('userData'), 'replay-project-links.json'),
   });
   mainWindow.once('closed', () => {
     spectateBridge?.dispose('window_closed');

@@ -19,6 +19,7 @@ export interface ReplayTimelineBarProps {
   chapters?: ReplayChapter[];
   tests?: StructuredTestEvidence[];
   options?: TimeModelOptions;
+  stepLabels?: ReadonlyMap<number, string>;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -35,6 +36,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
   chapters = [],
   tests = [],
   options,
+  stepLabels,
   className = '',
   style,
 }) => {
@@ -152,28 +154,18 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
           content: (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <div style={{ fontWeight: 600, color: 'var(--replay-text-primary)' }}>
-                Step #{nearest.sequence} ({nearest.record_type})
+                {stepLabels?.get(nearest.sequence) ?? 'Recorded step'}
               </div>
               <div style={{ fontSize: '10px', color: 'var(--replay-text-muted)' }}>
                 {nearest.timeLabel}
-                {nearest.toolName && (
-                  <span style={{ color: 'var(--replay-accent)', marginLeft: '6px' }}>
-                    • tool: {nearest.toolName}
-                    {nearest.toolDurationLabel && ` (${nearest.toolDurationLabel})`}
-                  </span>
-                )}
-                {nearest.isGap && (
-                  <span style={{ color: 'var(--replay-status-warning)', marginLeft: '6px' }}>
-                    • GAP: {nearest.gapReason || 'unknown'}
-                  </span>
-                )}
+                {nearest.toolDurationLabel && ` · ${nearest.toolDurationLabel}`}
               </div>
             </div>
           ),
         });
       }
     },
-    [getRatioFromClientX, geometry]
+    [getRatioFromClientX, geometry, stepLabels]
   );
 
   const handlePointerUp = useCallback(
@@ -701,7 +693,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
             left: `${thumbLeftPercent}%`,
           }}
           data-testid="timeline-thumb"
-          title={`Step #${currentSequence} (${currentStep?.timeLabel ?? ''})`}
+          title={`${currentStep ? stepLabels?.get(currentStep.sequence) ?? 'Recorded step' : 'Recorded step'} · ${currentStep?.timeLabel ?? ''}`}
         />
       </div>
 
@@ -718,26 +710,13 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
           {currentStep && (
             <>
               <span className="replay-timeline-separator">•</span>
+              <span className="replay-timeline-step-label">
+                {stepLabels?.get(currentStep.sequence) ?? 'Recorded step'}
+              </span>
+              <span className="replay-timeline-separator">•</span>
               <span className="replay-timeline-step-time" title={currentStep.captured_at}>
                 {currentStep.timeLabel}
               </span>
-              {currentStep.toolName && (
-                <>
-                  <span className="replay-timeline-separator">•</span>
-                  <span className="replay-timeline-step-tool">
-                    tool: {currentStep.toolName}
-                    {currentStep.toolDurationLabel && ` (${currentStep.toolDurationLabel})`}
-                  </span>
-                </>
-              )}
-              {currentStep.isGap && (
-                <>
-                  <span className="replay-timeline-separator">•</span>
-                  <span className="replay-timeline-step-gap">
-                    GAP: {currentStep.gapReason || 'unknown'}
-                  </span>
-                </>
-              )}
             </>
           )}
         </div>

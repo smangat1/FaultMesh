@@ -38,11 +38,12 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     // 6. Mini map dock is closed by default
     expect(screen.queryByTestId('replay-minimap-dock')).toBeNull();
 
-    // 7. Step focus strip shows current chapter and honesty signals
+    // 7. Step focus strip uses a plain label and keeps technical provenance collapsed
     const focusStrip = screen.getByTestId('replay-step-focus-strip');
-    expect(focusStrip.textContent).toContain('Configure initial workspace and apply patch');
-    expect(focusStrip.textContent).toContain('DETERMINISTIC TEMPLATE');
-    expect(screen.getByTestId('replay-historical-status').textContent).toContain('HISTORICAL (STOPPED)');
+    expect(screen.getByTestId('replay-step-plain-label').textContent).toBe('Recorded step');
+    expect(screen.getByTestId('replay-step-details').hasAttribute('open')).toBe(false);
+    expect(focusStrip.textContent).not.toContain('HISTORICAL (STOPPED)');
+    expect(focusStrip.textContent).not.toContain('TOOL BOUNDARY');
 
     // 8. Navigating to step 3 where calc.py is modified shows replay-diff-pane
     const nextBtn = screen.getByTestId('replay-next-btn');
