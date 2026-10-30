@@ -195,6 +195,10 @@ async function main() {
     await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
 
     await page.evaluateOnNewDocument((payload) => {
+      window.localStorage.setItem(
+        'faultmesh:first_use_tips:seen',
+        JSON.stringify({ home: true, entrance: true, replay: true })
+      );
       window.faultmeshSpectate = {
         chooseProjectFolder: async () => ({ handle: 'h1', displayName: 'synthetic-app' }),
         startWatch: async () => ({ watching: true, displayName: 'synthetic-app' }),
@@ -414,6 +418,12 @@ async function main() {
   {
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
+    await page.evaluateOnNewDocument(() => {
+      window.localStorage.setItem(
+        'faultmesh:first_use_tips:seen',
+        JSON.stringify({ home: true, entrance: true, replay: true })
+      );
+    });
     await page.goto(fileUrl, { waitUntil: 'networkidle0' });
     await new Promise((r) => setTimeout(r, 500));
 

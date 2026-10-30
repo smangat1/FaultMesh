@@ -75,7 +75,7 @@ controls. This note does not alter the parallel branch's phase ownership or chec
 ## Commit & Evidence Log
 
 ### Phase 1: autodetect selector widgets
-- **Commit SHA**: `718af731ddf1b087408bb0df85e7f91e3654b9ae`
+- **Commit SHA**: `fe5e3a2` (rebased onto main) / `718af731ddf1b087408bb0df85e7f91e3654b9ae` (pre-rebase)
 - **Files Changed (12 files)**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/01-autodetect-home-two-tool-widgets.png`
@@ -105,13 +105,13 @@ controls. This note does not alter the parallel branch's phase ownership or chec
 - **Screenshots Captured (Headless Chrome against real built bundle)**:
   | File | What it shows | DOM Assertion | SHA-256 Checksum |
   |---|---|---|---|
-  | `01-autodetect-home-two-tool-widgets.png` | Full new home with two detected tool widgets (Codex & Claude Code), project folders and sessions inside widgets, plus secondary Open recording and Select project actions | `tool-widget-codex`, `tool-widget-claude_code`, `startup-open-recording-btn`, `startup-select-project-btn` present in DOM | `17c89b120c0c6da7822850f1215d5db72f8e61ea2c29c7e6e130649c58c497c6` |
-  | `02-autodetect-home-folder-collapsed.png` | Autodetect home with collapsed project folder (auth-service) showing collapsed chevron and hidden sessions list | `folder-sessions-codex:group-auth` is null and `aria-expanded="false"` in DOM | `f3784683f437317aededdc0ce67e30b7353adae517f6c2e9bafe91a01e9252fe` |
-  | `03-autodetect-home-unsupported-row.png` | Autodetect home displaying honest partial and unsupported status tags with zstd reason and focused row | `session-parse-status-unsupported` with zstd decompression title and `session-parse-status-partial` present in DOM | `c565dfd8d2b2b8e5ddd7b87131e78505b5fb7e97f80771851d41930041a94bf7` |
-  | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `autodetect-no-bridge-empty-state` and `startup-open-recording-btn` present in DOM | `f09af2ee719b84445bdfddab5610bf0839586bf12772b05bb908245593ae2fd3` |
+  | `01-autodetect-home-two-tool-widgets.png` | Full new home with two detected tool widgets (Codex & Claude Code), project folders and sessions inside widgets, plus secondary Open recording and Select project actions | `tool-widget-codex`, `tool-widget-claude_code`, `startup-open-recording-btn`, `startup-select-project-btn` present in DOM | `c4d57bb9dd26eea93ef23ca680aaaf3830b0f55ef8c34d43cd618226ce8a6df6` |
+  | `02-autodetect-home-folder-collapsed.png` | Autodetect home with collapsed project folder (auth-service) showing collapsed chevron and hidden sessions list | `folder-sessions-codex:group-auth` is null and `aria-expanded="false"` in DOM | `ca7a2a8f4188a5ae1f701529bac0adea73b277fe815ab8c1eefea9202848e829` |
+  | `03-autodetect-home-unsupported-row.png` | Autodetect home displaying honest partial and unsupported status tags with zstd reason and focused row | `session-parse-status-unsupported` with zstd decompression title and `session-parse-status-partial` present in DOM | `1f9f5f71242595b68697959fefc15dde6d9b25d81abeaad59415a55891cd311d` |
+  | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `autodetect-no-bridge-empty-state` and `startup-open-recording-btn` present in DOM | `388d7bdd901eb306045613bc4b7a27902a1ea8ffb8d636979d665fee1158516b` |
 
 ### Phase 1.5: real-data session list fixes & full-screen tool exploration
-- **Commit SHA**: `a7c173e` (Phase 1.5: real-data session list fixes) & `d5c8c33` (feat(ui): click tool widget to explore sessions in full-screen view)
+- **Commit SHA**: `738dbfb` (Phase 1.5: real-data session list fixes) & `62a43f9` (feat(ui): click tool widget to explore sessions in full-screen view)
 - **Files Changed**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/01-autodetect-home-two-tool-widgets.png`
@@ -141,16 +141,16 @@ controls. This note does not alter the parallel branch's phase ownership or chec
 - **Screenshots Captured (Headless Chrome against real built bundle)**:
   | File | What it shows | DOM Assertion | SHA-256 Checksum |
   |---|---|---|---|
-  | `01-autodetect-home-two-tool-widgets.png` | Full new home with two detected tool widgets (Codex & Claude Code) showing source file counts, session counts, "Explore sessions", and secondary actions | `asserted tool-widget-codex, tool-widget-claude_code, startup-open-recording-btn, startup-select-project-btn in DOM` | `5505fd8ced672555429a87cb5f3c629dd2f91573848d29f6b464bdb77d6b03bb` |
-  | `04-autodetect-home-hidden-system-collapsed.png` | Codex full-screen view with system temp folder hidden by default, showing quiet "Show 1 hidden system folder" toggle | `asserted toggle-hidden-system-codex is present, project-folder-codex:group-temp-fixture is null, and group-auth-fork is collapsed` | `d0ed4bd7137a38ac66a0bbfd4b900dc85149ae3b8d8730599abfa4d3bf8ffbee` |
-  | `05-autodetect-home-system-temp-revealed.png` | Codex full-screen view with system temp folder revealed, displaying muted "system temp" badge and "Hide 1 hidden system folder" toggle | `asserted project-folder-codex:group-temp-fixture present, system-temp-badge text is "system temp", and toggle reads "Hide 1 hidden system folder"` | `5d762d459ec979c846adfe5d9edbe6056278e4fe2854ef3c474600cca1937a9f` |
-  | `06-autodetect-home-archived-and-source-title.png` | Codex full-screen view showing duplicate-folder disambiguation ("auth-service / backend" and "auth-service / services"), quiet "archived" badge on session row, and preferred source_title with secondary redacted preview line | `asserted folder names disambiguated with parent dirs, session-history-state-archived present, session-title is "Token leak investigation", and session-preview-secondary is "Check token leakage in debug logs"` | `139dec7b3e95a18c9cc9b7242711814e6a108e9afd0cd4f48672f878a2e646b3` |
-  | `02-autodetect-home-folder-collapsed.png` | Codex full-screen view with collapsed project folder (auth-service) showing collapsed chevron and hidden sessions list | `asserted folder-sessions-codex:group-auth is null and aria-expanded="false"` | `7563ee2d430943f47b52cd1783e3af8f623563fe105ba79ca155c5cd6e9a6eec` |
-  | `03-autodetect-home-unsupported-row.png` | Claude Code full-screen view displaying honest unsupported status tag with zstd reason | `asserted session-row-claude-sess-2 and session-parse-status-unsupported with zstd decompression title in DOM` | `b6360185a3f1100d1666458c8f341e13ca1125389b5adfe56d030eb0e46b42c0` |
-  | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `asserted autodetect-no-bridge-empty-state and startup-open-recording-btn in DOM` | `f09af2ee719b84445bdfddab5610bf0839586bf12772b05bb908245593ae2fd3` |
+  | `01-autodetect-home-two-tool-widgets.png` | Full new home with two detected tool widgets (Codex & Claude Code) showing source file counts, session counts, "Explore sessions", and secondary actions | `asserted tool-widget-codex, tool-widget-claude_code, startup-open-recording-btn, startup-select-project-btn in DOM` | `c4d57bb9dd26eea93ef23ca680aaaf3830b0f55ef8c34d43cd618226ce8a6df6` |
+  | `04-autodetect-home-hidden-system-collapsed.png` | Codex full-screen view with system temp folder hidden by default, showing quiet "Show 1 hidden system folder" toggle | `asserted toggle-hidden-system-codex is present, project-folder-codex:group-temp-fixture is null, and group-auth-fork is collapsed` | `7447271166a7d623fc4599c40a62e8caacc426d80038a30ab36caec93645fd3a` |
+  | `05-autodetect-home-system-temp-revealed.png` | Codex full-screen view with system temp folder revealed, displaying muted "system temp" badge and "Hide 1 hidden system folder" toggle | `asserted project-folder-codex:group-temp-fixture present, system-temp-badge text is "system temp", and toggle reads "Hide 1 hidden system folder"` | `f9cf3b926e081d19d9eeaee58ff551314f5c3cda0980cb4d6b65d30b59547cc7` |
+  | `06-autodetect-home-archived-and-source-title.png` | Codex full-screen view showing duplicate-folder disambiguation ("auth-service / backend" and "auth-service / services"), quiet "archived" badge on session row, and preferred source_title with secondary redacted preview line | `asserted folder names disambiguated with parent dirs, session-history-state-archived present, session-title is "Token leak investigation", and session-preview-secondary is "Check token leakage in debug logs"` | `eea669eb32a1ff3b241e6e2db9c1c919e253817c30236d609aedcaf84f02b7b1` |
+  | `02-autodetect-home-folder-collapsed.png` | Codex full-screen view with collapsed project folder (auth-service) showing collapsed chevron and hidden sessions list | `asserted folder-sessions-codex:group-auth is null and aria-expanded="false"` | `ca7a2a8f4188a5ae1f701529bac0adea73b277fe815ab8c1eefea9202848e829` |
+  | `03-autodetect-home-unsupported-row.png` | Claude Code full-screen view displaying honest unsupported status tag with zstd reason | `asserted session-row-claude-sess-2 and session-parse-status-unsupported with zstd decompression title in DOM` | `1f9f5f71242595b68697959fefc15dde6d9b25d81abeaad59415a55891cd311d` |
+  | `10-empty-state-no-bridge.png` | Calm empty state when desktop bridge is absent, explaining desktop app requirement while keeping Open recording (.json) accessible | `asserted autodetect-no-bridge-empty-state and startup-open-recording-btn in DOM` | `388d7bdd901eb306045613bc4b7a27902a1ea8ffb8d636979d665fee1158516b` |
 
 ### Phase 2: timeline restyle
-- **Commit SHA**: `153ffa5`
+- **Commit SHA**: `713d431`
 - **Files Changed (11 files)**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/04-timeline-resting.png`
@@ -179,13 +179,13 @@ controls. This note does not alter the parallel branch's phase ownership or chec
 - **Screenshots Captured (Headless Chrome against real built bundle with zero duplicate hashes)**:
   | File | What it shows | DOM Assertion | SHA-256 Checksum |
   |---|---|---|---|
-  | `04-timeline-resting.png` | Timeline bar at rest: clean white line streaking across the bar, end circles displaying only clock times (no "start"/"end"), subtle hairline ticks at every snap point, and filled circle thumb | `asserted clean 2px line, timeline-circle-start (0%), timeline-circle-end (100%), extent clock times without "start"/"end", 7 ticks, and no cursor label at rest` | `b4a7528dd00599bd9bfcb10902bf252c8b35a0f0b4123b2171ec1b4c40920e33` |
-  | `05-timeline-hover-label.png` | Timeline bar during hover: floating small muted-white clock-time label appears under cursor at nearest snap point without shifting layout | `asserted timeline-cursor-label appears under cursor at snap point displaying valid clock time while thumb remains at initial checkpoint` | `ed9ae54f742d9a9e2551e0e781bc9002f3ef0aaa6db885be9e96232935dd5214` |
-  | `06-timeline-mid-drag.png` | Timeline bar mid-drag: thumb continuously tracks pointer position without jumping, cursor label shows nearest snap clock time, and current selected checkpoint remains strictly unchanged until release | `asserted timeline-thumb has class "dragging", left matches drag pointer (~60%), timeline-cursor-label visible, and header badge strictly remains Checkpoint #1` | `1968c033d17ef070eb3072d73873671e8447b8659fa3f3826a91b02507e68002` |
-  | `07-timeline-after-release.png` | Timeline bar after drag release: thumb smoothly eased onto nearest recorded checkpoint (180ms ease-out), dragging class removed, and current checkpoint updated in workspace | `asserted timeline-thumb lacks "dragging" class, checkpoint advanced to nearest recorded step (#5), and thumb snapped to checkpoint ratio` | `e5f8d5d899e95820969159bbc676140621eeb5c233afbf08b97cfbcd67544bc4` |
+  | `04-timeline-resting.png` | Timeline bar at rest: clean white line streaking across the bar, end circles displaying only clock times (no "start"/"end"), subtle hairline ticks at every snap point, and filled circle thumb | `asserted clean 2px line, timeline-circle-start (0%), timeline-circle-end (100%), extent clock times without "start"/"end", 7 ticks, and no cursor label at rest` | `8d4cf180e6467a9c0221d8561840e99c1d8517a5115a08b0a172b10ffbca2401` |
+  | `05-timeline-hover-label.png` | Timeline bar during hover: floating small muted-white clock-time label appears under cursor at nearest snap point without shifting layout | `asserted timeline-cursor-label appears under cursor at snap point displaying valid clock time while thumb remains at initial checkpoint` | `24e39b11533e85d65700932159b5c91345292a5c21aa0304f8812aada0e99ac4` |
+  | `06-timeline-mid-drag.png` | Timeline bar mid-drag: thumb continuously tracks pointer position without jumping, cursor label shows nearest snap clock time, and current selected checkpoint remains strictly unchanged until release | `asserted timeline-thumb has class "dragging", left matches drag pointer (~60%), timeline-cursor-label visible, and header badge strictly remains Checkpoint #1` | `c4c8bb6bae605da6eb7a4f1ab246443368622d6908b3ef648548e3183c4ed92b` |
+  | `07-timeline-after-release.png` | Timeline bar after drag release: thumb smoothly eased onto nearest recorded checkpoint (180ms ease-out), dragging class removed, and current checkpoint updated in workspace | `asserted timeline-thumb lacks "dragging" class, checkpoint advanced to nearest recorded step (#5), and thumb snapped to checkpoint ratio` | `6ae3856b9c8457a0a5ba1bee8c2c17edb41c9acb0a5144b8d099750008a7f2bf` |
 
 ### Phase 3: first-use tips
-- **Commit**: "Phase 3: first-use tips"
+- **Commit SHA**: `b3adaa3` (Phase 3: first-use tips)
 - **Files Changed (14 files)**:
   - `docs/session-list-progress.md`
   - `docs/screenshots/session-list/04-timeline-resting.png`
@@ -208,8 +208,8 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   - `ui/src/utils/firstUseTipsStorage.ts`
 - **Verification Commands & Results**:
   - `npx tsc --noEmit`: Clean (0 errors).
-  - `npm test`: 29 test files passed (263 Vitest tests, 10 Electron node tests, 0 failed). Total: 273 tests passing.
-  - `npm run build`: `tsc && vite build` built cleanly with zero errors in 1.56s.
+  - `npm test`: 29 test files passed (265 Vitest tests, 10 Electron node tests, 0 failed). Total: 275 tests passing.
+  - `npm run build`: `tsc && vite build` built cleanly with zero errors in 1.69s.
 - **Visual & Behavioral First-Use Tips Confirmation**:
   - First-use spotlight tour overlay (`FirstUseTipOverlay`) with dimmed backdrop, SVG mask cutout, and focus ring around target element.
   - Interactive tip card showing title, description, step dots, Skip button, and Next ("Got it") button.
@@ -225,5 +225,5 @@ controls. This note does not alter the parallel branch's phase ownership or chec
   | File | What it shows | DOM Assertion | SHA-256 Checksum |
   |---|---|---|---|
   | `08-tip-session-list.png` | Autodetect Home first-use tip overlay: dimmed backdrop, SVG cutout, tip card with title ("Welcome to FaultMesh"), description, step dots, Skip, and header "?" button | `asserted first-use-tip-overlay, first-use-spotlight-svg, first-use-tip-card, tip-card-title is "Welcome to FaultMesh", desc contains autodetect explanation, and home-help-tips-btn present in header` | `c5e4595238cc7d89d381eccc81f78fd411495167af818b15b6e507b056712b5c` |
-  | `09-tip-replay-timeline.png` | Replay Workspace first-use tip overlay: spotlight ring highlighting Hero Timeline bar (`replay-timeline-bar`), tip card with title ("Hero Timeline"), description, and header "?" button in toolbar | `asserted first-use-tip-overlay with data-screen="replay", first-use-spotlight-ring, replay-timeline-bar, tip-card-title is "Hero Timeline", and replay-help-tips-btn in header tools` | `d55547f4c7f294fa803e41b2ef2ecd959ec89f84a3a3f26d57da75966fcd6672` |
+  | `09-tip-replay-timeline.png` | Replay Workspace first-use tip overlay: spotlight ring highlighting Hero Timeline bar (`replay-timeline-bar`), tip card with title ("Hero Timeline"), description, and header "?" button in toolbar | `asserted first-use-tip-overlay with data-screen="replay", first-use-spotlight-ring, replay-timeline-bar, tip-card-title is "Hero Timeline", and replay-help-tips-btn in header tools` | `8de4f682d63a9e978474e09ed323dd408e93da3e7c1d2e54b964dd187e4008ba` |
 

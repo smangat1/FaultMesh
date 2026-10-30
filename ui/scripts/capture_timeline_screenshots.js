@@ -38,6 +38,10 @@ async function main() {
 
   // Mock bridge to return synthetic hero fixture on openRecording
   await page.evaluateOnNewDocument((fixtureText) => {
+    window.localStorage.setItem(
+      'faultmesh:first_use_tips:seen',
+      JSON.stringify({ home: true, entrance: true, replay: true })
+    );
     window.faultmeshSpectate = {
       chooseProjectFolder: async () => ({ handle: 'h1', displayName: 'synthetic-app' }),
       startWatch: async () => ({ watching: true, displayName: 'synthetic-app' }),
