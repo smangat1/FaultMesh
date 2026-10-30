@@ -86,11 +86,63 @@ export interface SpectateEvent {
   reason?: string;
 }
 
+export interface HistoryRoot {
+  tool: 'codex' | 'claude_code' | string;
+  status: 'ok' | 'missing' | 'unreadable';
+  file_count: number;
+  message?: string | null;
+  active_file_count?: number | null;
+  archived_file_count?: number | null;
+  catalog_status?: 'ok' | 'missing' | 'unsupported' | 'unreadable' | string | null;
+  catalog_message?: string | null;
+}
+
+export interface HistorySession {
+  session_id: string;
+  tool: 'codex' | 'claude_code' | string;
+  project_group_key: string;
+  project_display_name: string;
+  started_at: string;
+  ended_at: string;
+  prompt_count: number;
+  first_prompt_preview: string | null;
+  format_version?: string | null;
+  parse_status: 'ok' | 'partial' | 'unsupported';
+  unsupported_reason?: string | null;
+  source_file_sha256?: string;
+  redaction_types?: string[];
+  history_state?: 'active' | 'archived' | string;
+  project_visibility?: 'normal' | 'system_temp' | string;
+  source_title?: string | null;
+  catalog_first_user_message_preview?: string | null;
+  catalog_preview?: string | null;
+  catalog_matched?: boolean | null;
+  injected_context_messages?: number | null;
+  project_parent_name?: string | null;
+  parent_display_name?: string | null;
+  parent_directory?: string | null;
+  parent_dir?: string | null;
+}
+
+export interface HistoryListPayload {
+  roots: HistoryRoot[];
+  sessions: HistorySession[];
+}
+
+export interface HistoryImportPayload {
+  name: string;
+  text: string;
+  size: number;
+}
+
 export interface SpectateBridge {
   chooseProjectFolder(): Promise<ProjectChoice | null>;
   startWatch(): Promise<{ watching: boolean; displayName: string }>;
   stopWatch(): Promise<{ watching: false }>;
   onSpectateEvent(callback: (event: SpectateEvent) => void): () => void;
+  openRecording?(): Promise<HistoryImportPayload | null>;
+  listHistory?(): Promise<HistoryListPayload>;
+  importSession?(sessionId: string, tool: string): Promise<HistoryImportPayload>;
 }
 
 declare global {

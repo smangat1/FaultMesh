@@ -8,6 +8,8 @@ import { ReplayTimelineBar } from './ReplayTimelineBar';
 import { ReplayMiniMapDock } from './ReplayMiniMapDock';
 import type { TimeModelOptions } from '../../replay/timeModel';
 import { formatRecordedAt } from '../../replay/timeModel';
+import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from '../FirstUseTipOverlay';
+import { isScreenTipSeen } from '../../utils/firstUseTipsStorage';
 import {
   ChevronLeft,
   ChevronRight,
@@ -40,6 +42,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [isNarrationOn, setIsNarrationOn] = useState<boolean>(true);
   const [isBaselineMode, setIsBaselineMode] = useState<boolean>(false);
+  const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen('replay'));
 
   // On-demand panel visibility states (Rule 2 + Visual Direction: closed by default)
   const [isChaptersOpen, setIsChaptersOpen] = useState<boolean>(defaultChaptersOpen);
@@ -326,8 +329,11 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           )}
         </div>
 
-        {/* Right: On-Demand Controls (Chapters [C], Evidence [E], Mini Map [M]) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        {/* Right: On-Demand Controls (Chapters [C], Evidence [E], Mini Map [M]) & Help */}
+        <div
+          data-testid="replay-header-tools"
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
+        >
           <button
             onClick={() => setIsChaptersOpen((prev) => !prev)}
             className={`replay-header-toggle-btn ${isChaptersOpen ? 'active' : ''}`}
@@ -365,6 +371,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             <Layers size={12} />
             <span>Mini Map</span>
             <span className="replay-shortcut-tag">M</span>
+          </button>
+
+          <button
+            type="button"
+            className="first-use-help-btn"
+            data-testid="replay-help-tips-btn"
+            onClick={() => setShowTips(true)}
+            title="First-use guide (?)"
+            aria-label="First-use guide"
+          >
+            ?
           </button>
         </div>
       </div>
@@ -623,6 +640,13 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </div>
         </div>
       </div>
+
+      <FirstUseTipOverlay
+        screenId="replay"
+        steps={SCREEN_DEFAULT_STEPS.replay}
+        active={showTips}
+        onDismiss={() => setShowTips(false)}
+      />
     </div>
   );
 };

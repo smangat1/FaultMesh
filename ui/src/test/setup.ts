@@ -1,6 +1,32 @@
 // Test setup file for Vitest
-import { vi, afterEach } from 'vitest';
+import { vi, afterEach, beforeEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
+
+// Pre-seed first-use tips seen-state so existing tests mounting screens do not unexpectedly show tip overlays
+const seedTips = () => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(
+        'faultmesh:first_use_tips:seen',
+        JSON.stringify({ home: true, entrance: true, replay: true })
+      );
+    }
+  } catch {
+    // Ignore
+  }
+};
+
+if (typeof Storage !== 'undefined') {
+  const origClear = Storage.prototype.clear;
+  Storage.prototype.clear = function (this: Storage) {
+    origClear.call(this);
+    seedTips();
+  };
+}
+
+beforeEach(() => {
+  seedTips();
+});
 
 // Automatically clean up DOM after each test
 afterEach(() => {
@@ -69,4 +95,9 @@ if (typeof window !== 'undefined' && !window.ResizeObserver) {
     unobserve() {}
     disconnect() {}
   };
+}
+
+// Polyfill PointerEvent for jsdom
+if (typeof window !== 'undefined' && !(window as any).PointerEvent) {
+  (window as any).PointerEvent = window.MouseEvent;
 }

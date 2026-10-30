@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { FaultMeshAdapter } from './adapter';
 import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter, ReplayAdapter } from './adapter';
 import { validateReplayExport } from './replay/validators';
+import type { HistoryRoot, HistorySession } from './spectate/types';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header, type WorkspaceActiveView } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -119,6 +120,29 @@ export const App: React.FC<AppProps> = ({
   const [isExplanationExpanded, setIsExplanationExpanded] = useState<boolean>(false);
   const [, setAgentLogs] = useState<AgentLogEntry[]>([]);
   const agentTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cached history discovery & folder expansion state to preserve home view on return
+  const [cachedHistoryRoots, setCachedHistoryRoots] = useState<HistoryRoot[] | null>(null);
+  const [cachedHistorySessions, setCachedHistorySessions] = useState<HistorySession[] | null>(null);
+  const [expandedFolderKeys, setExpandedFolderKeys] = useState<Set<string>>(() => new Set());
+  const [selectedHistoryTool, setSelectedHistoryTool] = useState<string | null>(null);
+
+  const handleToggleFolderExpanded = useCallback((folderKey: string) => {
+    setExpandedFolderKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderKey)) {
+        next.delete(folderKey);
+      } else {
+        next.add(folderKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleCacheHistory = useCallback((roots: HistoryRoot[], sessions: HistorySession[]) => {
+    setCachedHistoryRoots(roots);
+    setCachedHistorySessions(sessions);
+  }, []);
 
   // Request cancellation token / sequence counter to guard against async race conditions
   const requestSeq = useRef<number>(0);
@@ -436,47 +460,47 @@ export const App: React.FC<AppProps> = ({
     }
   };
 
+  const loadValidatedRecording = useCallback(
+    async (result: { name: string; text: string; size: number }) => {
+      let json: Record<string, unknown>;
+      try {
+        json = JSON.parse(result.text);
+      } catch (err) {
+        throw new Error(`Malformed JSON in "${result.name}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+      const val = validateReplayExport(json, result.size, result.name);
+      if (!val.success) {
+        throw new Error(`Replay validation failed for "${result.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
+      }
+      const replayAdapter = new ReplayAdapter(val.data!, val.origin);
+      liveAdapterRef.current = null;
+      setLiveChangedNodeIds([]);
+      setActiveAdapter(replayAdapter);
+      setPinnedSymbols([]);
+      setSelectedNodeId(null);
+      setSelectedFile(null);
+      setSelectedTestId(null);
+      setIsAgentActive(false);
+
+      const loadedRuns = await replayAdapter.getRuns();
+      setRuns(loadedRuns);
+      if (loadedRuns.length > 0) {
+        setActiveRunId(loadedRuns[0].id);
+      }
+      setCurrentScreen('workspace');
+      setActiveView('replay');
+    },
+    []
+  );
+
   const handleOpenRecordingDialog = async () => {
     setImportError(null);
     try {
-      const bridge = (
-        window as unknown as {
-          faultmeshSpectate?: {
-            openRecording?: () => Promise<{ name: string; text: string; size: number } | null>;
-          };
-        }
-      ).faultmeshSpectate;
-
+      const bridge = window.faultmeshSpectate;
       if (bridge?.openRecording) {
         const result = await bridge.openRecording();
         if (!result) return;
-        let json: Record<string, unknown>;
-        try {
-          json = JSON.parse(result.text);
-        } catch (err) {
-          throw new Error(`Malformed JSON in "${result.name}": ${err instanceof Error ? err.message : String(err)}`);
-        }
-        const val = validateReplayExport(json, result.size, result.name);
-        if (!val.success) {
-          throw new Error(`Replay validation failed for "${result.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
-        }
-        const replayAdapter = new ReplayAdapter(val.data!, val.origin);
-        liveAdapterRef.current = null;
-        setLiveChangedNodeIds([]);
-        setActiveAdapter(replayAdapter);
-        setPinnedSymbols([]);
-        setSelectedNodeId(null);
-        setSelectedFile(null);
-        setSelectedTestId(null);
-        setIsAgentActive(false);
-
-        const loadedRuns = await replayAdapter.getRuns();
-        setRuns(loadedRuns);
-        if (loadedRuns.length > 0) {
-          setActiveRunId(loadedRuns[0].id);
-        }
-        setCurrentScreen('workspace');
-        setActiveView('replay');
+        await loadValidatedRecording(result);
       } else {
         recordingFileInputRef.current?.click();
       }
@@ -484,6 +508,19 @@ export const App: React.FC<AppProps> = ({
       setImportError(err instanceof Error ? err.message : String(err));
     }
   };
+
+  const handleImportSession = useCallback(
+    async (sessionId: string, tool: string) => {
+      setSelectedHistoryTool(tool);
+      const bridge = window.faultmeshSpectate;
+      if (!bridge?.importSession) {
+        throw new Error('Desktop bridge is not available for session import');
+      }
+      const result = await bridge.importSession(sessionId, tool);
+      await loadValidatedRecording(result);
+    },
+    [loadValidatedRecording]
+  );
 
   const handleResetToSampleDemo = useCallback(() => {
     liveAdapterRef.current = null;
@@ -826,11 +863,19 @@ export const App: React.FC<AppProps> = ({
           <StartupScreen
             onSelectProject={spectate.startWatching}
             onOpenRecording={handleOpenRecordingDialog}
+            onImportSession={handleImportSession}
             isBusy={spectate.busy}
             hasBridge={spectate.hasBridge}
             statusNote={spectate.statusNote}
             activeRun={activeRun}
             onReturnToWorkspace={() => setCurrentScreen(activeRun?.isLive ? 'entrance' : 'workspace')}
+            cachedRoots={cachedHistoryRoots}
+            cachedSessions={cachedHistorySessions}
+            onCacheHistory={handleCacheHistory}
+            expandedFolderKeys={expandedFolderKeys}
+            onToggleFolderExpanded={handleToggleFolderExpanded}
+            selectedTool={selectedHistoryTool}
+            onSelectTool={setSelectedHistoryTool}
           />
         )
       ) : currentScreen === 'entrance' ? (

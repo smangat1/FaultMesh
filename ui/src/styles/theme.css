@@ -458,6 +458,161 @@ button:disabled {
   }
 }
 
+/* First-Use Tutorial Tips Spotlight Overlay */
+.first-use-tips-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.first-use-spotlight-svg {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.first-use-spotlight-ring {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid var(--accent, #3b82f6);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.45);
+  box-sizing: border-box;
+  transition: all 180ms ease-out;
+}
+
+.first-use-tip-card {
+  position: fixed;
+  width: 320px;
+  background-color: var(--bg-surface, #151922);
+  border: 1px solid var(--border-default, #262f3f);
+  border-radius: var(--radius-md, 6px);
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  pointer-events: auto;
+  box-sizing: border-box;
+  z-index: 10000;
+  transition: top 180ms ease-out, left 180ms ease-out;
+}
+
+.first-use-tip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.first-use-tip-badge {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent, #3b82f6);
+  background-color: var(--accent-muted, rgba(59, 130, 246, 0.15));
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.first-use-tip-skip-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #64748b);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 120ms ease;
+}
+
+.first-use-tip-skip-btn:hover {
+  color: var(--text-primary, #f1f5f9);
+}
+
+.first-use-tip-content {
+  margin-bottom: 12px;
+}
+
+.first-use-tip-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #f1f5f9);
+  margin-bottom: 4px;
+}
+
+.first-use-tip-desc {
+  font-size: 12px;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.4;
+}
+
+.first-use-tip-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.first-use-tip-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.first-use-tip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--border-default, #262f3f);
+  transition: background-color 150ms ease;
+}
+
+.first-use-tip-dot.active {
+  background-color: var(--accent, #3b82f6);
+  transform: scale(1.2);
+}
+
+.first-use-tip-next-btn {
+  background-color: var(--accent, #3b82f6);
+  border: 1px solid transparent;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.first-use-tip-next-btn:hover {
+  background-color: #2563eb;
+}
+
+/* Replay Help "?" Button Styling */
+.first-use-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background-color: var(--bg-surface, #151922);
+  border: 1px solid var(--border-default, #262f3f);
+  color: var(--text-secondary, #94a3b8);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 120ms ease;
+  user-select: none;
+}
+
+.first-use-help-btn:hover {
+  color: var(--text-primary, #f1f5f9);
+  border-color: var(--accent, #3b82f6);
+  background-color: var(--accent-muted, rgba(59, 130, 246, 0.15));
+}
+
 /* Reduced motion accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {

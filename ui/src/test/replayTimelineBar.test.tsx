@@ -683,4 +683,230 @@ describe('ReplayTimelineBar Component', () => {
     expect(testMarkers.some((m) => m.classList.contains('test-fail'))).toBe(true);
     expect(testMarkers.some((m) => m.classList.contains('test-pass'))).toBe(true);
   });
+
+  describe('Phase 2 Timeline Restyle Spec', () => {
+    it('end circles show only clock times with no "start" or "end" text', () => {
+      const timeline = createMockTimeline();
+      const onSelect = vi.fn();
+
+      render(
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={1}
+          onSelectSequence={onSelect}
+          options={{ timeZone: 'UTC' }}
+        />
+      );
+
+      // Start circle at 0%
+      const circleStart = screen.getByTestId('timeline-circle-start');
+      expect(circleStart).toBeDefined();
+      expect(circleStart.style.left).toBe('0%');
+
+      // End circle at 100%
+      const circleEnd = screen.getByTestId('timeline-circle-end');
+      expect(circleEnd).toBeDefined();
+      expect(circleEnd.style.left).toBe('100%');
+
+      // Clock times under circles
+      const startExtent = screen.getByTestId('timeline-extent-start');
+      const endExtent = screen.getByTestId('timeline-extent-end');
+
+      expect(startExtent.textContent).toMatch(/\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)/i);
+      expect(endExtent.textContent).toMatch(/\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)/i);
+
+      // Strictly no "start" or "end" text
+      expect(startExtent.textContent?.toLowerCase()).not.toContain('start');
+      expect(endExtent.textContent?.toLowerCase()).not.toContain('end');
+    });
+
+    it('every snap point has a subtle tick on the line', () => {
+      const timeline = createMockTimeline();
+      const onSelect = vi.fn();
+
+      render(
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={2}
+          onSelectSequence={onSelect}
+        />
+      );
+
+      const ticks = screen.getAllByTestId('timeline-step-tick');
+      expect(ticks).toHaveLength(timeline.length);
+      // step 2 tick is selected
+      expect(ticks[1].classList.contains('tick-selected')).toBe(true);
+      expect(ticks[0].classList.contains('tick-selected')).toBe(false);
+    });
+
+    it('floating clock-time label appears under cursor on hover, drag, and keyboard focus', () => {
+      const timeline = createMockTimeline();
+      const onSelect = vi.fn();
+
+      render(
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={1}
+          onSelectSequence={onSelect}
+          options={{ timeZone: 'UTC' }}
+        />
+      );
+
+      const track = screen.getByTestId('timeline-track-lane');
+      const bar = screen.getByTestId('replay-timeline-bar');
+
+      vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 100,
+        right: 1000,
+        bottom: 132,
+        width: 1000,
+        height: 32,
+        x: 0,
+        y: 100,
+        toJSON: () => {},
+      });
+
+      // 1. At rest, cursor label is not shown
+      expect(screen.queryByTestId('timeline-cursor-label')).toBeNull();
+
+      // 2. Hover over track -> cursor label appears showing clock time
+      fireEvent.pointerMove(track, { clientX: 250 });
+      let cursorLabel = screen.getByTestId('timeline-cursor-label');
+      expect(cursorLabel).toBeDefined();
+      expect(cursorLabel.textContent).toMatch(/\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)/i);
+
+      // Pointer leave -> cursor label hidden
+      fireEvent.pointerLeave(track);
+      expect(screen.queryByTestId('timeline-cursor-label')).toBeNull();
+
+      // 3. Pointer down & move (drag) -> cursor label visible
+      fireEvent.pointerDown(track, { clientX: 10, button: 0 });
+      fireEvent.pointerMove(track, { clientX: 500 });
+      cursorLabel = screen.getByTestId('timeline-cursor-label');
+      expect(cursorLabel).toBeDefined();
+      expect(cursorLabel.textContent).toMatch(/\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)/i);
+      fireEvent.pointerUp(track, { clientX: 500 });
+
+      // 4. Keyboard focus on slider -> cursor label shows current step's clock time
+      fireEvent.focus(bar);
+      cursorLabel = screen.getByTestId('timeline-cursor-label');
+      expect(cursorLabel).toBeDefined();
+      expect(cursorLabel.textContent).toMatch(/\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)/i);
+
+      fireEvent.blur(bar);
+      expect(screen.queryByTestId('timeline-cursor-label')).toBeNull();
+    });
+
+    it('drag follows pointer continuously, selected step strictly updates only on release, easing to checkpoint', () => {
+      const timeline = createMockTimeline();
+      const onSelect = vi.fn();
+
+      render(
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={1}
+          onSelectSequence={onSelect}
+        />
+      );
+
+      const track = screen.getByTestId('timeline-track-lane');
+      const thumb = screen.getByTestId('timeline-thumb');
+
+      vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 100,
+        right: 1000,
+        bottom: 132,
+        width: 1000,
+        height: 32,
+        x: 0,
+        y: 100,
+        toJSON: () => {},
+      });
+
+      // Pointer down at x=0 (step 1)
+      fireEvent.pointerDown(track, { clientX: 0, button: 0 });
+      expect(onSelect).not.toHaveBeenCalled();
+
+      // Move to x=500 (midway)
+      fireEvent.pointerMove(track, { clientX: 500 });
+      // Thumb left tracks continuous ratio (50%)
+      expect(thumb.style.left).toBe('50%');
+      // onSelect still NOT called during drag
+      expect(onSelect).not.toHaveBeenCalled();
+
+      // Move to x=950 (near end)
+      fireEvent.pointerMove(track, { clientX: 950 });
+      expect(thumb.style.left).toBe('95%');
+      expect(onSelect).not.toHaveBeenCalled();
+
+      // Release at x=950 -> onSelect called once on release
+      fireEvent.pointerUp(track, { clientX: 950 });
+      expect(onSelect).toHaveBeenCalledTimes(1);
+      expect(onSelect).toHaveBeenCalledWith(7);
+    });
+
+    it('clears hovered step upon drag release so cursor label does not show stale position', () => {
+      const timeline = createMockTimeline();
+      const onSelect = vi.fn();
+
+      render(
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={1}
+          onSelectSequence={onSelect}
+          options={{ timeZone: 'UTC' }}
+        />
+      );
+
+      const track = screen.getByTestId('timeline-track-lane');
+
+      vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 100,
+        right: 1000,
+        bottom: 132,
+        width: 1000,
+        height: 32,
+        x: 0,
+        y: 100,
+        toJSON: () => {},
+      });
+
+      // Drag from start to clientX = 500
+      fireEvent.pointerDown(track, { clientX: 0, button: 0 });
+      fireEvent.pointerMove(track, { clientX: 500 });
+      expect(screen.getByTestId('timeline-cursor-label')).toBeDefined();
+
+      // Release at 500
+      fireEvent.pointerUp(track, { clientX: 500 });
+
+      // Cursor label is cleared on release (not showing stale position)
+      expect(screen.queryByTestId('timeline-cursor-label')).toBeNull();
+    });
+
+    it('reduced motion and keyboard navigation work without regressions', () => {
+      const timeline = createMockTimeline();
+      const onSelect = vi.fn();
+
+      render(
+        <ReplayTimelineBar
+          timeline={timeline}
+          currentSequence={3}
+          onSelectSequence={onSelect}
+        />
+      );
+
+      const bar = screen.getByTestId('replay-timeline-bar');
+
+      // Keyboard navigation ArrowLeft -> 2
+      fireEvent.keyDown(bar, { key: 'ArrowLeft' });
+      expect(onSelect).toHaveBeenCalledWith(2);
+
+      // Keyboard navigation ArrowRight -> 4
+      fireEvent.keyDown(bar, { key: 'ArrowRight' });
+      expect(onSelect).toHaveBeenCalledWith(4);
+    });
+  });
 });
