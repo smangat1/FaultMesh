@@ -11,11 +11,17 @@ from faultmesh.replay.claude_history import parse_claude_history
 from faultmesh.replay.codex_history import parse_codex_history
 from faultmesh.replay.history_discovery import (
     DEFAULT_MAX_SOURCE_BYTES,
+    HistoryState,
     HistoryTool,
+    _read_catalog,
+    default_codex_catalog_path,
+    default_codex_history_root,
+    default_codex_thread_history_path,
     discover_history,
     find_history_source,
 )
 from faultmesh.replay.models import ReplayExport, ReplayRecord, ReplaySession, TimelineEntry
+from faultmesh.replay.thread_history import ThreadHistoryError, ThreadHistoryReader
 from faultmesh.replay.thread_history_import import parse_thread_history_thread
 
 HISTORY_IMPORT_LIMITATIONS = [
@@ -25,6 +31,20 @@ HISTORY_IMPORT_LIMITATIONS = [
     "Patch and command evidence does not prove resulting file state, causality, or correctness.",
     "Unsupported versions and corrupt source records remain visible as unsupported or gap steps.",
 ]
+
+
+class HistorySourcesMissingError(KeyError):
+    """A Codex session has neither a rollout file nor projected thread history."""
+
+
+BothHistorySourcesMissingError = HistorySourcesMissingError
+
+
+def _missing_sources_error(session_id: str) -> HistorySourcesMissingError:
+    return HistorySourcesMissingError(
+        f"unknown history session: Codex session {session_id!r} is missing "
+        "from both rollout history and the thread history projection"
+    )
 
 
 class HistorySmokeSummary(BaseModel):
@@ -106,6 +126,8 @@ def import_history_session(
     max_source_bytes: int = DEFAULT_MAX_SOURCE_BYTES,
     zstd_executable: Path | str | None = None,
     allow_zstd_lookup: bool = True,
+    thread_history_path: Path | None = None,
+    catalog_path: Path | None = None,
 ) -> ReplayExport:
     """Parse and validate one selected session; listing alone never calls this function."""
     discovered = discover_history(
@@ -114,6 +136,8 @@ def import_history_session(
         max_source_bytes=max_source_bytes,
         zstd_executable=zstd_executable,
         allow_zstd_lookup=allow_zstd_lookup,
+        thread_history_path=thread_history_path,
+        catalog_path=catalog_path,
     )
     indexed = next(
         (
@@ -123,15 +147,79 @@ def import_history_session(
         ),
         None,
     )
-    source_tool, source = find_history_source(
-        session_id,
-        tool=tool,
-        codex_root=codex_root,
-        claude_root=claude_root,
-        max_source_bytes=max_source_bytes,
-        zstd_executable=zstd_executable,
-        allow_zstd_lookup=allow_zstd_lookup,
+    projection_only = (
+        indexed is not None
+        and indexed.tool == "codex"
+        and indexed.unsupported_reason == "rollout_file_missing"
     )
+    source_tool: HistoryTool | None = None
+    source: Path | None = None
+    if not projection_only:
+        try:
+            source_tool, source = find_history_source(
+                session_id,
+                tool=tool,
+                codex_root=codex_root,
+                claude_root=claude_root,
+                max_source_bytes=max_source_bytes,
+                zstd_executable=zstd_executable,
+                allow_zstd_lookup=allow_zstd_lookup,
+            )
+        except KeyError:
+            if tool == "claude_code" or (indexed is not None and indexed.tool == "claude_code"):
+                raise
+    if source_tool is None or source is None:
+        active_codex_root = codex_root or default_codex_history_root()
+        resolved_catalog_path = (
+            catalog_path
+            if catalog_path is not None
+            else (
+                active_codex_root.parent / "state_5.sqlite"
+                if codex_root is not None
+                else default_codex_catalog_path()
+            )
+        )
+        resolved_projection_path = (
+            thread_history_path
+            if thread_history_path is not None
+            else (
+                active_codex_root.parent / "thread_history_1.sqlite"
+                if codex_root is not None
+                else default_codex_thread_history_path()
+            )
+        )
+        catalog_threads, _catalog_status, _catalog_message = _read_catalog(resolved_catalog_path)
+        catalog_thread = next(
+            (thread for thread in catalog_threads if thread.session_id == session_id), None
+        )
+        try:
+            with ThreadHistoryReader(resolved_projection_path) as reader:
+                if not reader.has_thread(session_id):
+                    raise _missing_sources_error(session_id)
+        except (OSError, ThreadHistoryError) as error:
+            raise _missing_sources_error(session_id) from error
+
+        exported = import_thread_history_session(
+            resolved_projection_path,
+            session_id,
+            cwd=catalog_thread.cwd if catalog_thread is not None else None,
+            title=catalog_thread.title if catalog_thread is not None else None,
+            history_state=(
+                indexed.history_state
+                if indexed is not None
+                else (
+                    "archived"
+                    if catalog_thread is not None and catalog_thread.archived
+                    else "active"
+                )
+            ),
+        )
+        if indexed is not None and indexed.source_title is not None:
+            updated_session = exported.session.model_copy(
+                update={"source_title": indexed.source_title}
+            )
+            return _build_export(updated_session, tuple(exported.records))
+        return exported
     if source_tool == "codex":
         codex_parsed = parse_codex_history(
             source,
@@ -156,10 +244,14 @@ def import_thread_history_session(
     *,
     cwd: str | None = None,
     title: str | None = None,
+    history_state: HistoryState | None = None,
 ) -> ReplayExport:
     """Import one projected Codex thread when its rollout file is unavailable."""
     parsed = parse_thread_history_thread(database, thread_id, cwd=cwd, title=title)
-    return _build_export(parsed.session, parsed.records)
+    session = parsed.session
+    if history_state is not None:
+        session = session.model_copy(update={"history_state": history_state})
+    return _build_export(session, parsed.records)
 
 
 def real_history_smoke_summary(

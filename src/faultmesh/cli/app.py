@@ -36,7 +36,13 @@ from faultmesh.replay.adapter import capture_hook_event
 from faultmesh.replay.chapters import ChapterProposalBatch, propose_chapters
 from faultmesh.replay.claims import ClaimBatch, ClaimNarrator, build_evidence_packet
 from faultmesh.replay.evaluation import EvaluationInput, EvaluationReport, evaluate_file
-from faultmesh.replay.history_discovery import HistoryTool, HistoryWatcher, discover_history
+from faultmesh.replay.history_discovery import (
+    HistoryTool,
+    HistoryWatcher,
+    default_codex_catalog_path,
+    default_codex_thread_history_path,
+    discover_history,
+)
 from faultmesh.replay.history_import import import_history_session
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
@@ -475,6 +481,22 @@ def replay_history_list(
         typer.Option(file_okay=False, resolve_path=True, help="Override the Claude history root."),
     ] = None,
     max_source_bytes: Annotated[int, typer.Option(min=1)] = 64 * 1024 * 1024,
+    thread_history: Annotated[
+        Path | None,
+        typer.Option(
+            dir_okay=False,
+            resolve_path=True,
+            help="Override projected thread-history SQLite path.",
+        ),
+    ] = None,
+    catalog: Annotated[
+        Path | None,
+        typer.Option(
+            dir_okay=False,
+            resolve_path=True,
+            help="Override Codex state_5.sqlite catalog path.",
+        ),
+    ] = None,
 ) -> None:
     """List a redacted metadata index from the two local agent-history dotfolders."""
     try:
@@ -482,6 +504,8 @@ def replay_history_list(
             codex_root=codex_root,
             claude_root=claude_root,
             max_source_bytes=max_source_bytes,
+            thread_history_path=thread_history,
+            catalog_path=catalog,
         )
     except Exception as exc:
         typer.secho(f"FaultMesh history discovery failed: {exc}", fg=typer.colors.RED, err=True)
@@ -539,6 +563,22 @@ def replay_history_import(
         typer.Option(file_okay=False, resolve_path=True, help="Override the Claude history root."),
     ] = None,
     max_source_bytes: Annotated[int, typer.Option(min=1)] = 64 * 1024 * 1024,
+    thread_history: Annotated[
+        Path | None,
+        typer.Option(
+            dir_okay=False,
+            resolve_path=True,
+            help="Override projected thread-history SQLite path.",
+        ),
+    ] = None,
+    catalog: Annotated[
+        Path | None,
+        typer.Option(
+            dir_okay=False,
+            resolve_path=True,
+            help="Override Codex state_5.sqlite catalog path.",
+        ),
+    ] = None,
 ) -> None:
     """Import one selected local history session without reconstructing file bytes."""
     if tool not in {None, "codex", "claude_code"}:
@@ -550,7 +590,10 @@ def replay_history_import(
             codex_root=codex_root,
             claude_root=claude_root,
             max_source_bytes=max_source_bytes,
+            thread_history_path=thread_history,
+            catalog_path=catalog,
         )
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(exported.model_dump_json(indent=2) + "\n", encoding="utf-8")
     except Exception as exc:
         typer.secho(f"FaultMesh history import failed: {exc}", fg=typer.colors.RED, err=True)
@@ -571,17 +614,47 @@ def replay_history_import(
 @app.command("replay-thread-history-smoke")
 def replay_thread_history_smoke(
     database: Annotated[
-        Path,
+        Path | None,
         typer.Argument(
             dir_okay=False,
             resolve_path=True,
             help="Explicit projected thread-history SQLite database path.",
         ),
-    ],
+    ] = None,
+    catalog: Annotated[
+        Path | None,
+        typer.Option(
+            dir_okay=False,
+            resolve_path=True,
+            help="Optional catalog SQLite database path to compare.",
+        ),
+    ] = None,
 ) -> None:
     """Print aggregate-only diagnostics from projected Codex thread history."""
+    if database is None:
+        target_database = default_codex_thread_history_path()
+        target_catalog = (
+            catalog
+            if catalog is not None
+            else (
+                default_codex_catalog_path()
+                if default_codex_catalog_path().is_file()
+                else None
+            )
+        )
+    else:
+        target_database = database
+        target_catalog = (
+            catalog
+            if catalog is not None
+            else (
+                database.parent / "state_5.sqlite"
+                if (database.parent / "state_5.sqlite").is_file()
+                else None
+            )
+        )
     try:
-        summary = thread_history_smoke_summary(database)
+        summary = thread_history_smoke_summary(target_database, catalog_path=target_catalog)
     except Exception as exc:
         typer.secho(f"FaultMesh thread history smoke failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc

@@ -33,6 +33,7 @@ from faultmesh.replay.thread_history import (
     ThreadHistoryReader,
     ThreadHistoryTurn,
     ThreadHistoryTurnGap,
+    thread_history_item_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,11 @@ class ThreadHistorySmokeSummary(BaseModel):
     partial_thread_count: int = Field(ge=0)
     created_at_ms_min: int | None = None
     created_at_ms_max: int | None = None
+    catalog_threads: int | None = None
+    projection_threads: int | None = None
+    overlap_threads: int | None = None
+    missing_rollout_catalog_threads: int | None = None
+    recovered_missing_rollout_threads: int | None = None
 
 
 FinalPhaseMethod = Literal[
@@ -263,22 +269,6 @@ def _record(
     )
 
 
-def _content_text(payload: dict[str, object]) -> str | None:
-    content = payload.get("content")
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return None
-    parts = [
-        text
-        for item in content
-        if isinstance(item, dict)
-        for text in [item.get("text")]
-        if isinstance(text, str)
-    ]
-    return "\n".join(parts) if parts else None
-
-
 def _command_text(payload: dict[str, object]) -> str | None:
     command = payload.get("command")
     if isinstance(command, str):
@@ -392,7 +382,7 @@ def _map_item(
         return None
 
     if kind == "prompt":
-        clean, types, truncated = sanitizer.text(_content_text(payload))
+        clean, types, truncated = sanitizer.text(thread_history_item_text(payload))
         if clean is None:
             return None
         return _record(
@@ -883,7 +873,11 @@ def parse_thread_history_thread(
     )
 
 
-def thread_history_smoke_summary(database: Path | str) -> ThreadHistorySmokeSummary:
+def thread_history_smoke_summary(
+    database: Path | str,
+    *,
+    catalog_path: Path | str | None = None,
+) -> ThreadHistorySmokeSummary:
     """Return aggregate-only real-database diagnostics without exposing row content."""
     with ThreadHistoryReader(database) as reader:
         items = list(reader.iter_items())
@@ -892,6 +886,31 @@ def thread_history_smoke_summary(database: Path | str) -> ThreadHistorySmokeSumm
     item_counts = Counter(item.item_type or _UNKNOWN_TYPE for item in items)
     threads = {item.thread_id for item in items} | {turn.thread_id for turn in turns}
     created_values = [item.created_at_ms for item in items if item.created_at_ms is not None]
+
+    catalog_threads_count: int | None = None
+    projection_threads_count: int | None = None
+    overlap_count: int | None = None
+    missing_rollout_catalog_threads: int | None = None
+    recovered_missing_rollout_threads: int | None = None
+
+    if catalog_path is not None:
+        cat_file = Path(catalog_path).expanduser().resolve()
+        if cat_file.is_file():
+            from faultmesh.replay.history_discovery import _read_catalog
+
+            catalog_threads, _status, _msg = _read_catalog(cat_file)
+            catalog_threads_count = len(catalog_threads)
+            projection_threads_count = len(threads)
+            cat_ids = {t.session_id for t in catalog_threads}
+            overlap_count = len(cat_ids & threads)
+            missing = [
+                t
+                for t in catalog_threads
+                if not t.rollout_path or not Path(t.rollout_path).expanduser().is_file()
+            ]
+            missing_rollout_catalog_threads = len(missing)
+            recovered_missing_rollout_threads = sum(1 for t in missing if t.session_id in threads)
+
     return ThreadHistorySmokeSummary(
         threads=len(threads),
         turns=len(turns),
@@ -903,4 +922,9 @@ def thread_history_smoke_summary(database: Path | str) -> ThreadHistorySmokeSumm
         partial_thread_count=len({gap.thread_id for gap in gaps}),
         created_at_ms_min=min(created_values) if created_values else None,
         created_at_ms_max=max(created_values) if created_values else None,
+        catalog_threads=catalog_threads_count,
+        projection_threads=projection_threads_count,
+        overlap_threads=overlap_count,
+        missing_rollout_catalog_threads=missing_rollout_catalog_threads,
+        recovered_missing_rollout_threads=recovered_missing_rollout_threads,
     )

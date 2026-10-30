@@ -10,6 +10,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
 
+from faultmesh.replay.history_context import strip_injected_context
+
 _REQUIRED_ITEM_COLUMNS = frozenset(
     {"thread_id", "turn_id", "item_id", "rollout_ordinal", "item_json"}
 )
@@ -151,6 +153,24 @@ class ThreadHistoryTurnGap:
     rollout_ordinal: int
 
 
+@dataclass(frozen=True)
+class ThreadHistoryThreadFacts:
+    """Bounded discovery facts for one thread, derived through indexed lookups."""
+
+    thread_id: str
+    item_count: int
+    turn_count: int
+    user_message_count: int
+    first_user_message: str | None
+    injected_context_messages: int
+    created_at_ms_min: int | None
+    created_at_ms_max: int | None
+
+    @property
+    def exists(self) -> bool:
+        return self.item_count > 0 or self.turn_count > 0
+
+
 def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
@@ -186,6 +206,23 @@ def _decode_item_json(value: object) -> tuple[dict[str, object] | None, ItemJson
 
 def _selected_column(columns: frozenset[str], name: str) -> str:
     return f'"{name}"' if name in columns else f'NULL AS "{name}"'
+
+
+def thread_history_item_text(payload: dict[str, object]) -> str | None:
+    """Join projected text content without applying presentation or redaction policy."""
+    content = payload.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return None
+    parts = [
+        text
+        for item in content
+        if isinstance(item, dict)
+        for text in [item.get("text")]
+        if isinstance(text, str)
+    ]
+    return "\n".join(parts) if parts else None
 
 
 class ThreadHistoryReader:
@@ -434,3 +471,49 @@ class ThreadHistoryReader:
                     turn_id=turn.turn_id,
                     rollout_ordinal=turn.rollout_ordinal,
                 )
+
+    def thread_facts(self, thread_id: str) -> ThreadHistoryThreadFacts:
+        """Summarize one thread without mapping or retaining non-prompt item content."""
+        items = list(self.iter_items(thread_id=thread_id))
+        turns = list(self.iter_turns(thread_id=thread_id))
+        user_message_count = 0
+        first_user_message: str | None = None
+        injected_context_messages = 0
+        timestamp_values: list[int] = []
+        for item in items:
+            timestamp_values.extend(
+                value
+                for value in (item.created_at_ms, item.started_at_ms, item.completed_at_ms)
+                if value is not None
+            )
+            if item.item_type != "userMessage":
+                continue
+            user_message_count += 1
+            if item.item_json is None:
+                continue
+            raw_text = thread_history_item_text(item.item_json)
+            if raw_text is None:
+                continue
+            prompt, injected = strip_injected_context(raw_text)
+            injected_context_messages += injected
+            if first_user_message is None and prompt is not None:
+                first_user_message = prompt
+        for turn in turns:
+            for value in (turn.started_at, turn.completed_at):
+                if value is not None:
+                    ms = value if value > 10_000_000_000 else value * 1000
+                    timestamp_values.append(ms)
+        return ThreadHistoryThreadFacts(
+            thread_id=thread_id,
+            item_count=len(items),
+            turn_count=len(turns),
+            user_message_count=user_message_count,
+            first_user_message=first_user_message,
+            injected_context_messages=injected_context_messages,
+            created_at_ms_min=min(timestamp_values) if timestamp_values else None,
+            created_at_ms_max=max(timestamp_values) if timestamp_values else None,
+        )
+
+    def has_thread(self, thread_id: str) -> bool:
+        """Return True if thread_id has projected items or turns."""
+        return self.thread_facts(thread_id).exists
