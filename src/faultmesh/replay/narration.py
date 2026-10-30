@@ -212,12 +212,18 @@ def suggest_likely_reason(
     )
 
 
+class ModelExplanation(StrictModel):
+    text: str = Field(min_length=1, max_length=1_000)
+    label: Literal["model interpretation"] = "model interpretation"
+
+
 class StepNarration(StrictModel):
     sequence: int = Field(ge=1)
     packet: EvidencePacket
     claims: ClaimRunRecord
     reason: ReasonRunRecord | None = None
     summary_audit: AgentSummaryAudit | None = None
+    explanation: ModelExplanation | None = None
 
 
 class SessionSummary(StrictModel):

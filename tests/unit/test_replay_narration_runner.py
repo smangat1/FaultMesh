@@ -60,6 +60,8 @@ class RecordingBackend:
                     "Unknown evidence remains unknown.",
                 ]
             }
+        elif "text" in properties:
+            value = {"text": "This step records a synthetic change."}
         else:
             value = {}
         return BackendResult(

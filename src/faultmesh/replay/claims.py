@@ -178,6 +178,9 @@ class ClaimVerdict(StrictModel):
     reason_code: str
     reason: str
     evidence_refs: list[str]
+    evidence_source: Literal[
+        "rebuilt_file", "transcript_span", "command_record"
+    ] | None = None
     checker_version: Literal["replay-checker-1.0"] = "replay-checker-1.0"
 
 
@@ -579,6 +582,23 @@ def _verdict(
 
 class ClaimChecker:
     def check(self, packet: EvidencePacket, claim: TypedClaim) -> ClaimVerdict:
+        verdict = self._check(packet, claim)
+        if verdict.evidence_source is not None:
+            return verdict
+        source_by_id = {source.id: source for source in packet.sources}
+        referenced = [source_by_id[item] for item in claim.evidence_refs if item in source_by_id]
+        evidence_source: Literal[
+            "rebuilt_file", "transcript_span", "command_record"
+        ] | None = None
+        if any(source.kind in {"file", "manifest", "ast"} for source in referenced):
+            evidence_source = "rebuilt_file"
+        elif any(source.kind == "captured_text" for source in referenced):
+            evidence_source = "transcript_span"
+        elif any(source.kind in {"record", "test"} for source in referenced):
+            evidence_source = "command_record"
+        return verdict.model_copy(update={"evidence_source": evidence_source})
+
+    def _check(self, packet: EvidencePacket, claim: TypedClaim) -> ClaimVerdict:
         if packet_hash(packet) != packet.evidence_hash:
             return _unknown(
                 claim,
@@ -634,6 +654,12 @@ class ClaimChecker:
                     claim,
                     "derived_file_state_unavailable",
                     "The recorded patch did not yield complete before and after file state.",
+                )
+            if not packet.record_complete and file_state.derived_from != "recorded_patch":
+                return _unknown(
+                    claim,
+                    "incomplete_record",
+                    "The selected manifest record is incomplete.",
                 )
             if file_state.change == "unchanged":
                 return _verdict(
