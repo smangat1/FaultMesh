@@ -928,16 +928,7 @@ class ClaimNarrator:
         self.cache = cache if cache is not None else {}
 
     def run(self, packet: EvidencePacket) -> ClaimRunRecord:
-        schema_hash = _canonical_hash(ClaimBatch.model_json_schema())
-        cache_key = _canonical_hash(
-            {
-                "evidence_hash": packet.evidence_hash,
-                "model_config": self.model_config_id,
-                "prompt": PROMPT_VERSION,
-                "schema": schema_hash,
-                "checker": CHECKER_VERSION,
-            }
-        )
+        cache_key = claim_cache_key(packet, self.model_config_id)
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
@@ -1014,3 +1005,17 @@ class ClaimNarrator:
         )
         self.cache[cache_key] = record
         return record
+
+
+def claim_cache_key(packet: EvidencePacket, model_config_id: str) -> str:
+    """Return the stable cache identity used by ClaimNarrator for one packet."""
+    schema_hash = _canonical_hash(ClaimBatch.model_json_schema())
+    return _canonical_hash(
+        {
+            "evidence_hash": packet.evidence_hash,
+            "model_config": model_config_id,
+            "prompt": PROMPT_VERSION,
+            "schema": schema_hash,
+            "checker": CHECKER_VERSION,
+        }
+    )

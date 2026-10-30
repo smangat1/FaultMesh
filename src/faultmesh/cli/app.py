@@ -33,8 +33,8 @@ from faultmesh.project_runner import (
 )
 from faultmesh.project_runner.replay import open_run_store
 from faultmesh.replay.adapter import capture_hook_event
-from faultmesh.replay.chapters import ChapterProposalBatch, propose_chapters
-from faultmesh.replay.claims import ClaimBatch, ClaimNarrator, build_evidence_packet
+from faultmesh.replay.chapters import ChapterProposalBatch
+from faultmesh.replay.claims import ClaimBatch
 from faultmesh.replay.evaluation import EvaluationInput, EvaluationReport, evaluate_file
 from faultmesh.replay.history_discovery import (
     HistoryTool,
@@ -49,13 +49,10 @@ from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
     MODEL_PRESETS,
     ReplayNarrationExport,
-    StepNarration,
-    build_narration_export,
-    build_no_model_narration,
     inventory_local_models,
     load_replay_document,
-    suggest_likely_reason,
 )
+from faultmesh.replay.narration_runner import PersistentNarrationCache, run_narration
 from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.replay.thread_history_import import thread_history_smoke_summary
 from faultmesh.replay.views import (
@@ -806,13 +803,17 @@ def replay_narrate(
     backend: Annotated[str, typer.Option(help="none, llama-cli, or llama-server")] = "none",
     preset: Annotated[
         str, typer.Option(help="small-1.5b, medium-3b, or large-7b resource caps")
-    ] = "small-1.5b",
+    ] = "medium-3b",
     model_path: Annotated[Path | None, typer.Option(help="Explicit local GGUF path")] = None,
     llama_executable: Annotated[str, typer.Option()] = "llama-cli",
     endpoint: Annotated[str | None, typer.Option(help="Loopback llama-server endpoint")] = None,
     model_name: Annotated[str, typer.Option(help="Server-reported local model name")] = (
         "local-model"
     ),
+    cache_dir: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override local narration cache."),
+    ] = None,
 ) -> None:
     """Add local checked narration to an offline replay export; never touch its checkout."""
     try:
@@ -844,31 +845,17 @@ def replay_narrate(
             )
         elif backend != "none":
             raise ValueError("backend must be none, llama-cli, or llama-server")
-        if inference_backend is None:
-            enriched = build_no_model_narration(document)
-        else:
-            claim_narrator = ClaimNarrator(
-                inference_backend,
-                model_config_id=(
-                    f"{backend}:{preset}:{model_path.name if model_path else model_name}"
-                ),
-            )
-            steps: list[StepNarration] = []
-            for record in sorted(document.records, key=lambda item: item.sequence):
-                packet = build_evidence_packet(document, record.sequence)
-                steps.append(
-                    StepNarration(
-                        sequence=record.sequence,
-                        packet=packet,
-                        claims=claim_narrator.run(packet),
-                        reason=suggest_likely_reason(document, record.sequence, inference_backend),
-                    )
-                )
-            enriched = build_narration_export(
+        narration_cache = PersistentNarrationCache(cache_dir) if cache_dir is not None else None
+        try:
+            enriched = run_narration(
                 document,
-                steps=steps,
-                chapter_run=propose_chapters(document, inference_backend),
+                inference_backend,
+                preset,
+                cache=narration_cache,
             )
+        finally:
+            if narration_cache is not None:
+                narration_cache.close()
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(enriched.model_dump_json(indent=2) + "\n", encoding="utf-8")
     except Exception as exc:
