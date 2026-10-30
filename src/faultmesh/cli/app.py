@@ -45,6 +45,15 @@ from faultmesh.replay.history_discovery import (
 )
 from faultmesh.replay.history_import import import_history_session
 from faultmesh.replay.ingest import ingest_jsonl
+from faultmesh.replay.llama_server import LlamaServer
+from faultmesh.replay.model_manager import (
+    MODEL_REGISTRY,
+    default_model_dir,
+    download_model,
+    load_model_settings,
+    model_status,
+    save_model_settings,
+)
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
     MODEL_PRESETS,
@@ -52,7 +61,11 @@ from faultmesh.replay.narration import (
     inventory_local_models,
     load_replay_document,
 )
-from faultmesh.replay.narration_runner import PersistentNarrationCache, run_narration
+from faultmesh.replay.narration_runner import (
+    PersistentNarrationCache,
+    run_narration,
+    session_content_hash,
+)
 from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.replay.thread_history_import import thread_history_smoke_summary
 from faultmesh.replay.views import (
@@ -794,6 +807,185 @@ def replay_model_inventory(
     """Hash local GGUF files under explicit roots without loading or downloading them."""
     inventory = inventory_local_models(search_root, available_memory_bytes=available_memory_bytes)
     typer.echo(inventory.model_dump_json(indent=2))
+
+
+@app.command("replay-model-status")
+def replay_model_status(
+    settings_file: Annotated[
+        Path | None,
+        typer.Option(dir_okay=False, resolve_path=True, help="Override model settings file."),
+    ] = None,
+) -> None:
+    """Report local narration readiness as fixed-shape JSON."""
+    try:
+        status = model_status(load_model_settings(settings_file))
+    except Exception as exc:
+        typer.echo(
+            json.dumps(
+                {"ready": False, "status": "setup_required", "message": str(exc)[:500]},
+                sort_keys=True,
+            )
+        )
+        return
+    typer.echo(status.model_dump_json())
+
+
+@app.command("replay-model-download")
+def replay_model_download(
+    model_id: Annotated[str, typer.Argument()] = "qwen2.5-3b-instruct-q4-k-m",
+    destination: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override local model directory."),
+    ] = None,
+    settings_file: Annotated[
+        Path | None,
+        typer.Option(dir_okay=False, resolve_path=True, help="Override model settings file."),
+    ] = None,
+) -> None:
+    """Download a user-selected verified registry model and stream aggregate progress."""
+    model = next((item for item in MODEL_REGISTRY if item.id == model_id), None)
+    if model is None:
+        raise typer.BadParameter("unknown model id")
+    model_dir = destination or default_model_dir() / model.id
+    total_bytes = sum(item.size_bytes for item in model.artifacts)
+    completed_before = 0
+    paths: list[Path] = []
+    try:
+        for artifact in model.artifacts:
+            target = model_dir / artifact.filename
+
+            def progress(
+                downloaded: int,
+                _artifact_total: int,
+                *,
+                base: int = completed_before,
+            ) -> None:
+                typer.echo(
+                    json.dumps(
+                        {
+                            "event": "progress",
+                            "downloaded_bytes": base + downloaded,
+                            "total_bytes": total_bytes,
+                        },
+                        sort_keys=True,
+                    )
+                )
+
+            paths.append(download_model(artifact.url, target, progress))
+            completed_before += artifact.size_bytes
+        current = load_model_settings(settings_file)
+        saved = current.model_copy(
+            update={"selected_model_path": str(paths[0]), "preset": model.preset}
+        )
+        save_model_settings(saved, settings_file)
+    except Exception as exc:
+        typer.echo(json.dumps({"event": "error", "message": str(exc)[:500]}, sort_keys=True))
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {"event": "done", "model_id": model.id, "artifacts": len(paths)},
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("replay-narrate-session")
+def replay_narrate_session(
+    session_id: Annotated[str, typer.Argument()],
+    tool: Annotated[str, typer.Option(help="codex or claude_code")] = "codex",
+    project_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Optional linked checkout."),
+    ] = None,
+    settings_file: Annotated[
+        Path | None,
+        typer.Option(dir_okay=False, resolve_path=True, help="Override model settings file."),
+    ] = None,
+    cache_dir: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override narration cache."),
+    ] = None,
+    rerun: Annotated[bool, typer.Option(help="Clear this session cache before narration.")] = False,
+) -> None:
+    """Import and narrate one history session while streaming bounded JSON events."""
+    if tool not in {"codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    cache = PersistentNarrationCache(cache_dir)
+    try:
+        settings = load_model_settings(settings_file)
+        status = model_status(settings)
+        if not status.ready or settings.selected_model_path is None:
+            typer.echo(
+                json.dumps({"event": "error", "message": status.message}, sort_keys=True)
+            )
+            raise typer.Exit(code=2)
+        exported = import_history_session(
+            session_id,
+            tool=cast(HistoryTool, tool),
+            project_root=project_root,
+        )
+        if rerun:
+            cache.clear_session_cache(session_content_hash(exported))
+        preset = MODEL_PRESETS[settings.preset]
+        with LlamaServer(
+            settings.llama_server_executable,
+            Path(settings.selected_model_path),
+            context_size=preset.context_size,
+            startup_timeout=preset.timeout_seconds,
+        ) as server:
+            server_status = server.start()
+            if not server_status.ready or server_status.endpoint is None:
+                typer.echo(
+                    json.dumps(
+                        {"event": "error", "message": server_status.message}, sort_keys=True
+                    )
+                )
+                raise typer.Exit(code=2)
+            inference_backend = LlamaCppServerBackend(
+                server_status.endpoint,
+                model=Path(settings.selected_model_path).name,
+                timeout_seconds=preset.timeout_seconds,
+                max_output_tokens=preset.max_output_tokens,
+            )
+
+            def report(done: int, total: int, partial: ReplayNarrationExport) -> None:
+                latest = partial.narration[-1]
+                typer.echo(
+                    json.dumps(
+                        {
+                            "event": "progress",
+                            "done": done,
+                            "total": total,
+                            "step": latest.model_dump(mode="json"),
+                            "chapters": [
+                                chapter.model_dump(mode="json")
+                                for chapter in partial.chapters
+                            ],
+                        },
+                        sort_keys=True,
+                    )
+                )
+
+            narrated = run_narration(
+                exported,
+                inference_backend,
+                preset,
+                on_progress=report,
+                cache=cache,
+            )
+            typer.echo(
+                json.dumps(
+                    {"event": "done", "export": narrated.model_dump(mode="json")},
+                    sort_keys=True,
+                )
+            )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(json.dumps({"event": "error", "message": str(exc)[:500]}, sort_keys=True))
+        raise typer.Exit(code=2) from exc
+    finally:
+        cache.close()
 
 
 @app.command("replay-narrate")
