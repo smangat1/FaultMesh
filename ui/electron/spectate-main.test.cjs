@@ -388,3 +388,33 @@ test('importSession validates inputs, spawns fixed argv, cleans up temp file, an
   // Verify temp file was cleaned up
   assert.equal(fs.existsSync(tempOutFile), false);
 });
+
+test('importSession applies a persisted project link without exposing the path to renderer', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const choose = value.ipcMain.handlers.get(CHANNELS.choose);
+  const link = value.ipcMain.handlers.get(CHANNELS.linkSessionProject);
+  const importSession = value.ipcMain.handlers.get(CHANNELS.importSession);
+  const selected = await choose(value.event);
+  await link(value.event, 'linked-session', selected.handle);
+
+  const imported = importSession(value.event, 'linked-session', 'codex');
+  const lastSpawn = value.spawns.at(-1);
+  const projectRootIndex = lastSpawn[1].indexOf('--project-root');
+  assert.notEqual(projectRootIndex, -1);
+  assert.equal(lastSpawn[1][projectRootIndex + 1], fs.realpathSync(value.root));
+  const outIndex = lastSpawn[1].indexOf('--out');
+  fs.writeFileSync(
+    lastSpawn[1][outIndex + 1],
+    JSON.stringify({ schema_version: 'replay-export-1.1' }),
+    'utf8',
+  );
+  value.children.at(-1).emit('close', 0, null);
+
+  const result = await imported;
+  assert.equal('path' in result, false);
+  assert.equal(JSON.parse(result.text).schema_version, 'replay-export-1.1');
+});

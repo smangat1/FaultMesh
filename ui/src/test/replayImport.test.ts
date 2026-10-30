@@ -372,6 +372,57 @@ describe('Replay Export Validation (Phase C1)', () => {
     expect(result.data?.schema_version).toBe('replay-export-1.0');
   });
 
+  it('validates replay-export-1.1 derived file state and transcript spans', () => {
+    const value = makeValidV1Export() as any;
+    value.schema_version = 'replay-export-1.1';
+    value.transcript_spans = [{
+      id: 'transcript:record-1:prompt',
+      record_id: value.records[0].id,
+      sequence: 1,
+      kind: 'prompt',
+      text: 'Synthetic prompt.',
+      start_offset: 0,
+      end_offset: 17,
+      redacted: false,
+      truncated: false,
+    }];
+    value.timeline[0].changed_files = [{
+      path: 'src/example.py',
+      change: 'modified',
+      before_sha256: 'a'.repeat(64),
+      after_sha256: 'b'.repeat(64),
+      unified_diff: '@@ synthetic @@',
+      derived_from: 'recorded_patch',
+      file_state: 'reconstructed_from_current_checkout_unverified',
+      reconstruction_label: 'reconstructed from current checkout (unverified)',
+      before_text: 'VALUE = 1\n',
+      after_text: 'VALUE = 2\n',
+    }];
+
+    const result = validateReplayExport(value);
+
+    expect(result.success).toBe(true);
+    expect(result.version).toBe('replay-export-1.1');
+  });
+
+  it('rejects dishonest replay-export-1.1 reconstruction labels', () => {
+    const value = makeValidV1Export() as any;
+    value.schema_version = 'replay-export-1.1';
+    value.transcript_spans = [];
+    value.timeline[0].changed_files = [{
+      path: 'src/example.py',
+      change: 'modified',
+      derived_from: 'recorded_patch',
+      file_state: 'reconstructed_from_current_checkout_unverified',
+      reconstruction_label: null,
+    }];
+
+    const result = validateReplayExport(value);
+
+    expect(result.success).toBe(false);
+    expect(result.errors?.[0]?.message).toMatch(/unverified reconstruction label/);
+  });
+
   it('validates a correct replay-export-2.0 document successfully', () => {
     const v2 = makeValidV2Export();
     const result = validateReplayExport(v2);

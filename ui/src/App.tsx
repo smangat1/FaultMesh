@@ -372,7 +372,11 @@ export const App: React.FC<AppProps> = ({
           throw new Error(`Malformed JSON in file "${f.name}": ${err instanceof Error ? err.message : String(err)}`);
         }
 
-        if (json.schema_version === 'replay-export-1.0' || json.schema_version === 'replay-export-2.0') {
+        if (
+          json.schema_version === 'replay-export-1.0'
+          || json.schema_version === 'replay-export-1.1'
+          || json.schema_version === 'replay-export-2.0'
+        ) {
           const val = validateReplayExport(json, f.size, f.name);
           if (!val.success) {
             throw new Error(`Replay validation failed for "${f.name}": ${val.errors?.map((e) => e.message).join('; ')}`);

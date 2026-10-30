@@ -36,6 +36,7 @@ from faultmesh.replay.models import (
     SnapshotManifest,
     StructuredTestEvidence,
     TimelineEntry,
+    TranscriptSpan,
 )
 from faultmesh.replay.views import load_export
 
@@ -229,6 +230,7 @@ class ReplayNarrationExport(StrictModel):
     tests: list[StructuredTestEvidence]
     timeline: list[TimelineEntry]
     limitations: list[str]
+    transcript_spans: list[TranscriptSpan] = Field(default_factory=list)
     narration: list[StepNarration]
     baseline_chapters: list[ReplayChapter]
     chapters: list[ReplayChapter]
@@ -272,6 +274,7 @@ def build_narration_export(
             "interpretations.",
             "Likely reasons remain model inferences even when citation bytes match exactly.",
         ],
+        transcript_spans=exported.transcript_spans,
         narration=steps,
         baseline_chapters=baseline_chapters(exported),
         chapters=chapter_run.chapters,
@@ -295,7 +298,7 @@ def load_replay_document(path: Path | str) -> ReplayExport | ReplayNarrationExpo
     raw = Path(path).read_text(encoding="utf-8")
     value: dict[str, Any] = json.loads(raw)
     version = value.get("schema_version")
-    if version == "replay-export-1.0":
+    if version in {"replay-export-1.0", "replay-export-1.1"}:
         return load_export(path)
     if version == NARRATION_EXPORT_VERSION:
         exported = ReplayNarrationExport.model_validate(value)

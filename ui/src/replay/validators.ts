@@ -14,7 +14,7 @@ export interface ValidationErrorItem {
 export interface ReplayValidationResult {
   success: boolean;
   data?: AnyReplayExport;
-  version?: 'replay-export-1.0' | 'replay-export-2.0';
+  version?: 'replay-export-1.0' | 'replay-export-1.1' | 'replay-export-2.0';
   origin?: ReplayOrigin;
   errors?: ValidationErrorItem[];
   missingContentHashes?: string[];
@@ -34,7 +34,7 @@ function isValidIsoDate(str: unknown): boolean {
 const SHA256_HEX_REGEX = /^[0-9a-f]{64}$/i;
 
 /**
- * Validates a loaded JSON export against the ReplayExport 1.0 or 2.0 contract.
+ * Validates a loaded JSON export against the ReplayExport 1.x or 2.0 contract.
  * Rejects unsupported versions, malformed structures, and verifies integrity.
  */
 export function validateReplayExport(
@@ -64,13 +64,17 @@ export function validateReplayExport(
   }
 
   const schemaVersion = rawJson.schema_version;
-  if (schemaVersion !== 'replay-export-1.0' && schemaVersion !== 'replay-export-2.0') {
+  if (
+    schemaVersion !== 'replay-export-1.0'
+    && schemaVersion !== 'replay-export-1.1'
+    && schemaVersion !== 'replay-export-2.0'
+  ) {
     return {
       success: false,
       errors: [
         {
           path: 'schema_version',
-          message: `Unsupported replay schema_version "${String(schemaVersion)}". Expected "replay-export-1.0" or "replay-export-2.0".`,
+          message: `Unsupported replay schema_version "${String(schemaVersion)}". Expected "replay-export-1.0", "replay-export-1.1", or "replay-export-2.0".`,
         },
       ],
     };
@@ -120,6 +124,46 @@ export function validateReplayExport(
   // Validate timeline
   if (!Array.isArray(rawJson.timeline)) {
     errors.push({ path: 'timeline', message: 'Field "timeline" must be an array' });
+  }
+
+  if (schemaVersion === 'replay-export-1.1') {
+    if (!Array.isArray(rawJson.transcript_spans)) {
+      errors.push({ path: 'transcript_spans', message: 'Field "transcript_spans" must be an array in replay-export-1.1' });
+    } else {
+      rawJson.transcript_spans.forEach((span, index) => {
+        if (!isPlainObject(span)) {
+          errors.push({ path: `transcript_spans.${index}`, message: 'Transcript span must be an object' });
+          return;
+        }
+        const text = span.text;
+        if (
+          typeof text !== 'string'
+          || span.start_offset !== 0
+          || span.end_offset !== text.length
+          || !['prompt', 'agent_message', 'command_output'].includes(String(span.kind))
+        ) {
+          errors.push({ path: `transcript_spans.${index}`, message: 'Transcript span text, offsets, or kind are invalid' });
+        }
+      });
+    }
+    if (Array.isArray(rawJson.timeline)) {
+      rawJson.timeline.forEach((entry, entryIndex) => {
+        if (!isPlainObject(entry) || !Array.isArray(entry.changed_files)) return;
+        entry.changed_files.forEach((changed, changedIndex) => {
+          if (!isPlainObject(changed) || changed.derived_from !== 'recorded_patch') return;
+          const path = `timeline.${entryIndex}.changed_files.${changedIndex}`;
+          if (!['unknown', 'reconstructed_from_current_checkout_unverified'].includes(String(changed.file_state))) {
+            errors.push({ path, message: 'Derived changed file must declare an honest file_state' });
+          }
+          if (
+            changed.file_state === 'reconstructed_from_current_checkout_unverified'
+            && changed.reconstruction_label !== 'reconstructed from current checkout (unverified)'
+          ) {
+            errors.push({ path, message: 'Reconstructed file must carry the unverified reconstruction label' });
+          }
+        });
+      });
+    }
   }
 
   // Validate limitations
@@ -186,7 +230,7 @@ export function validateReplayExport(
   return {
     success: true,
     data: (rawJson as unknown) as AnyReplayExport,
-    version: schemaVersion as 'replay-export-1.0' | 'replay-export-2.0',
+    version: schemaVersion as 'replay-export-1.0' | 'replay-export-1.1' | 'replay-export-2.0',
     origin,
     missingContentHashes,
     isPartial,

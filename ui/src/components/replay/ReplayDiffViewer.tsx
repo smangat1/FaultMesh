@@ -578,6 +578,38 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
         </div>
       )}
 
+      {activeChangedFile?.file_state === 'reconstructed_from_current_checkout_unverified' && (
+        <div
+          data-testid="replay-derived-file-state"
+          style={{
+            padding: '6px 12px',
+            borderBottom: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
+            backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+            color: 'var(--replay-status-warning, #946c32)',
+            fontSize: '10px',
+            flexShrink: 0,
+          }}
+        >
+          Derived: {activeChangedFile.reconstruction_label}
+        </div>
+      )}
+
+      {activeChangedFile?.file_state === 'unknown' && (
+        <div
+          data-testid="replay-unknown-file-state"
+          style={{
+            padding: '6px 12px',
+            borderBottom: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
+            backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
+            color: 'var(--replay-status-warning, #946c32)',
+            fontSize: '10px',
+            flexShrink: 0,
+          }}
+        >
+          Derived file state: unknown — the recorded patch could not be reconstructed.
+        </div>
+      )}
+
       {/* Changed Symbols / Functions bar if any */}
       {symbolsForFile.length > 0 && (
         <div

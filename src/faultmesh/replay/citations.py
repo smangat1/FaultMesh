@@ -135,7 +135,27 @@ def _captured_text(value: object) -> str:
 
 def citation_sources(exported: ReplayExport, current_sequence: int) -> list[CitationSource]:
     """Build local-only sources from the selected session, never from unrelated history."""
-    sources: list[CitationSource] = []
+    sources = [
+        CitationSource(
+            id=span.id,
+            session_id=exported.session.id,
+            sequence=span.sequence,
+            kind=(
+                CitationSourceKind.USER_PROMPT
+                if span.kind == "prompt"
+                else (
+                    CitationSourceKind.AGENT_EXPLANATION
+                    if span.kind == "agent_message"
+                    else CitationSourceKind.PRIOR_EVENT
+                )
+            ),
+            normalized_text=span.text,
+            redacted=span.redacted,
+            truncated=span.truncated,
+        )
+        for span in exported.transcript_spans
+        if span.sequence <= current_sequence
+    ]
     for record in exported.records:
         if record.sequence > current_sequence:
             continue

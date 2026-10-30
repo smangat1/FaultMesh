@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
@@ -10,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 REPLAY_SCHEMA_VERSION = "replay-store-1.0"
 CAPTURE_SCHEMA_VERSION = "replay-capture-1.0"
-EXPORT_SCHEMA_VERSION = "replay-export-1.0"
+EXPORT_SCHEMA_VERSION = "replay-export-1.1"
 
 
 class ReplayModel(BaseModel):
@@ -262,9 +263,14 @@ class ReplayRecord(ReplayModel):
         default=None,
         description="User prompt after typed secret redaction and before persistence.",
     )
-    file_state: Literal["unknown"] | None = Field(
+    file_state: Literal[
+        "unknown", "reconstructed_from_current_checkout_unverified"
+    ] | None = Field(
         default=None,
-        description="History evidence cannot reconstruct exact before or after file bytes.",
+        description=(
+            "Whether history file bytes remain unknown or were derived by reversing a recorded "
+            "patch from the current linked checkout."
+        ),
     )
     edit_patch: str | None = Field(
         default=None,
@@ -336,6 +342,67 @@ class ChangedFileView(ReplayModel):
     before_sha256: str | None = None
     after_sha256: str | None = None
     unified_diff: str | None = None
+    derived_from: Literal["recorded_patch"] | None = None
+    file_state: Literal[
+        "recorded", "reconstructed_from_current_checkout_unverified", "unknown"
+    ] = "recorded"
+    reconstruction_label: Literal[
+        "reconstructed from current checkout (unverified)"
+    ] | None = None
+    before_text: str | None = None
+    after_text: str | None = None
+
+    @model_validator(mode="after")
+    def honest_reconstruction(self) -> ChangedFileView:
+        reconstructed = self.file_state == "reconstructed_from_current_checkout_unverified"
+        if reconstructed:
+            if self.derived_from != "recorded_patch":
+                raise ValueError("reconstructed files must identify recorded_patch provenance")
+            if self.reconstruction_label is None:
+                raise ValueError("reconstructed files require the unverified reconstruction label")
+            if self.change == "added" and self.before_text is not None:
+                raise ValueError("an added reconstructed file cannot have before text")
+            if self.change == "deleted" and self.after_text is not None:
+                raise ValueError("a deleted reconstructed file cannot have after text")
+            if self.change == "modified" and (
+                self.before_text is None or self.after_text is None
+            ):
+                raise ValueError("a modified reconstructed file requires before and after text")
+            expected_before = (
+                hashlib.sha256(self.before_text.encode("utf-8")).hexdigest()
+                if self.before_text is not None
+                else None
+            )
+            expected_after = (
+                hashlib.sha256(self.after_text.encode("utf-8")).hexdigest()
+                if self.after_text is not None
+                else None
+            )
+            if self.before_sha256 != expected_before or self.after_sha256 != expected_after:
+                raise ValueError("reconstructed file hashes must match exported text")
+        elif self.reconstruction_label is not None:
+            raise ValueError("only reconstructed files may carry a reconstruction label")
+        return self
+
+
+class TranscriptSpan(ReplayModel):
+    id: str
+    record_id: str
+    sequence: int = Field(ge=1)
+    kind: Literal["prompt", "agent_message", "command_output"]
+    text: str
+    start_offset: int = Field(default=0, ge=0)
+    end_offset: int = Field(ge=0)
+    redacted: bool = False
+    truncated: bool = False
+
+    @model_validator(mode="after")
+    def valid_offsets(self) -> TranscriptSpan:
+        if self.end_offset < self.start_offset or self.end_offset > len(self.text):
+            raise ValueError("transcript span offsets must fall within text")
+        if self.start_offset != 0 or self.end_offset != len(self.text):
+            raise ValueError("exported transcript spans must cover their complete source text")
+        return self
 
 
 class ChangedSymbolView(ReplayModel):
@@ -390,7 +457,9 @@ class CheckpointView(ReplayModel):
 
 
 class ReplayExport(ReplayModel):
-    schema_version: Literal["replay-export-1.0"] = "replay-export-1.0"
+    schema_version: Literal["replay-export-1.0", "replay-export-1.1"] = (
+        "replay-export-1.1"
+    )
     exported_at: datetime
     session: ReplaySession
     records: list[ReplayRecord]
@@ -399,3 +468,23 @@ class ReplayExport(ReplayModel):
     tests: list[StructuredTestEvidence]
     timeline: list[TimelineEntry]
     limitations: list[str]
+    transcript_spans: list[TranscriptSpan] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def derived_fields_require_v11(self) -> ReplayExport:
+        has_derived_files = any(
+            changed.derived_from is not None
+            for entry in self.timeline
+            for changed in entry.changed_files
+        )
+        if self.schema_version == "replay-export-1.0" and (
+            has_derived_files or self.transcript_spans
+        ):
+            raise ValueError("derived file state and transcript spans require replay-export-1.1")
+        span_ids = [span.id for span in self.transcript_spans]
+        if len(span_ids) != len(set(span_ids)):
+            raise ValueError("transcript span IDs must be unique")
+        record_ids = {record.id for record in self.records}
+        if any(span.record_id not in record_ids for span in self.transcript_spans):
+            raise ValueError("transcript spans must reference an exported record")
+        return self

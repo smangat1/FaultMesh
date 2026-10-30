@@ -61,7 +61,7 @@ def test_selected_history_round_trips_through_existing_ui_export_loader(
     loaded = load_export(export_path)
 
     assert loaded == exported
-    assert loaded.schema_version == "replay-export-1.0"
+    assert loaded.schema_version == "replay-export-1.1"
     assert loaded.session.import_source is not None
     assert loaded.session.import_source.value == "codex"
     assert loaded.session.history_state == "active"
@@ -72,11 +72,15 @@ def test_selected_history_round_trips_through_existing_ui_export_loader(
     assert loaded.content_base64_by_sha256 == {}
     assert loaded.tests == []
     assert len(loaded.timeline) == len(loaded.records)
-    assert all(not entry.changed_files for entry in loaded.timeline)
+    derived_changes = [change for entry in loaded.timeline for change in entry.changed_files]
+    assert derived_changes
+    assert all(change.derived_from == "recorded_patch" for change in derived_changes)
+    assert all(change.file_state == "unknown" for change in derived_changes)
+    assert loaded.transcript_spans
     prompt = next(record for record in loaded.records if record.prompt_text is not None)
     assert "[redacted: api key]" in (prompt.prompt_text or "")
     assert prompt.redaction_types == ["api key", "password"]
-    assert any("file bytes are unknown" in limitation for limitation in loaded.limitations)
+    assert any("derived and unverified" in limitation for limitation in loaded.limitations)
 
 
 def test_unsupported_selected_history_is_a_valid_visible_export(tmp_path: Path) -> None:
@@ -229,7 +233,7 @@ def test_history_import_cli_writes_loadable_export_and_reports_only_summary(
     assert summary == {
         "path": str(export_path.resolve()),
         "records": 9,
-        "schema_version": "replay-export-1.0",
+        "schema_version": "replay-export-1.1",
         "session_id": "synthetic-session-normal",
     }
     assert "synthetic_value" not in result.output

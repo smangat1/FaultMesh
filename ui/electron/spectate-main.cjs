@@ -36,6 +36,14 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function readProjectLinks(projectLinksPath) {
+  if (!projectLinksPath || !fs.existsSync(projectLinksPath)) return {};
+  const stat = fs.statSync(projectLinksPath);
+  if (stat.size > 1024 * 1024) throw new Error('project link storage exceeds size limit');
+  const parsed = JSON.parse(fs.readFileSync(projectLinksPath, 'utf8'));
+  return isPlainObject(parsed) ? parsed : {};
+}
+
 function requireKeys(record, keys) {
   for (const key of keys) {
     if (!(key in record)) throw new Error(`spectate record is missing ${key}`);
@@ -400,12 +408,7 @@ function attachSpectateBridge({
 
     let links = {};
     try {
-      if (fs.existsSync(projectLinksPath)) {
-        const stat = fs.statSync(projectLinksPath);
-        if (stat.size > 1024 * 1024) throw new Error('project link storage exceeds size limit');
-        const parsed = JSON.parse(fs.readFileSync(projectLinksPath, 'utf8'));
-        if (isPlainObject(parsed)) links = parsed;
-      }
+      links = readProjectLinks(projectLinksPath);
     } catch (error) {
       if (error instanceof SyntaxError) links = {};
       else throw error;
@@ -580,14 +583,31 @@ function attachSpectateBridge({
       let timer = null;
       let proc = null;
       try {
-        proc = spawn(command, [
+        const args = [
           'replay-history-import',
           sessionId,
           '--tool',
           tool,
           '--out',
           tempOut,
-        ], {
+        ];
+        try {
+          const links = readProjectLinks(projectLinksPath);
+          const linked = links[sessionId];
+          if (
+            isPlainObject(linked)
+            && typeof linked.root === 'string'
+            && path.isAbsolute(linked.root)
+          ) {
+            const linkedRoot = fs.realpathSync(linked.root);
+            if (fs.statSync(linkedRoot).isDirectory()) {
+              args.push('--project-root', linkedRoot);
+            }
+          }
+        } catch (error) {
+          if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
+        }
+        proc = spawn(command, args, {
           shell: false,
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
