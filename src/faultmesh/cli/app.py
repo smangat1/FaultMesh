@@ -33,8 +33,8 @@ from faultmesh.project_runner import (
 )
 from faultmesh.project_runner.replay import open_run_store
 from faultmesh.replay.adapter import capture_hook_event
-from faultmesh.replay.chapters import ChapterProposalBatch, propose_chapters
-from faultmesh.replay.claims import ClaimBatch, ClaimNarrator, build_evidence_packet
+from faultmesh.replay.chapters import ChapterProposalBatch
+from faultmesh.replay.claims import ClaimBatch
 from faultmesh.replay.evaluation import EvaluationInput, EvaluationReport, evaluate_file
 from faultmesh.replay.history_discovery import (
     HistoryTool,
@@ -45,16 +45,26 @@ from faultmesh.replay.history_discovery import (
 )
 from faultmesh.replay.history_import import import_history_session
 from faultmesh.replay.ingest import ingest_jsonl
+from faultmesh.replay.llama_server import LlamaServer
+from faultmesh.replay.model_manager import (
+    MODEL_REGISTRY,
+    default_model_dir,
+    download_model,
+    load_model_settings,
+    model_status,
+    save_model_settings,
+)
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
     MODEL_PRESETS,
     ReplayNarrationExport,
-    StepNarration,
-    build_narration_export,
-    build_no_model_narration,
     inventory_local_models,
     load_replay_document,
-    suggest_likely_reason,
+)
+from faultmesh.replay.narration_runner import (
+    PersistentNarrationCache,
+    run_narration,
+    session_content_hash,
 )
 from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.replay.thread_history_import import thread_history_smoke_summary
@@ -589,6 +599,10 @@ def replay_history_import(
             ),
         ),
     ] = None,
+    template_narration: Annotated[
+        bool,
+        typer.Option(help="Wrap the import in replay-export-2.0 template narration."),
+    ] = False,
 ) -> None:
     """Import one selected local history session with optional read-only reconstruction."""
     if tool not in {None, "codex", "claude_code"}:
@@ -604,15 +618,18 @@ def replay_history_import(
             catalog_path=catalog,
             project_root=project_root,
         )
+        document: ReplayExport | ReplayNarrationExport = exported
+        if template_narration:
+            document = run_narration(exported, None)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(exported.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        out.write_text(document.model_dump_json(indent=2) + "\n", encoding="utf-8")
     except Exception as exc:
         typer.secho(f"FaultMesh history import failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(
         json.dumps(
             {
-                "schema_version": exported.schema_version,
+                "schema_version": document.schema_version,
                 "session_id": exported.session.id,
                 "records": len(exported.records),
                 "path": str(out.resolve()),
@@ -799,6 +816,214 @@ def replay_model_inventory(
     typer.echo(inventory.model_dump_json(indent=2))
 
 
+@app.command("replay-model-status")
+def replay_model_status(
+    settings_file: Annotated[
+        Path | None,
+        typer.Option(dir_okay=False, resolve_path=True, help="Override model settings file."),
+    ] = None,
+) -> None:
+    """Report local narration readiness as fixed-shape JSON."""
+    try:
+        status = model_status(load_model_settings(settings_file))
+    except Exception as exc:
+        typer.echo(
+            json.dumps(
+                {"ready": False, "status": "setup_required", "message": str(exc)[:500]},
+                sort_keys=True,
+            )
+        )
+        return
+    typer.echo(status.model_dump_json())
+
+
+@app.command("replay-model-select")
+def replay_model_select(
+    model_path: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, resolve_path=True),
+    ],
+    preset: Annotated[
+        str, typer.Option(help="small-1.5b, medium-3b, or large-7b")
+    ] = "medium-3b",
+) -> None:
+    """Select an existing local GGUF without exposing its path in output."""
+    if model_path.suffix.lower() != ".gguf":
+        raise typer.BadParameter("selected model must be a GGUF file")
+    if preset not in MODEL_PRESETS:
+        raise typer.BadParameter("unknown model preset")
+    current = load_model_settings()
+    save_model_settings(
+        current.model_copy(
+            update={"selected_model_path": str(model_path), "preset": preset}
+        )
+    )
+    typer.echo(
+        json.dumps(
+            {"selected": True, "model_filename": model_path.name, "preset": preset},
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("replay-model-download")
+def replay_model_download(
+    model_id: Annotated[str, typer.Argument()] = "qwen2.5-3b-instruct-q4-k-m",
+    destination: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override local model directory."),
+    ] = None,
+    settings_file: Annotated[
+        Path | None,
+        typer.Option(dir_okay=False, resolve_path=True, help="Override model settings file."),
+    ] = None,
+) -> None:
+    """Download a user-selected verified registry model and stream aggregate progress."""
+    model = next((item for item in MODEL_REGISTRY if item.id == model_id), None)
+    if model is None:
+        raise typer.BadParameter("unknown model id")
+    model_dir = destination or default_model_dir() / model.id
+    total_bytes = sum(item.size_bytes for item in model.artifacts)
+    completed_before = 0
+    paths: list[Path] = []
+    try:
+        for artifact in model.artifacts:
+            target = model_dir / artifact.filename
+
+            def progress(
+                downloaded: int,
+                _artifact_total: int,
+                *,
+                base: int = completed_before,
+            ) -> None:
+                typer.echo(
+                    json.dumps(
+                        {
+                            "event": "progress",
+                            "downloaded_bytes": base + downloaded,
+                            "total_bytes": total_bytes,
+                        },
+                        sort_keys=True,
+                    )
+                )
+
+            paths.append(download_model(artifact.url, target, progress))
+            completed_before += artifact.size_bytes
+        current = load_model_settings(settings_file)
+        saved = current.model_copy(
+            update={"selected_model_path": str(paths[0]), "preset": model.preset}
+        )
+        save_model_settings(saved, settings_file)
+    except Exception as exc:
+        typer.echo(json.dumps({"event": "error", "message": str(exc)[:500]}, sort_keys=True))
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        json.dumps(
+            {"event": "done", "model_id": model.id, "artifacts": len(paths)},
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("replay-narrate-session")
+def replay_narrate_session(
+    session_id: Annotated[str, typer.Argument()],
+    tool: Annotated[str, typer.Option(help="codex or claude_code")] = "codex",
+    project_root: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Optional linked checkout."),
+    ] = None,
+    settings_file: Annotated[
+        Path | None,
+        typer.Option(dir_okay=False, resolve_path=True, help="Override model settings file."),
+    ] = None,
+    cache_dir: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override narration cache."),
+    ] = None,
+    rerun: Annotated[bool, typer.Option(help="Clear this session cache before narration.")] = False,
+) -> None:
+    """Import and narrate one history session while streaming bounded JSON events."""
+    if tool not in {"codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    cache = PersistentNarrationCache(cache_dir)
+    try:
+        settings = load_model_settings(settings_file)
+        status = model_status(settings)
+        if not status.ready or settings.selected_model_path is None:
+            typer.echo(
+                json.dumps({"event": "error", "message": status.message}, sort_keys=True)
+            )
+            raise typer.Exit(code=2)
+        exported = import_history_session(
+            session_id,
+            tool=cast(HistoryTool, tool),
+            project_root=project_root,
+        )
+        if rerun:
+            cache.clear_session_cache(session_content_hash(exported))
+        preset = MODEL_PRESETS[settings.preset]
+        with LlamaServer(
+            settings.llama_server_executable,
+            Path(settings.selected_model_path),
+            context_size=preset.context_size,
+            startup_timeout=preset.timeout_seconds,
+        ) as server:
+            server_status = server.start()
+            if not server_status.ready or server_status.endpoint is None:
+                typer.echo(
+                    json.dumps(
+                        {"event": "error", "message": server_status.message}, sort_keys=True
+                    )
+                )
+                raise typer.Exit(code=2)
+            inference_backend = LlamaCppServerBackend(
+                server_status.endpoint,
+                model=Path(settings.selected_model_path).name,
+                timeout_seconds=preset.timeout_seconds,
+                max_output_tokens=preset.max_output_tokens,
+            )
+
+            def report(done: int, total: int, partial: ReplayNarrationExport) -> None:
+                latest = partial.narration[-1]
+                typer.echo(
+                    json.dumps(
+                        {
+                            "event": "progress",
+                            "done": done,
+                            "total": total,
+                            "step": latest.model_dump(mode="json"),
+                            "chapters": [
+                                chapter.model_dump(mode="json")
+                                for chapter in partial.chapters
+                            ],
+                        },
+                        sort_keys=True,
+                    )
+                )
+
+            narrated = run_narration(
+                exported,
+                inference_backend,
+                preset,
+                on_progress=report,
+                cache=cache,
+            )
+            typer.echo(
+                json.dumps(
+                    {"event": "done", "export": narrated.model_dump(mode="json")},
+                    sort_keys=True,
+                )
+            )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(json.dumps({"event": "error", "message": str(exc)[:500]}, sort_keys=True))
+        raise typer.Exit(code=2) from exc
+    finally:
+        cache.close()
+
+
 @app.command("replay-narrate")
 def replay_narrate(
     export_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, resolve_path=True)],
@@ -806,13 +1031,17 @@ def replay_narrate(
     backend: Annotated[str, typer.Option(help="none, llama-cli, or llama-server")] = "none",
     preset: Annotated[
         str, typer.Option(help="small-1.5b, medium-3b, or large-7b resource caps")
-    ] = "small-1.5b",
+    ] = "medium-3b",
     model_path: Annotated[Path | None, typer.Option(help="Explicit local GGUF path")] = None,
     llama_executable: Annotated[str, typer.Option()] = "llama-cli",
     endpoint: Annotated[str | None, typer.Option(help="Loopback llama-server endpoint")] = None,
     model_name: Annotated[str, typer.Option(help="Server-reported local model name")] = (
         "local-model"
     ),
+    cache_dir: Annotated[
+        Path | None,
+        typer.Option(file_okay=False, resolve_path=True, help="Override local narration cache."),
+    ] = None,
 ) -> None:
     """Add local checked narration to an offline replay export; never touch its checkout."""
     try:
@@ -844,31 +1073,17 @@ def replay_narrate(
             )
         elif backend != "none":
             raise ValueError("backend must be none, llama-cli, or llama-server")
-        if inference_backend is None:
-            enriched = build_no_model_narration(document)
-        else:
-            claim_narrator = ClaimNarrator(
-                inference_backend,
-                model_config_id=(
-                    f"{backend}:{preset}:{model_path.name if model_path else model_name}"
-                ),
-            )
-            steps: list[StepNarration] = []
-            for record in sorted(document.records, key=lambda item: item.sequence):
-                packet = build_evidence_packet(document, record.sequence)
-                steps.append(
-                    StepNarration(
-                        sequence=record.sequence,
-                        packet=packet,
-                        claims=claim_narrator.run(packet),
-                        reason=suggest_likely_reason(document, record.sequence, inference_backend),
-                    )
-                )
-            enriched = build_narration_export(
+        narration_cache = PersistentNarrationCache(cache_dir) if cache_dir is not None else None
+        try:
+            enriched = run_narration(
                 document,
-                steps=steps,
-                chapter_run=propose_chapters(document, inference_backend),
+                inference_backend,
+                preset,
+                cache=narration_cache,
             )
+        finally:
+            if narration_cache is not None:
+                narration_cache.close()
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(enriched.model_dump_json(indent=2) + "\n", encoding="utf-8")
     except Exception as exc:

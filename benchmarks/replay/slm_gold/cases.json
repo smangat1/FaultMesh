@@ -1,0 +1,92 @@
+[
+  {
+    "id": "file-change-supported",
+    "packet": {
+      "record_complete": true,
+      "files": [{"path": "app.py", "before_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "after_sha256": "2222222222222222222222222222222222222222222222222222222222222222", "change": "modified"}],
+      "sources": [{"id": "file:app.py:after", "kind": "file"}]
+    },
+    "claim": {"id": "claim-file-ok", "assertion": {"predicate": "file_changed", "path": "app.py", "before_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "after_sha256": "2222222222222222222222222222222222222222222222222222222222222222", "change": "modified"}, "evidence_refs": ["file:app.py:after"]},
+    "expected_verdict": "supported"
+  },
+  {
+    "id": "misleading-file-hash-red",
+    "packet": {
+      "record_complete": true,
+      "files": [{"path": "app.py", "before_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "after_sha256": "2222222222222222222222222222222222222222222222222222222222222222", "change": "modified"}],
+      "sources": [{"id": "file:app.py:after", "kind": "file"}]
+    },
+    "claim": {"id": "claim-file-wrong", "assertion": {"predicate": "file_changed", "path": "app.py", "before_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "after_sha256": "9999999999999999999999999999999999999999999999999999999999999999", "change": "modified"}, "evidence_refs": ["file:app.py:after"]},
+    "expected_verdict": "contradicted"
+  },
+  {
+    "id": "derived-incomplete-yellow",
+    "packet": {
+      "record_complete": false,
+      "files": [{"path": "unknown.py", "before_sha256": null, "after_sha256": null, "change": "modified", "complete": false, "derived_from": "recorded_patch"}],
+      "sources": [{"id": "file:unknown.py:patch", "kind": "file", "derived_from": "recorded_patch"}]
+    },
+    "claim": {"id": "claim-derived-unknown", "assertion": {"predicate": "file_changed", "path": "unknown.py", "before_sha256": null, "after_sha256": null, "change": "modified"}, "evidence_refs": ["file:unknown.py:patch"]},
+    "expected_verdict": "unsupported_or_unknown"
+  },
+  {
+    "id": "incomplete-manifest-yellow",
+    "packet": {
+      "record_complete": false,
+      "files": [{"path": "partial.py", "before_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "after_sha256": "2222222222222222222222222222222222222222222222222222222222222222", "change": "modified"}],
+      "sources": [{"id": "manifest:partial", "kind": "manifest"}]
+    },
+    "claim": {"id": "claim-manifest-unknown", "assertion": {"predicate": "file_changed", "path": "partial.py", "before_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "after_sha256": "2222222222222222222222222222222222222222222222222222222222222222", "change": "modified"}, "evidence_refs": ["manifest:partial"]},
+    "expected_verdict": "unsupported_or_unknown"
+  },
+  {
+    "id": "function-added-supported",
+    "packet": {
+      "record_complete": true,
+      "functions": [{"path": "functions.py", "before_functions": ["keep"], "after_functions": ["keep", "added"], "before_ast_complete": true, "after_ast_complete": true}],
+      "sources": [{"id": "ast:functions.py", "kind": "ast"}]
+    },
+    "claim": {"id": "claim-function-added", "assertion": {"predicate": "python_function_added", "path": "functions.py", "qualified_name": "added"}, "evidence_refs": ["ast:functions.py"]},
+    "expected_verdict": "supported"
+  },
+  {
+    "id": "function-removed-supported",
+    "packet": {
+      "record_complete": true,
+      "functions": [{"path": "functions.py", "before_functions": ["keep", "removed"], "after_functions": ["keep"], "before_ast_complete": true, "after_ast_complete": true}],
+      "sources": [{"id": "ast:functions.py", "kind": "ast"}]
+    },
+    "claim": {"id": "claim-function-removed", "assertion": {"predicate": "python_function_removed", "path": "functions.py", "qualified_name": "removed"}, "evidence_refs": ["ast:functions.py"]},
+    "expected_verdict": "supported"
+  },
+  {
+    "id": "invented-function-red",
+    "packet": {
+      "record_complete": true,
+      "functions": [{"path": "functions.py", "before_functions": ["keep"], "after_functions": ["keep"], "before_ast_complete": true, "after_ast_complete": true}],
+      "sources": [{"id": "ast:functions.py", "kind": "ast"}]
+    },
+    "claim": {"id": "claim-function-invented", "assertion": {"predicate": "python_function_added", "path": "functions.py", "qualified_name": "invented"}, "evidence_refs": ["ast:functions.py"]},
+    "expected_verdict": "contradicted"
+  },
+  {
+    "id": "command-exit-supported",
+    "packet": {
+      "record_complete": true,
+      "command_exit": {"record_id": "command-record", "exit_code": 0},
+      "sources": [{"id": "record:command-record", "kind": "record"}]
+    },
+    "claim": {"id": "claim-command-ok", "assertion": {"predicate": "command_exit", "record_id": "command-record", "exit_code": 0}, "evidence_refs": ["record:command-record"]},
+    "expected_verdict": "supported"
+  },
+  {
+    "id": "command-exit-red",
+    "packet": {
+      "record_complete": true,
+      "command_exit": {"record_id": "command-record", "exit_code": 1},
+      "sources": [{"id": "record:command-record", "kind": "record"}]
+    },
+    "claim": {"id": "claim-command-wrong", "assertion": {"predicate": "command_exit", "record_id": "command-record", "exit_code": 0}, "evidence_refs": ["record:command-record"]},
+    "expected_verdict": "contradicted"
+  }
+]

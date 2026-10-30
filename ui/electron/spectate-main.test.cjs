@@ -189,6 +189,12 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
       CHANNELS.listHistory,
       CHANNELS.importSession,
       CHANNELS.linkSessionProject,
+      CHANNELS.modelStatus,
+      CHANNELS.downloadModel,
+      CHANNELS.chooseModel,
+      CHANNELS.startNarration,
+      CHANNELS.cancelNarration,
+      CHANNELS.rerunNarration,
     ])
   );
   const project = await choose(value.event);
@@ -366,6 +372,7 @@ test('importSession validates inputs, spawns fixed argv, cleans up temp file, an
   assert.equal(lastSpawn[1][4], '--out');
   tempOutFile = lastSpawn[1][5];
   assert.ok(tempOutFile.includes('faultmesh-import-'));
+  assert.equal(lastSpawn[1].includes('--template-narration'), true);
 
   // Simulate writing validated replay-export document to temp file
   const mockExport = {
@@ -387,6 +394,123 @@ test('importSession validates inputs, spawns fixed argv, cleans up temp file, an
 
   // Verify temp file was cleaned up
   assert.equal(fs.existsSync(tempOutFile), false);
+});
+
+test('modelStatus uses fixed argv and rejects renderer arguments', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const status = value.ipcMain.handlers.get(CHANNELS.modelStatus);
+  await assert.rejects(() => status(value.event, 'path'), /does not accept renderer arguments/);
+  const pending = status(value.event);
+  assert.deepEqual(value.spawns.at(-1)[1], ['replay-model-status']);
+  value.children.at(-1).stdout.emit('data', Buffer.from(JSON.stringify({
+    ready: true,
+    status: 'ready',
+    message: 'Ready',
+    preset: 'medium-3b',
+    model_filename: 'model.gguf',
+  })));
+  value.children.at(-1).emit('close', 0, null);
+  assert.deepEqual(await pending, {
+    ready: true,
+    status: 'ready',
+    message: 'Ready',
+    preset: 'medium-3b',
+    modelFilename: 'model.gguf',
+  });
+});
+
+test('downloadModel validates the registry id, streams progress, and cleans up on dispose', async (context) => {
+  const value = harness();
+  context.after(() => fs.rmSync(value.root, { recursive: true, force: true }));
+  const download = value.ipcMain.handlers.get(CHANNELS.downloadModel);
+  await assert.rejects(() => download(value.event, '../model.gguf'), /supported model id/);
+  assert.deepEqual(await download(value.event, 'qwen2.5-3b-instruct-q4-k-m'), { started: true });
+  assert.deepEqual(value.spawns.at(-1)[1], ['replay-model-download', 'qwen2.5-3b-instruct-q4-k-m']);
+  const child = value.children.at(-1);
+  child.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'progress', downloaded_bytes: 5, total_bytes: 10 })}\n`));
+  assert.deepEqual(value.sent.at(-1), [
+    CHANNELS.narrationEvent,
+    { scope: 'download', event: 'progress', downloaded_bytes: 5, total_bytes: 10 },
+  ]);
+  value.bridge.dispose();
+  assert.deepEqual(child.kills, ['SIGTERM']);
+});
+
+test('startNarration and rerunNarration use fixed argv and reject unsafe input', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const start = value.ipcMain.handlers.get(CHANNELS.startNarration);
+  const rerun = value.ipcMain.handlers.get(CHANNELS.rerunNarration);
+  await assert.rejects(() => start(value.event, '../unsafe', 'codex'), /invalid or unsafe/);
+  await assert.rejects(() => start(value.event, 'session-1', 'other'), /unsupported narration tool/);
+  assert.deepEqual(await start(value.event, 'session-1', 'codex'), { started: true });
+  assert.deepEqual(value.spawns.at(-1)[1], ['replay-narrate-session', 'session-1', '--tool', 'codex']);
+  const first = value.children.at(-1);
+  first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'progress', done: 1, total: 2, step: {}, chapters: [] })}\n`));
+  assert.equal(value.sent.at(-1)[0], CHANNELS.narrationEvent);
+  first.emit('close', 0, null);
+
+  assert.deepEqual(await rerun(value.event, 'session-1', 'claude_code'), { started: true });
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    'replay-narrate-session', 'session-1', '--tool', 'claude_code', '--rerun',
+  ]);
+});
+
+test('cancelNarration stops the active child and returns a bounded result', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const start = value.ipcMain.handlers.get(CHANNELS.startNarration);
+  const cancel = value.ipcMain.handlers.get(CHANNELS.cancelNarration);
+  await start(value.event, 'session-1', 'codex');
+  const child = value.children.at(-1);
+  assert.deepEqual(await cancel(value.event), { cancelled: true });
+  assert.deepEqual(child.kills, ['SIGTERM']);
+  assert.deepEqual(await cancel(value.event), { cancelled: false });
+});
+
+test('chooseModel accepts only a selected GGUF and returns no path', async (context) => {
+  const value = harness();
+  value.bridge.dispose();
+  const modelPath = path.join(value.root, 'chosen.gguf');
+  fs.writeFileSync(modelPath, 'synthetic');
+  const children = [];
+  const spawns = [];
+  const bridge = attachSpectateBridge({
+    ipcMain: value.ipcMain,
+    dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [modelPath] }) },
+    window: value.window,
+    indexPath: path.join(value.root, 'index.html'),
+    command: '/fixed/faultmesh',
+    spawn: (...args) => {
+      spawns.push(args);
+      const child = fakeChild();
+      children.push(child);
+      return child;
+    },
+  });
+  context.after(() => {
+    bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const choose = value.ipcMain.handlers.get(CHANNELS.chooseModel);
+  const pending = choose(value.event);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(spawns.at(-1)[1], ['replay-model-select', fs.realpathSync(modelPath)]);
+  children.at(-1).stdout.emit('data', Buffer.from(JSON.stringify({ selected: true })));
+  children.at(-1).emit('close', 0, null);
+  const result = await pending;
+  assert.deepEqual(result, { selected: true, modelFilename: 'chosen.gguf' });
+  assert.equal('path' in result, false);
 });
 
 test('importSession applies a persisted project link without exposing the path to renderer', async (context) => {

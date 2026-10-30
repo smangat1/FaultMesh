@@ -102,6 +102,6 @@ describe('Replay Backend Contract Regression Tests (Real Export Artifacts)', () 
     // Honest empty center state when no file diff is selected
     expect(screen.getByTestId('replay-empty-diff')).toBeDefined();
     expect(screen.getByText('Checkpoint #1 Overview')).toBeDefined();
-    expect(screen.getByText(/Model-generated chapters, atomic claims, and likely-reason inferences are not present/)).toBeDefined();
+    expect(screen.getByText(/Local narration has not added an explanation yet/)).toBeDefined();
   });
 });

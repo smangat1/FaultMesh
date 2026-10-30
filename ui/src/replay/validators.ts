@@ -185,6 +185,39 @@ export function validateReplayExport(
     if (!isPlainObject(rawJson.chapter_run)) {
       errors.push({ path: 'chapter_run', message: 'Field "chapter_run" must be an object in replay-export-2.0' });
     }
+    if (rawJson.summary !== undefined && rawJson.summary !== null) {
+      if (
+        !isPlainObject(rawJson.summary)
+        || !Array.isArray(rawJson.summary.sentences)
+        || rawJson.summary.sentences.length < 3
+        || rawJson.summary.sentences.length > 5
+        || rawJson.summary.sentences.some((sentence) => typeof sentence !== 'string')
+      ) {
+        errors.push({ path: 'summary', message: 'Optional narration summary must contain 3 to 5 sentences' });
+      }
+    }
+    if (Array.isArray(rawJson.narration)) {
+      rawJson.narration.forEach((step, stepIndex) => {
+        if (!isPlainObject(step)) return;
+        if (step.explanation !== undefined && step.explanation !== null) {
+          if (
+            !isPlainObject(step.explanation)
+            || typeof step.explanation.text !== 'string'
+            || step.explanation.label !== 'model interpretation'
+          ) {
+            errors.push({ path: `narration.${stepIndex}.explanation`, message: 'Explanation must be labeled model interpretation' });
+          }
+        }
+        if (isPlainObject(step.claims) && Array.isArray(step.claims.verdicts)) {
+          step.claims.verdicts.forEach((verdict, verdictIndex) => {
+            if (!isPlainObject(verdict) || verdict.evidence_source == null) return;
+            if (!['rebuilt_file', 'transcript_span', 'command_record'].includes(String(verdict.evidence_source))) {
+              errors.push({ path: `narration.${stepIndex}.claims.verdicts.${verdictIndex}.evidence_source`, message: 'Unknown claim evidence source' });
+            }
+          });
+        }
+      });
+    }
   }
 
   if (errors.length > 0) {

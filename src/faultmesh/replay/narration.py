@@ -212,12 +212,24 @@ def suggest_likely_reason(
     )
 
 
+class ModelExplanation(StrictModel):
+    text: str = Field(min_length=1, max_length=1_000)
+    label: Literal["model interpretation"] = "model interpretation"
+
+
 class StepNarration(StrictModel):
     sequence: int = Field(ge=1)
     packet: EvidencePacket
     claims: ClaimRunRecord
     reason: ReasonRunRecord | None = None
     summary_audit: AgentSummaryAudit | None = None
+    explanation: ModelExplanation | None = None
+
+
+class SessionSummary(StrictModel):
+    sentences: list[str] = Field(min_length=3, max_length=5)
+    source: Literal["deterministic_facts", "model"]
+    fallback_used: bool
 
 
 class ReplayNarrationExport(StrictModel):
@@ -235,6 +247,50 @@ class ReplayNarrationExport(StrictModel):
     baseline_chapters: list[ReplayChapter]
     chapters: list[ReplayChapter]
     chapter_run: ChapterRunRecord
+    summary: SessionSummary | None = None
+
+
+def fallback_session_summary(
+    exported: ReplayExport,
+    *,
+    chapter_count: int,
+) -> SessionSummary:
+    """Build a plain factual summary without asking a model to infer anything."""
+    changed_paths = {
+        changed.path for entry in exported.timeline for changed in entry.changed_files
+    }
+    manifest_states: dict[str, set[str | None]] = {}
+    for manifest in exported.manifests:
+        present = {item.path: item.content_sha256 for item in manifest.files}
+        for path in set(manifest_states) | set(present):
+            manifest_states.setdefault(path, set()).add(present.get(path))
+    changed_paths.update(
+        path for path, states in manifest_states.items() if len(states) > 1
+    )
+    passed = 0
+    failed = 0
+    complete_test_reports = 0
+    for test in exported.tests:
+        if test.counts is None or test.partial or test.output_missing:
+            continue
+        complete_test_reports += 1
+        passed += test.counts.passed or 0
+        failed += (test.counts.failed or 0) + (test.counts.errors or 0)
+    test_sentence = (
+        f"Complete structured test records report {passed} passed and {failed} failed or errored."
+        if complete_test_reports
+        else "No complete structured test results were recorded."
+    )
+    return SessionSummary(
+        sentences=[
+            f"This session contains {len(exported.records)} recorded steps.",
+            f"The replay groups those steps into {chapter_count} chapters.",
+            f"Recorded or rebuilt evidence identifies {len(changed_paths)} changed files.",
+            test_sentence,
+        ],
+        source="deterministic_facts",
+        fallback_used=True,
+    )
 
 
 def build_no_model_narration(exported: ReplayExport) -> ReplayNarrationExport:
@@ -250,7 +306,12 @@ def build_no_model_narration(exported: ReplayExport) -> ReplayNarrationExport:
         )
     baseline = baseline_chapters(exported)
     chapter_run = ChapterRunRecord(chapters=baseline, fallback_used=True)
-    return build_narration_export(exported, steps=steps, chapter_run=chapter_run)
+    return build_narration_export(
+        exported,
+        steps=steps,
+        chapter_run=chapter_run,
+        summary=fallback_session_summary(exported, chapter_count=len(baseline)),
+    )
 
 
 def build_narration_export(
@@ -258,6 +319,7 @@ def build_narration_export(
     *,
     steps: list[StepNarration],
     chapter_run: ChapterRunRecord,
+    summary: SessionSummary | None = None,
 ) -> ReplayNarrationExport:
     return ReplayNarrationExport(
         exported_at=exported.exported_at,
@@ -279,6 +341,7 @@ def build_narration_export(
         baseline_chapters=baseline_chapters(exported),
         chapters=chapter_run.chapters,
         chapter_run=chapter_run,
+        summary=summary,
     )
 
 

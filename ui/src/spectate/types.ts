@@ -135,6 +135,28 @@ export interface HistoryImportPayload {
   size: number;
 }
 
+export interface ReplayModelStatus {
+  ready: boolean;
+  status: string;
+  message: string;
+  preset: string;
+  modelFilename: string | null;
+}
+
+export type NarrationEvent =
+  | { scope: 'download'; event: 'progress'; downloaded_bytes: number; total_bytes: number }
+  | { scope: 'download'; event: 'done'; model_id: string; artifacts: number }
+  | { scope: 'download' | 'narration'; event: 'error'; message: string }
+  | {
+      scope: 'narration';
+      event: 'progress';
+      done: number;
+      total: number;
+      step: unknown;
+      chapters: unknown[];
+    }
+  | { scope: 'narration'; event: 'done'; export: unknown };
+
 export interface SpectateBridge {
   chooseProjectFolder(): Promise<ProjectChoice | null>;
   startWatch(): Promise<{ watching: boolean; displayName: string }>;
@@ -144,6 +166,13 @@ export interface SpectateBridge {
   listHistory?(): Promise<HistoryListPayload>;
   importSession?(sessionId: string, tool: string): Promise<HistoryImportPayload>;
   linkSessionProject?(sessionId: string, projectHandle: string): Promise<{ linked: true; displayName: string }>;
+  modelStatus?(): Promise<ReplayModelStatus>;
+  downloadModel?(modelId: string): Promise<{ started: boolean; reason?: string }>;
+  chooseModel?(): Promise<{ selected: true; modelFilename: string } | null>;
+  startNarration?(sessionId: string, tool: string): Promise<{ started: true }>;
+  cancelNarration?(): Promise<{ cancelled: boolean }>;
+  rerunNarration?(sessionId: string, tool: string): Promise<{ started: true }>;
+  onNarrationEvent?(callback: (event: NarrationEvent) => void): () => void;
 }
 
 declare global {

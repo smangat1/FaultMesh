@@ -233,6 +233,27 @@ playback are documented in [docs/replay-capture-boundary.md](docs/replay-capture
 [docs/replay-usage.md](docs/replay-usage.md). The investigator and isolated failed-test rerun remain
 separate features; neither is a prerequisite for viewing a saved agent recording.
 
+## How the local model is used and checked
+
+The optional local model writes chapter titles, plain step explanations, a session summary, and
+small typed claim proposals. FaultMesh redacts the evidence first, runs the model through a
+loopback-only `llama-server`, and checks every typed claim against recorded commands, transcript
+spans, or reconstructed file state. Model prose is always labeled as interpretation. A claim only
+turns green when the deterministic checker supports it; contradictions are red, while incomplete
+or derived evidence stays yellow. Imported sessions still open with deterministic template text if
+no model is installed or inference fails. Nothing is sent to a hosted inference service.
+
+The synthetic gold set can be reproduced with `python scripts/eval_slm_gold.py`. On 2026-10-30,
+the checker-only, no-model baseline printed:
+
+| Cases | Claims | Green | Yellow | Red | Rejected/downgraded | Unknowns stayed unknown | Expected matches | Fallback rate |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 9 | 9 | 4 | 2 | 3 | 5 | 2 | 9 | 100% |
+
+The fallback rate is 100% because this row intentionally runs without a model. No configured local
+model was present on the evaluation machine, so no 3B result is reported. Pass `--model` to run the
+same packets through a configured local model before deterministic checking.
+
 ## Try it manually
 
 1. **Terminal 1:** Run `python scripts/spectate_demo_editor.py`. It prints a copy folder path and waits for Enter. Leave it waiting and do not press Enter yet.

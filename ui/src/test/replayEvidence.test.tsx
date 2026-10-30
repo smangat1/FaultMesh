@@ -259,9 +259,9 @@ describe('ReplayEvidenceInspector (Phase C2)', () => {
     expect(screen.getByTestId('replay-claim-verdict-contradicted').textContent).toContain('contradicted');
     expect(contradictedItem.querySelector('span[style*="line-through"]')).toBeDefined();
 
-    // 3. Unsupported / unknown claim: explicit neutral label
+    // 3. Unsupported / unknown claim: explicit yellow plain-language label
     expect(screen.getByTestId('replay-claim-item-claim-unknown')).toBeDefined();
-    expect(screen.getByTestId('replay-claim-verdict-unsupported_or_unknown').textContent).toContain('unsupported / unknown');
+    expect(screen.getByTestId('replay-claim-verdict-unsupported_or_unknown').textContent).toContain('could not check');
   });
 
   it('renders likely reason with mandatory model inference label and citation status', () => {

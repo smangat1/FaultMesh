@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { FaultMeshAdapter } from './adapter';
 import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter, ReplayAdapter } from './adapter';
 import { validateReplayExport } from './replay/validators';
-import type { HistoryRoot, HistorySession } from './spectate/types';
+import type { ReplayChapter, StepNarration } from './replay/types';
+import type { HistoryRoot, HistorySession, NarrationEvent } from './spectate/types';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header, type WorkspaceActiveView } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -127,6 +128,16 @@ export const App: React.FC<AppProps> = ({
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<Set<string>>(() => new Set());
   const [selectedHistoryTool, setSelectedHistoryTool] = useState<string | null>(null);
   const [importedHistorySessionId, setImportedHistorySessionId] = useState<string | null>(null);
+  const importedHistorySessionIdRef = useRef<string | null>(null);
+  const selectedHistoryToolRef = useRef<string | null>(null);
+  const [narrationRevision, setNarrationRevision] = useState(0);
+  const [narrationProgress, setNarrationProgress] = useState<{ done: number; total: number } | null>(null);
+  const [narrationError, setNarrationError] = useState<string | null>(null);
+  const [modelSetupOpen, setModelSetupOpen] = useState(false);
+  const [modelSetupMessage, setModelSetupMessage] = useState('Choose a local model to upgrade the template narration.');
+  const [modelSetupBusy, setModelSetupBusy] = useState(false);
+  const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloaded: number; total: number } | null>(null);
+  const [plainMode, setPlainMode] = useState(false);
 
   const handleToggleFolderExpanded = useCallback((folderKey: string) => {
     setExpandedFolderKeys((prev) => {
@@ -467,7 +478,7 @@ export const App: React.FC<AppProps> = ({
   };
 
   const loadValidatedRecording = useCallback(
-    async (result: { name: string; text: string; size: number }) => {
+    async (result: { name: string; text: string; size: number }): Promise<ReplayAdapter> => {
       let json: Record<string, unknown>;
       try {
         json = JSON.parse(result.text);
@@ -479,6 +490,7 @@ export const App: React.FC<AppProps> = ({
         throw new Error(`Replay validation failed for "${result.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
       }
       const replayAdapter = new ReplayAdapter(val.data!, val.origin);
+      activeAdapterRef.current = replayAdapter;
       liveAdapterRef.current = null;
       setLiveChangedNodeIds([]);
       setActiveAdapter(replayAdapter);
@@ -495,6 +507,7 @@ export const App: React.FC<AppProps> = ({
       }
       setCurrentScreen('workspace');
       setActiveView('replay');
+      return replayAdapter;
     },
     []
   );
@@ -525,10 +538,149 @@ export const App: React.FC<AppProps> = ({
       }
       const result = await bridge.importSession(sessionId, tool);
       await loadValidatedRecording(result);
+      importedHistorySessionIdRef.current = sessionId;
+      selectedHistoryToolRef.current = tool;
       setImportedHistorySessionId(sessionId);
+      setNarrationError(null);
+      setNarrationProgress(null);
+      setPlainMode(false);
+      if (!bridge.modelStatus) {
+        setPlainMode(true);
+        return;
+      }
+      try {
+        const status = await bridge.modelStatus();
+        if (status.ready && bridge.startNarration) {
+          try {
+            await bridge.startNarration(sessionId, tool);
+            setNarrationProgress({ done: 0, total: 0 });
+          } catch (error) {
+            setNarrationError(error instanceof Error ? error.message : 'Local narration could not start.');
+          }
+          return;
+        }
+        setModelSetupMessage(status.message || 'Choose a local model to upgrade the template narration.');
+        setModelSetupOpen(true);
+      } catch {
+        setModelSetupMessage('Local narration setup could not be checked. Template mode is still available.');
+        setModelSetupOpen(true);
+      }
     },
     [loadValidatedRecording]
   );
+
+  const startNarrationForImportedSession = useCallback(async (rerun: boolean) => {
+    const sessionId = importedHistorySessionIdRef.current;
+    const tool = selectedHistoryToolRef.current;
+    const bridge = window.faultmeshSpectate;
+    if (!sessionId || !tool || !bridge) return;
+    setNarrationError(null);
+    setPlainMode(false);
+    setModelSetupOpen(false);
+    setNarrationProgress({ done: 0, total: 0 });
+    try {
+      if (rerun) await bridge.rerunNarration?.(sessionId, tool);
+      else await bridge.startNarration?.(sessionId, tool);
+    } catch (error) {
+      setNarrationProgress(null);
+      setNarrationError(error instanceof Error ? error.message : 'Local narration could not start.');
+    }
+  }, []);
+
+  const checkModelAndStartNarration = useCallback(async () => {
+    const bridge = window.faultmeshSpectate;
+    if (!bridge?.modelStatus) return;
+    try {
+      const status = await bridge.modelStatus();
+      if (status.ready) {
+        await startNarrationForImportedSession(false);
+      } else {
+        setModelSetupBusy(false);
+        setModelSetupMessage(status.message);
+        setModelSetupOpen(true);
+      }
+    } catch (error) {
+      setModelSetupBusy(false);
+      setModelSetupMessage(error instanceof Error ? error.message : 'Local narration is not ready.');
+      setModelSetupOpen(true);
+    }
+  }, [startNarrationForImportedSession]);
+
+  useEffect(() => {
+    const bridge = window.faultmeshSpectate;
+    if (!bridge?.onNarrationEvent) return undefined;
+    return bridge.onNarrationEvent((event: NarrationEvent) => {
+      if (event.scope === 'download') {
+        if (event.event === 'progress') {
+          setModelDownloadProgress({ downloaded: event.downloaded_bytes, total: event.total_bytes });
+          return;
+        }
+        if (event.event === 'done') {
+          setModelSetupBusy(false);
+          setModelDownloadProgress(null);
+          void checkModelAndStartNarration();
+          return;
+        }
+        setModelSetupBusy(false);
+        setModelDownloadProgress(null);
+        setModelSetupMessage(event.message);
+        return;
+      }
+      if (event.event === 'progress') {
+        const replayAdapter = activeAdapterRef.current;
+        if (replayAdapter instanceof ReplayAdapter && event.step && Array.isArray(event.chapters)) {
+          replayAdapter.applyNarrationProgress(event.step as StepNarration, event.chapters as ReplayChapter[]);
+          setNarrationRevision((value) => value + 1);
+        }
+        setNarrationProgress({ done: event.done, total: event.total });
+        return;
+      }
+      if (event.event === 'done') {
+        const validation = validateReplayExport(event.export);
+        const replayAdapter = activeAdapterRef.current;
+        if (validation.success && replayAdapter instanceof ReplayAdapter) {
+          replayAdapter.replaceNarratedExport(validation.data!);
+          setNarrationRevision((value) => value + 1);
+          setNarrationError(null);
+        } else {
+          setNarrationError('The local narration result was invalid; template mode is still available.');
+        }
+        setNarrationProgress(null);
+        return;
+      }
+      setNarrationProgress(null);
+      setNarrationError(event.message);
+    });
+  }, [checkModelAndStartNarration]);
+
+  const handleDownloadModel = useCallback(() => {
+    const bridge = window.faultmeshSpectate;
+    if (!bridge?.downloadModel) return;
+    setModelSetupBusy(true);
+    setModelSetupMessage('Downloading the recommended local model…');
+    void bridge.downloadModel('qwen2.5-3b-instruct-q4-k-m').then((result) => {
+      if (!result.started) {
+        setModelSetupBusy(false);
+        setModelSetupMessage('A model download is already running.');
+      }
+    }).catch((error: unknown) => {
+      setModelSetupBusy(false);
+      setModelSetupMessage(error instanceof Error ? error.message : 'Model download failed.');
+    });
+  }, []);
+
+  const handleChooseModel = useCallback(() => {
+    const bridge = window.faultmeshSpectate;
+    if (!bridge?.chooseModel) return;
+    setModelSetupBusy(true);
+    void bridge.chooseModel().then((choice) => {
+      setModelSetupBusy(false);
+      if (choice) void checkModelAndStartNarration();
+    }).catch((error: unknown) => {
+      setModelSetupBusy(false);
+      setModelSetupMessage(error instanceof Error ? error.message : 'The model could not be selected.');
+    });
+  }, [checkModelAndStartNarration]);
 
   const handleResetToSampleDemo = useCallback(() => {
     liveAdapterRef.current = null;
@@ -541,6 +693,12 @@ export const App: React.FC<AppProps> = ({
     setPinnedSymbols([]);
     setIsAgentActive(false);
     setImportedHistorySessionId(null);
+    importedHistorySessionIdRef.current = null;
+    selectedHistoryToolRef.current = null;
+    setNarrationProgress(null);
+    setNarrationError(null);
+    setModelSetupOpen(false);
+    setPlainMode(false);
   }, []);
 
   const handleLiveStateChange = useCallback((state: LiveSpectateState) => {
@@ -1002,6 +1160,25 @@ export const App: React.FC<AppProps> = ({
                     if (!spectate.bridge?.linkSessionProject) return;
                     await spectate.bridge.linkSessionProject(sessionId, projectHandle);
                   }}
+                  narrationRevision={narrationRevision}
+                  narrationProgress={narrationProgress}
+                  narrationError={narrationError}
+                  modelSetupOpen={modelSetupOpen}
+                  modelSetupMessage={modelSetupMessage}
+                  modelSetupBusy={modelSetupBusy}
+                  modelDownloadProgress={modelDownloadProgress}
+                  plainMode={plainMode}
+                  onDownloadModel={handleDownloadModel}
+                  onChooseModel={handleChooseModel}
+                  onSkipModelSetup={() => {
+                    setModelSetupOpen(false);
+                    setPlainMode(true);
+                  }}
+                  onCancelNarration={() => {
+                    void window.faultmeshSpectate?.cancelNarration?.();
+                    setNarrationProgress(null);
+                  }}
+                  onRerunNarration={() => { void startNarrationForImportedSession(true); }}
                 />
               ) : (
                 <ReplayComparisonView

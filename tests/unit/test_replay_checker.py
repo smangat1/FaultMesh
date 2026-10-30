@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -25,10 +26,16 @@ from faultmesh.replay.claims import (
     PytestCountsFact,
     StructuredPytestCountsAssertion,
     TypedClaim,
+    baseline_claims,
+    build_evidence_packet,
     packet_hash,
     render_final_claims,
 )
+from faultmesh.replay.models import Completeness
 from faultmesh.replay.models import TestCounts as ReplayTestCounts
+from faultmesh.replay.narration import ModelExplanation
+from faultmesh.replay.store import ReplayStore
+from faultmesh.replay.views import export_session
 
 BEFORE = "1" * 64
 AFTER = "2" * 64
@@ -111,6 +118,85 @@ def _packet(*, ast_complete: bool = True, source_sequence: int = 7) -> EvidenceP
 
 def _claim(assertion: Any, ref: str, claim_id: str = "claim") -> TypedClaim:
     return TypedClaim(id=claim_id, assertion=assertion, evidence_refs=[ref])
+
+
+def test_incomplete_real_manifest_record_file_changed_is_unknown(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    source = project / "module.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    with ReplayStore(tmp_path / "store") as store:
+        session = store.create_session(project, codex_version="synthetic")
+        source.write_text("VALUE = 2\n", encoding="utf-8")
+        store.capture_checkpoint(session.id, provenance="synthetic")
+        exported = export_session(store, session.id)
+    target = exported.records[-1].model_copy(update={"completeness": Completeness.PARTIAL})
+    exported = exported.model_copy(update={"records": [exported.records[0], target]})
+    packet = build_evidence_packet(exported, target.sequence)
+    claim = baseline_claims(packet).claims[0]
+
+    verdict = ClaimChecker().check(packet, claim)
+
+    assert verdict.verdict is ClaimVerdictName.UNKNOWN
+    assert verdict.reason_code == "incomplete_record"
+
+
+def test_derived_incomplete_state_never_green() -> None:
+    packet = _packet().model_copy(
+        update={
+            "files": [
+                FileState(
+                    path="module.py",
+                    before_sha256=BEFORE,
+                    after_sha256=AFTER,
+                    change="modified",
+                    complete=False,
+                    derived_from="recorded_patch",
+                )
+            ],
+            "evidence_hash": "0" * 64,
+        }
+    )
+    packet = packet.model_copy(update={"evidence_hash": packet_hash(packet)})
+    verdict = ClaimChecker().check(
+        packet,
+        _claim(
+            FileChangedAssertion(
+                predicate=ClaimPredicate.FILE_CHANGED,
+                path="module.py",
+                before_sha256=BEFORE,
+                after_sha256=AFTER,
+                change="modified",
+            ),
+            f"file:module.py:after:{AFTER}",
+        ),
+    )
+    assert verdict.verdict is ClaimVerdictName.UNKNOWN
+    assert verdict.reason_code == "derived_file_state_unavailable"
+
+
+def test_model_explanation_has_no_verdict_badge() -> None:
+    explanation = ModelExplanation(text="This is a model interpretation of the recorded step.")
+    assert explanation.label == "model interpretation"
+    assert "verdict" not in explanation.model_dump()
+
+
+def test_verdict_reports_evidence_source() -> None:
+    packet = _packet()
+    verdict = ClaimChecker().check(
+        packet,
+        _claim(
+            FileChangedAssertion(
+                predicate=ClaimPredicate.FILE_CHANGED,
+                path="module.py",
+                before_sha256=BEFORE,
+                after_sha256=AFTER,
+                change="modified",
+            ),
+            f"file:module.py:after:{AFTER}",
+        ),
+    )
+    assert verdict.evidence_source == "rebuilt_file"
 
 
 def test_checker_supports_exact_facts_and_contradicts_complete_conflicts() -> None:

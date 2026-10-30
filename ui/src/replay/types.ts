@@ -344,6 +344,7 @@ export interface ClaimVerdict {
   reason_code: string;
   reason: string;
   evidence_refs: string[];
+  evidence_source?: 'rebuilt_file' | 'transcript_span' | 'command_record' | null;
   checker_version: string;
 }
 
@@ -478,6 +479,16 @@ export interface StepNarration {
   claims: ClaimRunRecord;
   reason?: ReasonRunRecord | null;
   summary_audit?: AgentSummaryAudit | null;
+  explanation?: {
+    text: string;
+    label: 'model interpretation';
+  } | null;
+}
+
+export interface SessionSummary {
+  sentences: string[];
+  source: 'deterministic_facts' | 'model';
+  fallback_used: boolean;
 }
 
 export type ReplayExportV2 = Omit<ReplayExportV1, 'schema_version'> & {
@@ -486,6 +497,7 @@ export type ReplayExportV2 = Omit<ReplayExportV1, 'schema_version'> & {
   baseline_chapters: ReplayChapter[];
   chapters: ReplayChapter[];
   chapter_run: ChapterRunRecord;
+  summary?: SessionSummary | null;
 };
 
 export type AnyReplayExport = ReplayExportV1 | ReplayExportV2;
