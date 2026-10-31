@@ -54,11 +54,22 @@ class LlamaCppServerBackend:
             raise ValueError("llama-server endpoint must be loopback unless explicitly allowed")
 
     def generate(self, prompt: str, json_schema: dict[str, Any]) -> BackendResult:
+        return self.generate_with_limit(
+            prompt, json_schema, max_output_tokens=self.max_output_tokens
+        )
+
+    def generate_with_limit(
+        self,
+        prompt: str,
+        json_schema: dict[str, Any],
+        *,
+        max_output_tokens: int,
+    ) -> BackendResult:
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
-            "max_tokens": self.max_output_tokens,
+            "max_tokens": max_output_tokens,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "scout_response", "schema": json_schema},
@@ -112,6 +123,17 @@ class LlamaCppCliBackend:
         self.max_output_tokens = max_output_tokens
 
     def generate(self, prompt: str, json_schema: dict[str, Any]) -> BackendResult:
+        return self.generate_with_limit(
+            prompt, json_schema, max_output_tokens=self.max_output_tokens
+        )
+
+    def generate_with_limit(
+        self,
+        prompt: str,
+        json_schema: dict[str, Any],
+        *,
+        max_output_tokens: int,
+    ) -> BackendResult:
         if not self.model_path.is_file():
             raise FileNotFoundError(f"GGUF model not found: {self.model_path}")
         command = [
@@ -121,7 +143,7 @@ class LlamaCppCliBackend:
             "--prompt",
             prompt,
             "--n-predict",
-            str(self.max_output_tokens),
+            str(max_output_tokens),
             "--ctx-size",
             str(self.context_size),
             "--temp",
