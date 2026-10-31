@@ -149,12 +149,18 @@ export type NarrationEvent =
   | { scope: 'download' | 'narration'; event: 'error'; message: string }
   | {
       scope: 'narration';
-      event: 'progress';
+      event: 'baseline';
+      export: unknown;
+    }
+  | {
+      scope: 'narration';
+      event: 'chapter';
       done: number;
       total: number;
-      step: unknown;
-      chapters: unknown[];
+      chapter: unknown;
+      chapter_run: unknown;
     }
+  | { scope: 'narration'; event: 'summary'; done: number; total: number; summary: unknown }
   | { scope: 'narration'; event: 'done'; export: unknown };
 
 export interface SpectateBridge {
@@ -172,6 +178,13 @@ export interface SpectateBridge {
   startNarration?(sessionId: string, tool: string): Promise<{ started: true }>;
   cancelNarration?(): Promise<{ cancelled: boolean }>;
   rerunNarration?(sessionId: string, tool: string): Promise<{ started: true }>;
+  explainStep?(sessionId: string, tool: string, sequence: number): Promise<{ step: unknown }>;
+  summarizeSelection?(
+    sessionId: string,
+    tool: string,
+    start: number,
+    end: number,
+  ): Promise<{ summary: unknown }>;
   onNarrationEvent?(callback: (event: NarrationEvent) => void): () => void;
 }
 

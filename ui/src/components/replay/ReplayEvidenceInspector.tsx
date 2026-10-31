@@ -5,6 +5,7 @@ import type {
   ClaimVerdict,
   TypedClaim,
   ReplayRecord,
+  SelectionSummary,
 } from '../../replay/types';
 import {
   ChevronDown,
@@ -17,6 +18,9 @@ interface ReplayEvidenceInspectorProps {
   limitations: string[];
   isNarrationOn: boolean;
   record?: ReplayRecord | null;
+  selectionSummary?: SelectionSummary | null;
+  selectionLoading?: boolean;
+  selectionError?: string | null;
 }
 
 const plainVerdictReason = (verdict: ClaimVerdict): string => {
@@ -35,6 +39,9 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
   limitations,
   isNarrationOn,
   record,
+  selectionSummary = null,
+  selectionLoading = false,
+  selectionError = null,
 }) => {
   const [activeTab, setActiveTab] = useState<'claims' | 'tests' | 'summary' | 'limitations'>('claims');
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
@@ -188,6 +195,35 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
           overflowWrap: 'anywhere',
         }}
       >
+        {(selectionLoading || selectionSummary || selectionError) && (
+          <div
+            data-testid="replay-selection-summary-result"
+            style={{
+              padding: '10px 12px',
+              borderRadius: 'var(--replay-radius-card, 10px)',
+              backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+              border: '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))',
+              fontSize: '11px',
+              lineHeight: 1.5,
+            }}
+          >
+            <strong style={{ display: 'block', marginBottom: '4px' }}>Selection summary</strong>
+            {selectionLoading && 'Checking the selected steps…'}
+            {selectionError && <span style={{ color: 'var(--replay-status-warning, #946c32)' }}>{selectionError}</span>}
+            {selectionSummary && (
+              <>
+                <div>{selectionSummary.text}</div>
+                <div
+                  data-testid="replay-selection-checked-counts"
+                  style={{ marginTop: '6px', color: 'var(--replay-text-muted, #8b97ad)' }}
+                >
+                  Checked claims for {selectionSummary.checked_claim_steps} of {selectionSummary.total_steps} steps
+                  {' · '}{selectionSummary.source === 'model' ? 'model interpretation' : 'deterministic facts'}
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {record?.provenance === 'history_import' && (
           <div
             data-testid="replay-history-evidence-summary"

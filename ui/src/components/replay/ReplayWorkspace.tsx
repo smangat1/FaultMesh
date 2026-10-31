@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { ReplayAdapter } from '../../adapter/replayAdapter';
 import type { GraphData } from '../../types';
 import { ReplayTimeline } from './ReplayTimeline';
@@ -14,6 +14,7 @@ import { isScreenTipSeen } from '../../utils/firstUseTipsStorage';
 import { WatchProjectPrompt } from '../WatchProjectPrompt';
 import { ReplayModelSetup } from './ReplayModelSetup';
 import type { ProjectChoice } from '../../spectate/types';
+import type { SelectionSummary, StepNarration } from '../../replay/types';
 import {
   dismissSessionWatchPrompt,
   isSessionProjectLinked,
@@ -54,6 +55,8 @@ export interface ReplayWorkspaceProps {
   onSkipModelSetup?: () => void;
   onCancelNarration?: () => void;
   onRerunNarration?: () => void;
+  onExplainStep?: (sequence: number) => Promise<StepNarration | null>;
+  onSummarizeSelection?: (start: number, end: number) => Promise<SelectionSummary | null>;
 }
 
 export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
@@ -81,6 +84,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   onSkipModelSetup,
   onCancelNarration,
   onRerunNarration,
+  onExplainStep,
+  onSummarizeSelection,
 }) => {
   const timeline = useMemo(() => adapter.getTimeline(), [adapter]);
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
@@ -88,6 +93,14 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [isNarrationOn, setIsNarrationOn] = useState<boolean>(true);
   const [isBaselineMode, setIsBaselineMode] = useState<boolean>(false);
+  const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
+  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+  const [selectionSummary, setSelectionSummary] = useState<SelectionSummary | null>(null);
+  const [selectionLoading, setSelectionLoading] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const selectionCache = useRef(new Map<string, SelectionSummary>());
+  const [explanationLoadingSequence, setExplanationLoadingSequence] = useState<number | null>(null);
+  const [instantStepNote, setInstantStepNote] = useState<string | null>(null);
   const tipScreenId = importedSessionId ? 'replayHistory' : 'replay';
   const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen(tipScreenId));
   const [showWatchPrompt, setShowWatchPrompt] = useState<boolean>(() => Boolean(
@@ -170,6 +183,36 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   }, [adapter]);
 
   // Set sequence and update adapter
+  const isTrivialStep = useCallback((seq: number) => {
+    const entry = timeline.find((item) => item.sequence === seq);
+    const record = adapter.getRecordForSequence(seq);
+    const response = record?.tool_response;
+    const hasCommandExit = Boolean(
+      response
+      && typeof response === 'object'
+      && typeof (response as Record<string, unknown>).exit_code === 'number'
+    );
+    return Boolean(
+      entry
+      && entry.changed_files.length === 0
+      && entry.test_evidence.length === 0
+      && !hasCommandExit
+    );
+  }, [adapter, timeline]);
+
+  const requestStepExplanation = useCallback((seq: number) => {
+    setInstantStepNote(null);
+    if (isTrivialStep(seq)) {
+      setInstantStepNote('No recorded changes, command exit, or test evidence for this step.');
+      return;
+    }
+    if (adapter.getNarration(seq) || !onExplainStep) return;
+    setExplanationLoadingSequence(seq);
+    void onExplainStep(seq).catch((error: unknown) => {
+      setInstantStepNote(error instanceof Error ? error.message : 'The step explanation was unavailable.');
+    }).finally(() => setExplanationLoadingSequence((current) => current === seq ? null : current));
+  }, [adapter, isTrivialStep, onExplainStep]);
+
   const handleSelectSequence = useCallback(
     (seq: number) => {
       const entry = timeline.find((t) => t.sequence === seq);
@@ -181,10 +224,47 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         } else {
           setSelectedFile(null);
         }
+        requestStepExplanation(seq);
       }
     },
-    [adapter, timeline]
+    [adapter, requestStepExplanation, timeline]
   );
+
+  const handleRangeSelect = useCallback((seq: number, extend: boolean) => {
+    if (extend && selectionAnchor !== null) {
+      setSelectionRange({
+        start: Math.min(selectionAnchor, seq),
+        end: Math.max(selectionAnchor, seq),
+      });
+    } else {
+      setSelectionAnchor(seq);
+      setSelectionRange({ start: seq, end: seq });
+    }
+    setSelectionSummary(null);
+    setSelectionError(null);
+  }, [selectionAnchor]);
+
+  const handleSummarizeSelection = useCallback(() => {
+    if (!selectionRange || !onSummarizeSelection) return;
+    const key = `${selectionRange.start}:${selectionRange.end}`;
+    const cached = selectionCache.current.get(key);
+    setIsEvidenceOpen(true);
+    if (cached) {
+      setSelectionSummary(cached);
+      setSelectionError(null);
+      return;
+    }
+    setSelectionLoading(true);
+    setSelectionError(null);
+    void onSummarizeSelection(selectionRange.start, selectionRange.end).then((summary) => {
+      if (summary) {
+        selectionCache.current.set(key, summary);
+        setSelectionSummary(summary);
+      }
+    }).catch((error: unknown) => {
+      setSelectionError(error instanceof Error ? error.message : 'The selection summary was unavailable.');
+    }).finally(() => setSelectionLoading(false));
+  }, [onSummarizeSelection, selectionRange]);
 
   // Navigate previous / next checkpoint
   const handlePrevCheckpoint = useCallback(() => {
@@ -399,7 +479,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 color: 'var(--replay-status-warning, #946c32)',
               }}
             >
-              Narrating {narrationProgress.done}/{narrationProgress.total}
+              Titling chapters {narrationProgress.done}/{narrationProgress.total}
             </span>
           )}
 
@@ -467,7 +547,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </button>
           {narrationProgress ? (
             <button type="button" className="replay-header-toggle-btn" onClick={onCancelNarration}>
-              Cancel narration
+              Stop titling
             </button>
           ) : importedSessionId && !modelSetupOpen && !plainMode ? (
             <button
@@ -603,6 +683,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 adapter.setUseBaselineChapters(baseline);
               }}
               hasModelChapters={hasModelChapters}
+              selectionRange={selectionRange}
+              onRangeSelect={handleRangeSelect}
+              onSummarizeSelection={handleSummarizeSelection}
+              selectionLoading={selectionLoading}
             />
           </div>
         </div>
@@ -629,6 +713,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             completenessInfo={completenessInfo}
             isModelNarrationAvailable={hasModelChapters}
             narration={narration}
+            explanationLoading={explanationLoadingSequence === currentSeq}
+            instantStepNote={instantStepNote}
           />
 
           {/* Graph Mini Map Dock (Resizable, Size-cycling, Honest empty state) */}
@@ -671,6 +757,9 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               limitations={limitations}
               isNarrationOn={isNarrationOn}
               record={currentRecord}
+              selectionSummary={selectionSummary}
+              selectionLoading={selectionLoading}
+              selectionError={selectionError}
             />
           </div>
         </div>

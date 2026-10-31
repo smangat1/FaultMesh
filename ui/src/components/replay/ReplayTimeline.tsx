@@ -18,6 +18,10 @@ interface ReplayTimelineProps {
   isBaselineMode: boolean;
   onToggleBaseline: (baseline: boolean) => void;
   hasModelChapters: boolean;
+  selectionRange?: { start: number; end: number } | null;
+  onRangeSelect?: (sequence: number, extend: boolean) => void;
+  onSummarizeSelection?: () => void;
+  selectionLoading?: boolean;
 }
 
 export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
@@ -32,6 +36,10 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
   isBaselineMode,
   onToggleBaseline,
   hasModelChapters,
+  selectionRange = null,
+  onRangeSelect,
+  onSummarizeSelection,
+  selectionLoading = false,
 }) => {
   const activeChapter = chapters.find((c) => c.id === selectedChapterId) || null;
 
@@ -117,6 +125,33 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                 Chapters: {isBaselineMode ? 'Baseline' : 'Model'}
               </button>
             )}
+          </div>
+        )}
+        {selectionRange && (
+          <div
+            data-testid="replay-selection-controls"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}
+          >
+            <span style={{ fontSize: '10px', color: 'var(--replay-text-muted, #8b97ad)' }}>
+              Selected #{selectionRange.start}–#{selectionRange.end}
+            </span>
+            <button
+              type="button"
+              className="btn-ghost"
+              data-testid="replay-summarize-selection"
+              disabled={selectionLoading}
+              onClick={onSummarizeSelection}
+              style={{
+                fontSize: '10px',
+                padding: '3px 7px',
+                borderRadius: 'var(--replay-radius-control, 7px)',
+                border: '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))',
+                color: 'var(--replay-accent, #4a7bb0)',
+                cursor: selectionLoading ? 'wait' : 'pointer',
+              }}
+            >
+              {selectionLoading ? 'Summarizing…' : 'Summarize selection'}
+            </button>
           </div>
         )}
       </div>
@@ -252,21 +287,35 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
       >
         {filteredTimeline.map((entry) => {
           const isSelected = entry.sequence === currentSequence;
+          const isRangeSelected = Boolean(
+            selectionRange
+            && entry.sequence >= selectionRange.start
+            && entry.sequence <= selectionRange.end
+          );
           const hasFailTest = entry.test_evidence.some((t) => t.state === 'fail');
           const hasPassTest = entry.test_evidence.some((t) => t.state === 'pass');
 
           return (
             <div
               key={entry.sequence}
-              onClick={() => onSelectSequence(entry.sequence)}
+              onClick={(event) => {
+                onSelectSequence(entry.sequence);
+                onRangeSelect?.(entry.sequence, event.shiftKey);
+              }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px',
                 padding: '8px 10px',
                 borderRadius: 'var(--replay-radius-control, 7px)',
-                backgroundColor: isSelected ? 'var(--replay-bg-surface-2, #141a26)' : 'rgba(255, 255, 255, 0.02)',
-                border: isSelected ? '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))' : '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+                backgroundColor: isSelected
+                  ? 'var(--replay-bg-surface-2, #141a26)'
+                  : isRangeSelected
+                  ? 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))'
+                  : 'rgba(255, 255, 255, 0.02)',
+                border: isSelected || isRangeSelected
+                  ? '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))'
+                  : '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
                 boxShadow: isSelected ? 'var(--replay-shadow-subtle)' : 'none',
                 cursor: 'pointer',
                 marginBottom: '4px',

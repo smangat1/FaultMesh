@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { FaultMeshAdapter } from './adapter';
 import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter, ReplayAdapter } from './adapter';
 import { validateReplayExport } from './replay/validators';
-import type { ReplayChapter, StepNarration } from './replay/types';
+import type {
+  ChapterRunRecord,
+  ReplayChapter,
+  SelectionSummary,
+  SessionSummary,
+  StepNarration,
+} from './replay/types';
 import type { HistoryRoot, HistorySession, NarrationEvent } from './spectate/types';
 import type { RunSummary, TestItem, GraphData, PinnedSymbol } from './types';
 import { Header, type WorkspaceActiveView } from './components/Header';
@@ -553,7 +559,11 @@ export const App: React.FC<AppProps> = ({
         if (status.ready && bridge.startNarration) {
           try {
             await bridge.startNarration(sessionId, tool);
-            setNarrationProgress({ done: 0, total: 0 });
+            const current = activeAdapterRef.current;
+            setNarrationProgress({
+              done: 0,
+              total: current instanceof ReplayAdapter ? current.getChapters().length : 0,
+            });
           } catch (error) {
             setNarrationError(error instanceof Error ? error.message : 'Local narration could not start.');
           }
@@ -577,7 +587,11 @@ export const App: React.FC<AppProps> = ({
     setNarrationError(null);
     setPlainMode(false);
     setModelSetupOpen(false);
-    setNarrationProgress({ done: 0, total: 0 });
+    const current = activeAdapterRef.current;
+    setNarrationProgress({
+      done: 0,
+      total: current instanceof ReplayAdapter ? current.getChapters().length : 0,
+    });
     try {
       if (rerun) await bridge.rerunNarration?.(sessionId, tool);
       else await bridge.startNarration?.(sessionId, tool);
@@ -626,13 +640,35 @@ export const App: React.FC<AppProps> = ({
         setModelSetupMessage(event.message);
         return;
       }
-      if (event.event === 'progress') {
+      if (event.event === 'baseline') {
+        const validation = validateReplayExport(event.export);
         const replayAdapter = activeAdapterRef.current;
-        if (replayAdapter instanceof ReplayAdapter && event.step && Array.isArray(event.chapters)) {
-          replayAdapter.applyNarrationProgress(event.step as StepNarration, event.chapters as ReplayChapter[]);
+        if (validation.success && replayAdapter instanceof ReplayAdapter) {
+          replayAdapter.replaceNarratedExport(validation.data!);
+          setNarrationRevision((value) => value + 1);
+          const total = replayAdapter.getChapters().length;
+          setNarrationProgress({ done: 0, total });
+        }
+        return;
+      }
+      if (event.event === 'chapter') {
+        const replayAdapter = activeAdapterRef.current;
+        if (replayAdapter instanceof ReplayAdapter && event.chapter && event.chapter_run) {
+          replayAdapter.applyChapterUpdate(
+            event.chapter as ReplayChapter,
+            event.chapter_run as ChapterRunRecord,
+          );
           setNarrationRevision((value) => value + 1);
         }
         setNarrationProgress({ done: event.done, total: event.total });
+        return;
+      }
+      if (event.event === 'summary') {
+        const replayAdapter = activeAdapterRef.current;
+        if (replayAdapter instanceof ReplayAdapter && event.summary) {
+          replayAdapter.applySessionSummary(event.summary as SessionSummary);
+          setNarrationRevision((value) => value + 1);
+        }
         return;
       }
       if (event.event === 'done') {
@@ -652,6 +688,47 @@ export const App: React.FC<AppProps> = ({
       setNarrationError(event.message);
     });
   }, [checkModelAndStartNarration]);
+
+  const explainImportedStep = useCallback(async (sequence: number): Promise<StepNarration | null> => {
+    const sessionId = importedHistorySessionIdRef.current;
+    const tool = selectedHistoryToolRef.current;
+    const bridge = window.faultmeshSpectate;
+    const replayAdapter = activeAdapterRef.current;
+    if (!sessionId || !tool || !bridge?.explainStep || !(replayAdapter instanceof ReplayAdapter)) {
+      return null;
+    }
+    const cached = replayAdapter.getNarration(sequence);
+    if (cached) return cached;
+    const result = await bridge.explainStep(sessionId, tool, sequence);
+    const step = result.step as StepNarration;
+    if (!step || step.sequence !== sequence || !step.claims) {
+      throw new Error('The local step explanation was invalid.');
+    }
+    replayAdapter.applyStepNarration(step);
+    setNarrationRevision((value) => value + 1);
+    return step;
+  }, []);
+
+  const summarizeImportedSelection = useCallback(async (
+    start: number,
+    end: number,
+  ): Promise<SelectionSummary | null> => {
+    const sessionId = importedHistorySessionIdRef.current;
+    const tool = selectedHistoryToolRef.current;
+    const bridge = window.faultmeshSpectate;
+    if (!sessionId || !tool || !bridge?.summarizeSelection) return null;
+    const result = await bridge.summarizeSelection(sessionId, tool, start, end);
+    const summary = result.summary as SelectionSummary;
+    if (
+      !summary
+      || summary.start_sequence !== start
+      || summary.end_sequence !== end
+      || typeof summary.text !== 'string'
+    ) {
+      throw new Error('The local selection summary was invalid.');
+    }
+    return summary;
+  }, []);
 
   const handleDownloadModel = useCallback(() => {
     const bridge = window.faultmeshSpectate;
@@ -1179,6 +1256,8 @@ export const App: React.FC<AppProps> = ({
                     setNarrationProgress(null);
                   }}
                   onRerunNarration={() => { void startNarrationForImportedSession(true); }}
+                  onExplainStep={explainImportedStep}
+                  onSummarizeSelection={summarizeImportedSelection}
                 />
               ) : (
                 <ReplayComparisonView

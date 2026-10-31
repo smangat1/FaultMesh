@@ -624,7 +624,7 @@ def replay_history_import(
         )
         document: ReplayExport | ReplayNarrationExport = exported
         if template_narration:
-            document = run_narration(exported, None)
+            document = build_staged_baseline(exported)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(document.model_dump_json(indent=2) + "\n", encoding="utf-8")
     except Exception as exc:

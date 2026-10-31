@@ -481,7 +481,9 @@ export interface StepNarration {
   summary_audit?: AgentSummaryAudit | null;
   explanation?: {
     text: string;
-    label: 'model interpretation';
+    label: 'model interpretation' | 'deterministic note';
+    fallback_used?: boolean;
+    error?: string | null;
   } | null;
 }
 
@@ -489,6 +491,19 @@ export interface SessionSummary {
   sentences: string[];
   source: 'deterministic_facts' | 'model';
   fallback_used: boolean;
+}
+
+export interface SelectionSummary {
+  schema_version: 'replay-selection-summary-1.0';
+  start_sequence: number;
+  end_sequence: number;
+  total_steps: number;
+  non_trivial_steps: number;
+  checked_claim_steps: number;
+  text: string;
+  source: 'deterministic_facts' | 'model';
+  fallback_used: boolean;
+  error: string | null;
 }
 
 export type ReplayExportV2 = Omit<ReplayExportV1, 'schema_version'> & {
