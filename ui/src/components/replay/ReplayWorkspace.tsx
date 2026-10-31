@@ -197,6 +197,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
       && entry.changed_files.length === 0
       && entry.test_evidence.length === 0
       && !hasCommandExit
+      && !record?.edit_patch
     );
   }, [adapter, timeline]);
 

@@ -427,6 +427,14 @@ def _map_item(
                 if key in payload
             }
         )
+        if (
+            isinstance(response, dict)
+            and isinstance(payload.get("exitCode"), int)
+            and not isinstance(payload.get("exitCode"), bool)
+        ):
+            # Preserve the source-shaped exitCode while also exposing the replay-wide
+            # normalized key consumed by the deterministic evidence packet builder.
+            response["exit_code"] = payload["exitCode"]
         types = _merge_types(command_types, response_types)
         return _record(
             thread_id=item.thread_id,

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from faultmesh.inference.backends import BackendResult
+from faultmesh.replay.models import ChangedFileView
 from faultmesh.replay.narration_runner import (
     PersistentNarrationCache,
     build_staged_baseline,
@@ -165,6 +166,26 @@ def test_chapter_titles_run_newest_first_with_tight_caps(tmp_path: Path) -> None
         ("summary", 3, 3),
     ]
     assert all(chapter.title_status == "model interpretation" for chapter in result.chapters)
+
+
+def test_chapter_title_prompt_is_redacted(tmp_path: Path) -> None:
+    exported = _many_steps(_export(tmp_path), 1)
+    secret = "password=synthetic-title-secret"
+    entry = exported.timeline[0]
+    changed = ChangedFileView(
+        path=secret,
+        change="modified",
+        file_state="unknown",
+    )
+    exported = exported.model_copy(
+        update={"timeline": [entry.model_copy(update={"changed_files": [changed]})]}
+    )
+    backend = ChapterBackend()
+    with PersistentNarrationCache(tmp_path / "cache") as cache:
+        run_staged_narration(exported, backend, cache=cache)
+    prompts = "\n".join(backend.prompts)
+    assert secret not in prompts
+    assert "synthetic-title-secret" not in prompts
 
 
 def test_cancel_mid_titling_returns_valid_partial_state(tmp_path: Path) -> None:

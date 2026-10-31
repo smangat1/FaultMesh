@@ -568,13 +568,20 @@ def run_staged_narration(
             active_cache.close()
 
 
-def _step_packet_is_trivial(packet: object) -> bool:
+def _step_packet_is_trivial(exported: ReplayExport, packet: object) -> bool:
     from faultmesh.replay.claims import EvidencePacket
 
     if not isinstance(packet, EvidencePacket):
         return True
+    record = next(
+        (item for item in exported.records if item.sequence == packet.sequence),
+        None,
+    )
+    recorded_edit = record is not None and bool(record.edit_patch)
     changed = any(item.change != "unchanged" for item in packet.files)
-    return not (changed or packet.command_exit is not None or packet.pytest_counts)
+    return not (
+        recorded_edit or changed or packet.command_exit is not None or packet.pytest_counts
+    )
 
 
 def explain_step_on_demand(
@@ -607,7 +614,7 @@ def explain_step_on_demand(
         cached = active_cache.get(content_hash, f"step-explanation:{cache_key}", StepNarration)
         if isinstance(cached, StepNarration):
             return cached
-        if _step_packet_is_trivial(packet):
+        if _step_packet_is_trivial(exported, packet):
             step = StepNarration(
                 sequence=sequence,
                 packet=packet,
@@ -684,11 +691,19 @@ def summarize_selection_on_demand(
         if isinstance(cached, SelectionSummary):
             return cached
         packets = [build_evidence_packet(exported, record.sequence) for record in records]
-        informative = [packet for packet in packets if not _step_packet_is_trivial(packet)]
+        informative = [
+            packet for packet in packets if not _step_packet_is_trivial(exported, packet)
+        ]
         ranked = sorted(
             informative,
             key=lambda packet: (
-                -int(any(item.change != "unchanged" for item in packet.files)),
+                -int(
+                    any(item.change != "unchanged" for item in packet.files)
+                    or any(
+                        record.sequence == packet.sequence and bool(record.edit_patch)
+                        for record in records
+                    )
+                ),
                 -int(packet.command_exit is not None),
                 -int(bool(packet.pytest_counts)),
                 packet.sequence,
@@ -719,6 +734,7 @@ def summarize_selection_on_demand(
             "non_trivial_steps": len(informative),
             "checked_claim_steps": len(chosen),
             "changed_path_count": len(changed_paths),
+            "recorded_edit_steps": sum(bool(record.edit_patch) for record in records),
             "command_exit_steps": sum(packet.command_exit is not None for packet in packets),
             "test_evidence_steps": sum(bool(packet.pytest_counts) for packet in packets),
             "record_type_counts": dict(Counter(record.record_type.value for record in records)),
