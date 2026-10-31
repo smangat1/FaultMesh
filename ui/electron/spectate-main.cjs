@@ -22,6 +22,8 @@ const CHANNELS = Object.freeze({
   startNarration: 'faultmesh:replay:start-narration',
   cancelNarration: 'faultmesh:replay:cancel-narration',
   rerunNarration: 'faultmesh:replay:rerun-narration',
+  explainStep: 'faultmesh:replay:explain-step',
+  summarizeSelection: 'faultmesh:replay:summarize-selection',
   narrationEvent: 'faultmesh:replay:narration-event',
 });
 
@@ -890,19 +892,37 @@ function attachSpectateBridge({
           const parsed = JSON.parse(line);
           if (!isPlainObject(parsed)) throw new Error('unknown narration event');
           if (
-            parsed.event === 'progress'
+            parsed.event === 'baseline'
+            && isPlainObject(parsed.export)
+          ) {
+            sendNarrationEvent({ scope: 'narration', event: 'baseline', export: parsed.export });
+          } else if (
+            parsed.event === 'chapter'
             && Number.isSafeInteger(parsed.done)
             && Number.isSafeInteger(parsed.total)
-            && isPlainObject(parsed.step)
-            && Array.isArray(parsed.chapters)
+            && isPlainObject(parsed.chapter)
+            && isPlainObject(parsed.chapter_run)
           ) {
             sendNarrationEvent({
               scope: 'narration',
-              event: 'progress',
+              event: 'chapter',
               done: parsed.done,
               total: parsed.total,
-              step: parsed.step,
-              chapters: parsed.chapters,
+              chapter: parsed.chapter,
+              chapter_run: parsed.chapter_run,
+            });
+          } else if (
+            parsed.event === 'summary'
+            && Number.isSafeInteger(parsed.done)
+            && Number.isSafeInteger(parsed.total)
+            && isPlainObject(parsed.summary)
+          ) {
+            sendNarrationEvent({
+              scope: 'narration',
+              event: 'summary',
+              done: parsed.done,
+              total: parsed.total,
+              summary: parsed.summary,
             });
           } else if (parsed.event === 'done' && isPlainObject(parsed.export)) {
             sendNarrationEvent({ scope: 'narration', event: 'done', export: parsed.export });
@@ -923,8 +943,9 @@ function attachSpectateBridge({
       sendNarrationEvent({ scope: 'narration', event: 'error', message: 'Local narration could not start.' });
     });
     active.once('close', (code) => {
-      if (narrationChild === active) narrationChild = null;
-      if (code !== 0) {
+      const wasActive = narrationChild === active;
+      if (wasActive) narrationChild = null;
+      if (code !== 0 && wasActive) {
         sendNarrationEvent({ scope: 'narration', event: 'error', message: 'Local narration stopped.' });
       }
     });
@@ -940,6 +961,80 @@ function attachSpectateBridge({
     if (active) active.kill('SIGTERM');
     return { cancelled: Boolean(active) };
   });
+
+  function linkedProjectArgs(sessionId) {
+    try {
+      const links = readProjectLinks(projectLinksPath);
+      const linked = links[sessionId];
+      if (isPlainObject(linked) && typeof linked.root === 'string' && path.isAbsolute(linked.root)) {
+        const linkedRoot = fs.realpathSync(linked.root);
+        if (fs.statSync(linkedRoot).isDirectory()) return ['--project-root', linkedRoot];
+      }
+    } catch (error) {
+      if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
+    }
+    return [];
+  }
+
+  function runOnDemand(event, args, kind) {
+    assertTrustedSender(event);
+    const expected = kind === 'explain' ? 3 : 4;
+    if (args.length !== expected) throw new Error('invalid on-demand narration arguments');
+    const [sessionId, tool, start, end] = args;
+    if (!validSessionId(sessionId)) throw new Error('invalid or unsafe sessionId');
+    if (tool !== 'codex' && tool !== 'claude_code') throw new Error('unsupported narration tool');
+    if (!Number.isSafeInteger(start) || start < 1) throw new Error('invalid replay sequence');
+    if (kind === 'selection' && (!Number.isSafeInteger(end) || end < start)) {
+      throw new Error('invalid replay selection');
+    }
+    const commandArgs = kind === 'explain'
+      ? ['replay-explain-step', sessionId, String(start), '--tool', tool]
+      : ['replay-summarize-selection', sessionId, String(start), String(end), '--tool', tool];
+    commandArgs.push(...linkedProjectArgs(sessionId));
+    return new Promise((resolve, reject) => {
+      const active = spawn(command, commandArgs, {
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let output = '';
+      active.stdout.on('data', (chunk) => {
+        output += chunk.toString('utf8');
+        if (Buffer.byteLength(output) > 8 * 1024 * 1024) {
+          active.kill('SIGTERM');
+          reject(new Error('on-demand narration output exceeded limit'));
+        }
+      });
+      active.stderr.on('data', () => {});
+      active.once('error', () => reject(new Error('local narration could not start')));
+      active.once('close', (code) => {
+        if (code !== 0) {
+          reject(new Error('local narration stopped'));
+          return;
+        }
+        try {
+          const lines = output.split('\n').filter((line) => line.trim());
+          const parsed = JSON.parse(lines.at(-1) || '{}');
+          if (!isPlainObject(parsed) || parsed.event !== 'result') {
+            throw new Error('invalid on-demand narration output');
+          }
+          if (kind === 'explain' && isPlainObject(parsed.step)) resolve({ step: parsed.step });
+          else if (kind === 'selection' && isPlainObject(parsed.summary)) {
+            resolve({ summary: parsed.summary });
+          } else throw new Error('invalid on-demand narration result');
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+  }
+
+  ipcMain.handle(CHANNELS.explainStep, async (event, ...args) => (
+    runOnDemand(event, args, 'explain')
+  ));
+  ipcMain.handle(CHANNELS.summarizeSelection, async (event, ...args) => (
+    runOnDemand(event, args, 'selection')
+  ));
 
   return {
     channels: CHANNELS,
@@ -964,6 +1059,8 @@ function attachSpectateBridge({
       ipcMain.removeHandler(CHANNELS.startNarration);
       ipcMain.removeHandler(CHANNELS.cancelNarration);
       ipcMain.removeHandler(CHANNELS.rerunNarration);
+      ipcMain.removeHandler(CHANNELS.explainStep);
+      ipcMain.removeHandler(CHANNELS.summarizeSelection);
       disposed = true;
     },
   };

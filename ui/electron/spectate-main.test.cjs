@@ -195,6 +195,8 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
       CHANNELS.startNarration,
       CHANNELS.cancelNarration,
       CHANNELS.rerunNarration,
+      CHANNELS.explainStep,
+      CHANNELS.summarizeSelection,
     ])
   );
   const project = await choose(value.event);
@@ -453,8 +455,10 @@ test('startNarration and rerunNarration use fixed argv and reject unsafe input',
   assert.deepEqual(await start(value.event, 'session-1', 'codex'), { started: true });
   assert.deepEqual(value.spawns.at(-1)[1], ['replay-narrate-session', 'session-1', '--tool', 'codex']);
   const first = value.children.at(-1);
-  first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'progress', done: 1, total: 2, step: {}, chapters: [] })}\n`));
+  first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'baseline', export: {} })}\n`));
+  first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'chapter', done: 1, total: 2, chapter: {}, chapter_run: {} })}\n`));
   assert.equal(value.sent.at(-1)[0], CHANNELS.narrationEvent);
+  assert.equal(value.sent.at(-1)[1].event, 'chapter');
   first.emit('close', 0, null);
 
   assert.deepEqual(await rerun(value.event, 'session-1', 'claude_code'), { started: true });
@@ -476,6 +480,38 @@ test('cancelNarration stops the active child and returns a bounded result', asyn
   assert.deepEqual(await cancel(value.event), { cancelled: true });
   assert.deepEqual(child.kills, ['SIGTERM']);
   assert.deepEqual(await cancel(value.event), { cancelled: false });
+});
+
+test('on-demand narration uses fixed argv and rejects unsafe inputs', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const explain = value.ipcMain.handlers.get(CHANNELS.explainStep);
+  const summarize = value.ipcMain.handlers.get(CHANNELS.summarizeSelection);
+  await assert.rejects(() => explain(value.event, '../unsafe', 'codex', 1), /invalid or unsafe/);
+  await assert.rejects(() => explain(value.event, 'session-1', 'other', 1), /unsupported narration tool/);
+  await assert.rejects(() => summarize(value.event, 'session-1', 'codex', 4, 2), /invalid replay selection/);
+
+  const explanation = explain(value.event, 'session-1', 'codex', 7);
+  const explainChild = value.children.at(-1);
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    'replay-explain-step', 'session-1', '7', '--tool', 'codex',
+  ]);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  explainChild.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'result', step: { sequence: 7 } })}\n`));
+  explainChild.emit('close', 0, null);
+  assert.deepEqual(await explanation, { step: { sequence: 7 } });
+
+  const selection = summarize(value.event, 'session-1', 'claude_code', 2, 9);
+  const summaryChild = value.children.at(-1);
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    'replay-summarize-selection', 'session-1', '2', '9', '--tool', 'claude_code',
+  ]);
+  summaryChild.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'result', summary: { total_steps: 8 } })}\n`));
+  summaryChild.emit('close', 0, null);
+  assert.deepEqual(await selection, { summary: { total_steps: 8 } });
 });
 
 test('chooseModel accepts only a selected GGUF and returns no path', async (context) => {

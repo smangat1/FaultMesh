@@ -63,8 +63,12 @@ from faultmesh.replay.narration import (
 )
 from faultmesh.replay.narration_runner import (
     PersistentNarrationCache,
+    build_staged_baseline,
+    explain_step_on_demand,
     run_narration,
+    run_staged_narration,
     session_content_hash,
+    summarize_selection_on_demand,
 )
 from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.replay.thread_history_import import thread_history_smoke_summary
@@ -943,18 +947,11 @@ def replay_narrate_session(
     ] = None,
     rerun: Annotated[bool, typer.Option(help="Clear this session cache before narration.")] = False,
 ) -> None:
-    """Import and narrate one history session while streaming bounded JSON events."""
+    """Import one session, stream its baseline, then title chapters newest-first."""
     if tool not in {"codex", "claude_code"}:
         raise typer.BadParameter("tool must be codex or claude_code")
     cache = PersistentNarrationCache(cache_dir)
     try:
-        settings = load_model_settings(settings_file)
-        status = model_status(settings)
-        if not status.ready or settings.selected_model_path is None:
-            typer.echo(
-                json.dumps({"event": "error", "message": status.message}, sort_keys=True)
-            )
-            raise typer.Exit(code=2)
         exported = import_history_session(
             session_id,
             tool=cast(HistoryTool, tool),
@@ -962,6 +959,20 @@ def replay_narrate_session(
         )
         if rerun:
             cache.clear_session_cache(session_content_hash(exported))
+        baseline = build_staged_baseline(exported)
+        typer.echo(
+            json.dumps(
+                {"event": "baseline", "export": baseline.model_dump(mode="json")},
+                sort_keys=True,
+            )
+        )
+        settings = load_model_settings(settings_file)
+        status = model_status(settings)
+        if not status.ready or settings.selected_model_path is None:
+            typer.echo(
+                json.dumps({"event": "error", "message": status.message}, sort_keys=True)
+            )
+            raise typer.Exit(code=2)
         preset = MODEL_PRESETS[settings.preset]
         with LlamaServer(
             settings.llama_server_executable,
@@ -984,29 +995,43 @@ def replay_narrate_session(
                 max_output_tokens=preset.max_output_tokens,
             )
 
-            def report(done: int, total: int, partial: ReplayNarrationExport) -> None:
-                latest = partial.narration[-1]
-                typer.echo(
-                    json.dumps(
-                        {
-                            "event": "progress",
-                            "done": done,
-                            "total": total,
-                            "step": latest.model_dump(mode="json"),
-                            "chapters": [
-                                chapter.model_dump(mode="json")
-                                for chapter in partial.chapters
-                            ],
-                        },
-                        sort_keys=True,
-                    )
-                )
+            def report(
+                stage: str,
+                done: int,
+                total: int,
+                partial: ReplayNarrationExport,
+            ) -> None:
+                if stage == "baseline":
+                    return
+                if stage == "chapter":
+                    chapter = partial.chapters[-done]
+                    payload: dict[str, object] = {
+                        "event": "chapter",
+                        "done": done,
+                        "total": total,
+                        "chapter": chapter.model_dump(mode="json"),
+                        "chapter_run": partial.chapter_run.model_dump(mode="json"),
+                    }
+                elif stage == "summary":
+                    payload = {
+                        "event": "summary",
+                        "done": done,
+                        "total": total,
+                        "summary": (
+                            partial.summary.model_dump(mode="json")
+                            if partial.summary is not None
+                            else None
+                        ),
+                    }
+                else:
+                    payload = {"event": stage, "done": done, "total": total}
+                typer.echo(json.dumps(payload, sort_keys=True))
 
-            narrated = run_narration(
+            narrated = run_staged_narration(
                 exported,
                 inference_backend,
                 preset,
-                on_progress=report,
+                on_stage=report,
                 cache=cache,
             )
             typer.echo(
@@ -1022,6 +1047,126 @@ def replay_narrate_session(
         raise typer.Exit(code=2) from exc
     finally:
         cache.close()
+
+
+def _on_demand_runtime(
+    session_id: str,
+    tool: str,
+    project_root: Path | None,
+    settings_file: Path | None,
+    cache_dir: Path | None,
+    operation: str,
+    start_sequence: int,
+    end_sequence: int | None = None,
+) -> None:
+    if tool not in {"codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    cache = PersistentNarrationCache(cache_dir)
+    try:
+        exported = import_history_session(
+            session_id,
+            tool=cast(HistoryTool, tool),
+            project_root=project_root,
+        )
+        settings = load_model_settings(settings_file)
+        status = model_status(settings)
+        if not status.ready or settings.selected_model_path is None:
+            raise RuntimeError(status.message)
+        preset = MODEL_PRESETS[settings.preset]
+        with LlamaServer(
+            settings.llama_server_executable,
+            Path(settings.selected_model_path),
+            context_size=preset.context_size,
+            startup_timeout=preset.timeout_seconds,
+        ) as server:
+            server_status = server.start()
+            if not server_status.ready or server_status.endpoint is None:
+                raise RuntimeError(server_status.message)
+            inference_backend = LlamaCppServerBackend(
+                server_status.endpoint,
+                model=Path(settings.selected_model_path).name,
+                timeout_seconds=preset.timeout_seconds,
+                max_output_tokens=preset.max_output_tokens,
+            )
+            if operation == "explain":
+                step = explain_step_on_demand(
+                    exported,
+                    start_sequence,
+                    inference_backend,
+                    preset,
+                    cache=cache,
+                )
+                payload: dict[str, object] = {
+                    "event": "result",
+                    "step": step.model_dump(mode="json"),
+                }
+            elif operation == "selection" and end_sequence is not None:
+                summary = summarize_selection_on_demand(
+                    exported,
+                    start_sequence,
+                    end_sequence,
+                    inference_backend,
+                    preset,
+                    cache=cache,
+                )
+                payload = {
+                    "event": "result",
+                    "summary": summary.model_dump(mode="json"),
+                }
+            else:
+                raise ValueError("unsupported on-demand narration operation")
+            typer.echo(json.dumps(payload, sort_keys=True))
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(json.dumps({"event": "error", "message": str(exc)[:500]}, sort_keys=True))
+        raise typer.Exit(code=2) from exc
+    finally:
+        cache.close()
+
+
+@app.command("replay-explain-step")
+def replay_explain_step(
+    session_id: Annotated[str, typer.Argument()],
+    sequence: Annotated[int, typer.Argument(min=1)],
+    tool: Annotated[str, typer.Option(help="codex or claude_code")] = "codex",
+    project_root: Annotated[Path | None, typer.Option(file_okay=False, resolve_path=True)] = None,
+    settings_file: Annotated[Path | None, typer.Option(dir_okay=False, resolve_path=True)] = None,
+    cache_dir: Annotated[Path | None, typer.Option(file_okay=False, resolve_path=True)] = None,
+) -> None:
+    """Check and explain one replay step through the shared local cache."""
+    _on_demand_runtime(
+        session_id,
+        tool,
+        project_root,
+        settings_file,
+        cache_dir,
+        "explain",
+        sequence,
+    )
+
+
+@app.command("replay-summarize-selection")
+def replay_summarize_selection(
+    session_id: Annotated[str, typer.Argument()],
+    start_sequence: Annotated[int, typer.Argument(min=1)],
+    end_sequence: Annotated[int, typer.Argument(min=1)],
+    tool: Annotated[str, typer.Option(help="codex or claude_code")] = "codex",
+    project_root: Annotated[Path | None, typer.Option(file_okay=False, resolve_path=True)] = None,
+    settings_file: Annotated[Path | None, typer.Option(dir_okay=False, resolve_path=True)] = None,
+    cache_dir: Annotated[Path | None, typer.Option(file_okay=False, resolve_path=True)] = None,
+) -> None:
+    """Summarize a contiguous replay range through the shared local cache."""
+    _on_demand_runtime(
+        session_id,
+        tool,
+        project_root,
+        settings_file,
+        cache_dir,
+        "selection",
+        start_sequence,
+        end_sequence,
+    )
 
 
 @app.command("replay-narrate")
