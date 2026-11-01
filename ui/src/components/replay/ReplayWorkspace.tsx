@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 
 const DETERMINISTIC_STEP_NOTE = 'No recorded changes, command exit, or test evidence for this step.';
+const MODEL_NOT_READY_STEP_NOTE = 'Set up the local model to check this step.';
 
 export interface ReplayWorkspaceProps {
   adapter: ReplayAdapter;
@@ -202,7 +203,13 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const requestStepExplanation = useCallback((seq: number) => {
     explanationTargetSequenceRef.current = seq;
     setInstantStepNote(null);
-    if (isTrivialStep(seq) || !onDemandModelReady) {
+    if (!onDemandModelReady) {
+      latestExplanationSequenceRef.current = null;
+      setExplanationLoadingSequence(null);
+      setInstantStepNote(MODEL_NOT_READY_STEP_NOTE);
+      return;
+    }
+    if (isTrivialStep(seq)) {
       latestExplanationSequenceRef.current = null;
       setExplanationLoadingSequence(null);
       setInstantStepNote(DETERMINISTIC_STEP_NOTE);
@@ -294,7 +301,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     if (!onDemandModelReady) {
       setSelectionLoading(false);
       setSelectionError(null);
-      setInstantStepNote(DETERMINISTIC_STEP_NOTE);
+      setInstantStepNote(MODEL_NOT_READY_STEP_NOTE);
       return;
     }
     setSelectionLoading(true);

@@ -187,6 +187,7 @@ describe('ReplayAdapter (Phase C1)', () => {
     expect(run.isLive).toBe(false); // Historical is NEVER live
     expect(run.isRealImport).toBe(true);
     expect(run.replayOrigin).toBe('real_recording');
+    expect(run.project).toBe('Recorded session');
     expect(run.codexVersion).toBe('codex-cli 0.165.0-alpha.1.2');
     expect(run.granularity).toBe('tool_boundary');
 

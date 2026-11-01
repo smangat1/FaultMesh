@@ -291,7 +291,7 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
     const runSummary: RunSummary = {
       id: session.id,
-      project: `session:${session.id.slice(0, 12)}`,
+      project: session.source_title?.trim() || 'Recorded session',
       gitBranch: 'recorded',
       gitRevision: session.project_root_sha256.slice(0, 7),
       commitMessage: 'recorded agent replay',
@@ -300,7 +300,7 @@ export class ReplayAdapter implements FaultMeshAdapter {
       durationMs,
       status: session.status === 'active' ? 'running' : 'completed',
       isFixture: this.origin === 'synthetic_fixture',
-      fixtureLabel: this.origin === 'synthetic_fixture' ? 'Synthetic Fixture' : '',
+      fixtureLabel: this.origin === 'synthetic_fixture' ? 'Synthetic sample' : '',
       limitations: this.getLimitations(),
       stats: {
         totalTests,

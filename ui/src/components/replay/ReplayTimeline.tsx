@@ -307,6 +307,8 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
           );
           const hasFailTest = entry.test_evidence.some((t) => t.state === 'fail');
           const hasPassTest = entry.test_evidence.some((t) => t.state === 'pass');
+          const eventLabel = entry.tool_name
+            || (entry.record_type === 'checkpoint' ? 'recorded event' : entry.record_type.replace(/_/g, ' '));
 
           return (
             <div
@@ -369,7 +371,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                     color: entry.tool_name ? 'var(--replay-text-primary, #e6edf8)' : 'var(--replay-text-muted, #8b97ad)',
                   }}
                 >
-                  {entry.tool_name ? entry.tool_name : entry.record_type}
+                  {eventLabel}
                 </span>
 
                 {/* Attribution status tag */}
