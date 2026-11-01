@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import shutil
+import signal
 import socket
 import subprocess
 import time
@@ -11,7 +12,8 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from types import FrameType
+from typing import NoReturn, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -67,6 +69,9 @@ class LlamaServer:
         self._health_check = health_check
         self._process_factory = process_factory or subprocess.Popen
         self._process: _Process | None = None
+        self._previous_sigterm_handler: (
+            signal.Handlers | Callable[[int, FrameType | None], object] | int | None
+        ) = None
         self._status = LlamaServerStatus(ready=False, message="Narration engine is stopped.")
         atexit.register(self.stop)
 
@@ -157,7 +162,19 @@ class LlamaServer:
     close = stop
 
     def __enter__(self) -> LlamaServer:
+        self._previous_sigterm_handler = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, self._handle_sigterm)
         return self
 
     def __exit__(self, *args: object) -> None:
+        try:
+            self.stop()
+        finally:
+            previous = self._previous_sigterm_handler
+            self._previous_sigterm_handler = None
+            if previous is not None:
+                signal.signal(signal.SIGTERM, previous)
+
+    def _handle_sigterm(self, signum: int, _frame: FrameType | None) -> NoReturn:
         self.stop()
+        raise SystemExit(128 + signum)

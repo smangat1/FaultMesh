@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import signal
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -171,6 +172,22 @@ def test_server_stops_on_close(tmp_path: Path) -> None:
     server.start()
     server.close()
     assert factory.processes[0].terminated is True
+
+
+def test_sigterm_during_narration_stops_server_before_cli_exit(tmp_path: Path) -> None:
+    factory = ProcessFactory()
+    server = _server(tmp_path, factory)
+    previous = signal.getsignal(signal.SIGTERM)
+
+    with pytest.raises(SystemExit) as raised, server:
+        server.start()
+        handler = signal.getsignal(signal.SIGTERM)
+        assert callable(handler)
+        handler(signal.SIGTERM, None)
+
+    assert raised.value.code == 128 + signal.SIGTERM
+    assert factory.processes[0].terminated is True
+    assert signal.getsignal(signal.SIGTERM) == previous
 
 
 def test_missing_executable_gives_plain_status(tmp_path: Path) -> None:
