@@ -276,7 +276,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     });
 
     expect(screen.getByTestId('tool-no-sessions-codex').textContent).toContain(
-      'No recorded sessions found in this root.'
+      'No recorded sessions found for this tool.'
     );
   });
 
@@ -420,7 +420,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     render(<App />);
 
     expect(screen.getByTestId('autodetect-no-bridge-empty-state')).toBeDefined();
-    expect(screen.getByText(/Local session autodetect requires the FaultMesh desktop app/i)).toBeDefined();
+    expect(screen.getByText(/Local sessions are available in the FaultMesh desktop app/i)).toBeDefined();
     expect(screen.getByTestId('startup-open-recording-btn')).toBeDefined();
   });
 

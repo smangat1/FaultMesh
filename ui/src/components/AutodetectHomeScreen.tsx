@@ -425,7 +425,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                   letterSpacing: '0.02em',
                 }}
               >
-                Local Autodetect
+                Local sessions
               </span>
             </div>
             <p
@@ -436,7 +436,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                 lineHeight: '1.4',
               }}
             >
-              Automatically discovers recorded coding sessions from local tools on this machine.
+              Recorded coding sessions found on this machine.
             </p>
           </div>
 
@@ -533,7 +533,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
             <Layers size={36} color="#64748b" />
             <div style={{ maxWidth: '440px' }}>
               <h2 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 6px 0', color: '#f8fafc' }}>
-                Local session autodetect requires the FaultMesh desktop app
+              Local sessions are available in the FaultMesh desktop app
               </h2>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                 FaultMesh automatically indexes local Codex and Claude Code sessions when running inside the desktop app. In the browser, you can open any exported recording (.json) directly below.
@@ -576,7 +576,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
           >
             <Layers size={32} color="#64748b" />
             <h2 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: '#f8fafc' }}>
-              No supported coding tool sessions detected
+              No recorded sessions found
             </h2>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '420px', lineHeight: '1.4' }}>
               FaultMesh detected no active Codex or Claude Code history folders on this machine. You can open a recorded export (.json) or watch a Python codebase live.
@@ -725,7 +725,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                       >
                         {hiddenCount > 0
                           ? 'All sessions in this tool are inside hidden system folders.'
-                          : 'No recorded sessions found in this root.'}
+                          : 'No recorded sessions found for this tool.'}
                       </div>
                     ) : (
                       visibleProjects.map((proj) => {

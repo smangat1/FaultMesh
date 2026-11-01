@@ -215,14 +215,14 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Sample Data / Fixture Badge (hidden in replay to avoid duplicate badge row) */}
+          {/* Synthetic provenance badge (hidden in replay to avoid duplicate provenance) */}
           {activeRun?.isFixture && !activeRun.isLive && !activeRun.isReplay && (
             <span
               className="badge-status sample"
-              title={activeRun.fixtureLabel || 'Read-only fixture data: synthetic sample artifacts'}
+              title={activeRun.fixtureLabel || 'Read-only synthetic sample'}
             >
               <AlertTriangle size={10} />
-              SAMPLE DATA
+              Synthetic sample
             </span>
           )}
 
@@ -303,7 +303,7 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {runs.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.id.slice(0, 14)} ({r.fixtureLabel || r.status})
+                    {r.project} — {r.fixtureLabel || r.commitMessage || r.status}
                   </option>
                 ))}
               </select>

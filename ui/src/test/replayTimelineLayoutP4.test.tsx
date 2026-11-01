@@ -20,8 +20,8 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     expect(screen.getByTestId('replay-timeline-bar')).toBeDefined();
 
     // 2. Header is minimal: position + origin only
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #1 of 7');
-    expect(screen.getByTestId('replay-header-origin').textContent).toContain('SYNTHETIC FIXTURE');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 1 of 7');
+    expect(screen.getByTestId('replay-header-origin').textContent).toContain('Synthetic sample');
 
     // 3. Diff viewer is main stage content (shows empty state when no changes at step 1, diff pane when changes present)
     expect(screen.getByTestId('replay-main-stage')).toBeDefined();
@@ -49,7 +49,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     const nextBtn = screen.getByTestId('replay-next-btn');
     fireEvent.click(nextBtn); // step 2
     fireEvent.click(nextBtn); // step 3
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #3 of 7');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 3 of 7');
     expect(screen.getByTestId('replay-diff-pane')).toBeDefined();
   });
 
@@ -296,8 +296,8 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     // Must show plain honest empty state - NEVER invent fake nodes!
     const emptyState = screen.getByTestId('replay-minimap-empty-state');
     expect(emptyState).toBeDefined();
-    expect(emptyState.textContent).toContain('This recording contains no project-structure data');
-    expect(emptyState.textContent).toContain('No dependency graph or AST relationship edges were recorded for this session');
+    expect(emptyState.textContent).toContain('No project map was recorded');
+    expect(emptyState.textContent).toContain('The session does not include recorded file or code relationships');
   });
 
   it('renders GraphView inside mini map dock when recording carries valid graph structure data', () => {
@@ -367,7 +367,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     fireEvent.click(nextBtn); // step 3
 
     const seqBadge = screen.getByTestId('replay-current-seq-badge');
-    expect(seqBadge.textContent).toContain('Checkpoint #3 of 7');
+    expect(seqBadge.textContent).toContain('Step 3 of 7');
 
     const dock = screen.getByTestId('replay-minimap-dock');
     const resizeHandle = screen.getByTestId('replay-minimap-resize-handle');
@@ -381,12 +381,12 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
     fireEvent.keyDown(resizeHandle, { key: 'ArrowLeft' });
     expect(dock.style.width).toBe('260px');
     // Assert checkpoint badge is unchanged (does NOT move to checkpoint 2)
-    expect(seqBadge.textContent).toContain('Checkpoint #3 of 7');
+    expect(seqBadge.textContent).toContain('Step 3 of 7');
 
     // Fire ArrowRight: narrows dock by 20px (from 260px to 240px)
     fireEvent.keyDown(resizeHandle, { key: 'ArrowRight' });
     expect(dock.style.width).toBe('240px');
     // Assert checkpoint badge is still unchanged (does NOT move to checkpoint 4)
-    expect(seqBadge.textContent).toContain('Checkpoint #3 of 7');
+    expect(seqBadge.textContent).toContain('Step 3 of 7');
   });
 });

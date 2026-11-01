@@ -74,7 +74,7 @@ describe('Regression: App Run Discovery, Selection & Error Handling', () => {
     render(<App adapter={mockAdapter} isDemo={true} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/No Recorded Runs/i)).toBeDefined();
+      expect(screen.getByText(/No recordings yet/i)).toBeDefined();
     });
   });
 

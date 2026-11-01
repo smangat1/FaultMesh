@@ -76,10 +76,10 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
-            REPLAY TIMELINE
+            Steps
           </span>
           <span style={{ fontSize: '10px', color: 'var(--replay-text-faint, #4d576a)', fontFamily: 'var(--font-mono, monospace)' }}>
-            {timeline.length} checkpoint{timeline.length !== 1 ? 's' : ''}
+            {timeline.length} step{timeline.length !== 1 ? 's' : ''}
           </span>
         </div>
 
@@ -275,6 +275,13 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
         </div>
       )}
 
+      {chapters.length === 0 && isNarrationOn && (
+        <div className="replay-panel-empty" data-testid="replay-chapters-empty-state">
+          <strong>No chapters yet</strong>
+          <span>The recorded steps are still available below.</span>
+        </div>
+      )}
+
       {/* Checkpoints Sequence List */}
       <div
         style={{
@@ -285,6 +292,12 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
         }}
         data-testid="replay-sequence-list"
       >
+        {filteredTimeline.length === 0 && (
+          <div className="replay-panel-empty" data-testid="replay-steps-empty-state">
+            <strong>No recorded steps</strong>
+            <span>This session does not contain a replayable timeline.</span>
+          </div>
+        )}
         {filteredTimeline.map((entry) => {
           const isSelected = entry.sequence === currentSequence;
           const isRangeSelected = Boolean(
@@ -373,7 +386,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                     border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
                   }}
                 >
-                  {entry.attribution_status === 'tool_boundary' ? 'tool step' : 'checkpoint'}
+                  {entry.attribution_status === 'tool_boundary' ? 'tool step' : 'recorded step'}
                 </span>
 
                 {/* Completeness badge if partial/missing */}

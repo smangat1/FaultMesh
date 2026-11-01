@@ -341,7 +341,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     render(<ReplayWorkspace adapter={adapter} />);
 
     // Recording origin remains visible; internal provenance stays collapsed.
-    expect(screen.getByTestId('replay-header-origin').textContent).toContain('REAL RECORDING');
+    expect(screen.getByTestId('replay-header-origin').textContent).toContain('Recorded session');
     expect(screen.queryByText(/LIVE:/i)).toBeNull();
     const details = screen.getByTestId('replay-step-details');
     expect(details.hasAttribute('open')).toBe(false);
@@ -350,7 +350,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     expect(details.textContent).toContain('codex-cli 0.165.0-alpha.1.2');
 
     // Checkpoint count
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #1 of 2');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 1 of 2');
 
     // V1 export has NO chapters
     expect(screen.queryByTestId('replay-chapters-list')).toBeNull();
@@ -370,14 +370,14 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
 
     // Click Next
     fireEvent.click(nextBtn);
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #2 of 2');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 2 of 2');
     expect(nextBtn.disabled).toBe(true);
     expect(prevBtn.disabled).toBe(false);
 
     // Click row #1 directly
     const row1 = screen.getByTestId('replay-checkpoint-row-1');
     fireEvent.click(row1);
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #1 of 2');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 1 of 2');
   });
 
   it('supports keyboard navigation via ArrowLeft / ArrowRight', () => {
@@ -385,15 +385,15 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     const adapter = new ReplayAdapter(v1);
     render(<ReplayWorkspace adapter={adapter} />);
 
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #1 of 2');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 1 of 2');
 
     // Fire ArrowRight
     fireEvent.keyDown(window, { key: 'ArrowRight' });
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #2 of 2');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 2 of 2');
 
     // Fire ArrowLeft
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Checkpoint #1 of 2');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 1 of 2');
   });
 
   it('renders V2 chapters with prominent "model interpretation" and "baseline" tags', () => {
@@ -402,7 +402,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     render(<ReplayWorkspace adapter={adapter} />);
 
     // Origin is synthetic fixture
-    expect(screen.getByTestId('replay-header-origin').textContent).toContain('SYNTHETIC FIXTURE');
+    expect(screen.getByTestId('replay-header-origin').textContent).toContain('Synthetic sample');
 
     // Model chapter title and explicit status tag
     const chapterItem = screen.getByTestId('replay-chapter-item-model-1');

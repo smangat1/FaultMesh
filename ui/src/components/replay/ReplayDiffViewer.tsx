@@ -105,6 +105,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
     const isPartial = entry?.completeness === 'partial' || completenessInfo?.completeness === 'partial';
     return (
       <div
+        className="replay-empty-stage"
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -119,6 +120,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
         data-testid="replay-empty-diff"
       >
         <div
+          className="replay-empty-panel"
           style={{
             maxWidth: '560px',
             width: '100%',
@@ -151,7 +153,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
             </div>
             <div>
               <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--replay-text-primary, #e6edf8)' }}>
-                Checkpoint #{entry?.sequence ?? 1} Overview
+                No files changed in this step
               </div>
               <div style={{ fontSize: '11px', color: 'var(--replay-text-faint, #4d576a)', fontFamily: 'var(--font-mono, monospace)', marginTop: '2px' }}>
                 {entry?.captured_at ? formatReplayTime(entry.captured_at) : ''}
@@ -177,7 +179,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   color: 'var(--replay-text-primary, #e6edf8)',
                 }}
               >
-                <strong style={{ display: 'block', marginBottom: '4px' }}>AI summary</strong>
+                <strong style={{ display: 'block', marginBottom: '4px' }}>{narration.explanation.label}</strong>
                 {narration.explanation.text}
               </div>
             )}
@@ -194,7 +196,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
                 }}
               >
-                <div style={{ fontWeight: 600 }}>Recorded history step</div>
+                <div style={{ fontWeight: 600 }}>Recorded evidence</div>
                 {record?.prompt_text && (
                   <EvidenceBlock label="Prompt" value={record.prompt_text} testId="replay-history-prompt" />
                 )}
@@ -243,7 +245,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   ? `Gap details: ${entry.gap_reason}`
                   : isPartial
                   ? 'Missing content hashes detected in recording; code diff unavailable at this sequence.'
-                  : 'No file modifications recorded at this checkpoint; code state is unchanged from previous step.'}
+                  : 'No file changes were recorded for this step; the previous file state remains current.'}
               </div>
             </div>
 
@@ -273,14 +275,14 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
       if (activeChangedFile?.change === 'added') {
         return (
           <div style={{ padding: '16px', color: 'var(--replay-status-complete, #4a7bb0)', fontSize: '12px' }}>
-            New file added at this checkpoint.
+            New file added in this step.
           </div>
         );
       }
       if (activeChangedFile?.change === 'deleted') {
         return (
           <div style={{ padding: '16px', color: 'var(--replay-status-danger, #9c4444)', fontSize: '12px' }}>
-            File deleted at this checkpoint.
+            File deleted in this step.
           </div>
         );
       }

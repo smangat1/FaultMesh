@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type {
   StepNarration,
   StructuredTestEvidence,
@@ -43,7 +43,9 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
   selectionLoading = false,
   selectionError = null,
 }) => {
-  const [activeTab, setActiveTab] = useState<'claims' | 'tests' | 'summary' | 'limitations'>('claims');
+  const [activeTab, setActiveTab] = useState<'claims' | 'tests' | 'summary' | 'limitations'>(
+    isNarrationOn ? 'claims' : 'tests'
+  );
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
 
   const claimRun = narration?.claims || null;
@@ -57,6 +59,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
     : (rawClaims && Array.isArray((rawClaims as any).claims))
     ? ((rawClaims as any).claims as TypedClaim[])
     : [];
+
+  useEffect(() => {
+    if (!isNarrationOn && (activeTab === 'claims' || activeTab === 'summary')) {
+      setActiveTab('tests');
+    }
+  }, [activeTab, isNarrationOn]);
 
   const verdictsByClaimId = new Map<string, ClaimVerdict>();
   if (claimRun) {
@@ -390,8 +398,9 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               </div>
 
               {(!claimRun || finalClaims.length === 0) && (
-                <div style={{ fontSize: '11px', color: 'var(--replay-text-muted, #8b97ad)', padding: '12px 0' }}>
-                  No atomic claims recorded for this step.
+                <div className="replay-panel-empty" data-testid="replay-claims-empty-state">
+                  <strong>No checked claims for this step</strong>
+                  <span>Recorded evidence remains available in the other tabs.</span>
                 </div>
               )}
 
@@ -542,19 +551,11 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
             </div>
 
             {tests.length === 0 ? (
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--replay-text-muted, #8b97ad)',
-                  padding: '16px',
-                  backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-                  border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
-                  borderRadius: 'var(--replay-radius-card, 10px)',
-                  textAlign: 'center',
-                }}
+              <div className="replay-panel-empty"
                 data-testid="replay-no-tests-label"
               >
-                No test evidence recorded at this checkpoint (not observed).
+                <strong>No test evidence for this step</strong>
+                <span>No test result was observed in the recording.</span>
               </div>
             ) : (
               tests.map((testItem) => {
@@ -723,6 +724,13 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                 AUDITED STATEMENTS ({summaryAudit.statements.length})
               </span>
 
+              {summaryAudit.statements.length === 0 && (
+                <div className="replay-panel-empty" data-testid="replay-summary-empty-state">
+                  <strong>No statements to check</strong>
+                  <span>The recording did not provide an auditable summary.</span>
+                </div>
+              )}
+
               {summaryAudit.statements.map((s, idx) => {
                 const isSupported =
                   s.display_status === 'supported_recorded_fact' ||
@@ -835,6 +843,12 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
               <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
                 RECORDING LIMITATIONS ({limitations.length})
               </span>
+              {limitations.length === 0 && (
+                <div className="replay-panel-empty" data-testid="replay-limitations-empty-state">
+                  <strong>No additional limits listed</strong>
+                  <span>This does not make unrecorded evidence known.</span>
+                </div>
+              )}
               {limitations.map((lim, idx) => (
                 <div
                   key={idx}

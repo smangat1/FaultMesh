@@ -420,7 +420,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             title={recordedAtLabel}
             data-testid="replay-current-seq-badge"
           >
-            Checkpoint #{currentSeq} of {timeline.length}
+            Step {currentSeq} of {timeline.length}
           </span>
           <button
             onClick={handleNextCheckpoint}
@@ -434,10 +434,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </button>
           <span className="replay-origin-label" data-testid="replay-header-origin">
             {origin === 'synthetic_fixture'
-              ? 'SYNTHETIC FIXTURE'
+              ? 'Synthetic sample'
               : origin === 'simulated_demo'
-              ? 'SIMULATED DEMO'
-              : 'REAL RECORDING'}
+              ? 'Simulated sample'
+              : 'Recorded session'}
           </span>
           {narrationProgress && (
             <span className="replay-progress-label" data-testid="replay-narration-progress">
@@ -537,7 +537,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           }}
         >
           <strong style={{ color: 'var(--replay-text-primary, #e6edf8)' }}>
-            {sessionSummary.source === 'model' ? 'AI session summary: ' : 'Session overview: '}
+            {sessionSummary.source === 'model' ? 'Model interpretation: ' : 'Session overview: '}
           </strong>
           {sessionSummary.sentences.join(' ')}
         </div>
@@ -617,8 +617,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           <div className="replay-panel-top-bar">
             <div className="replay-panel-top-title">
               <BookOpen size={13} style={{ color: 'var(--replay-accent, #4a7bb0)' }} />
-              <span>Chapters & Sequence</span>
-              <span className="replay-shortcut-tag">C</span>
+              <span>Chapters</span>
             </div>
             <button
               onClick={() => setIsChaptersOpen(false)}
@@ -700,8 +699,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           <div className="replay-panel-top-bar">
             <div className="replay-panel-top-title">
               <ShieldCheck size={13} style={{ color: 'var(--replay-accent, #4a7bb0)' }} />
-              <span>Evidence & Claims</span>
-              <span className="replay-shortcut-tag">E</span>
+              <span>Evidence</span>
             </div>
             <button
               onClick={() => setIsEvidenceOpen(false)}

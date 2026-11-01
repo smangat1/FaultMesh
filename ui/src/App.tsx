@@ -1236,7 +1236,7 @@ export const App: React.FC<AppProps> = ({
                   color: 'var(--text-secondary)',
                 }}
               >
-                Loading run artifacts...
+                Opening recording…
               </div>
             )}
 
