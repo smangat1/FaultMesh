@@ -187,6 +187,7 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
       CHANNELS.stop,
       CHANNELS.openRecording,
       CHANNELS.listHistory,
+      CHANNELS.listPrompts,
       CHANNELS.importSession,
       CHANNELS.linkSessionProject,
       CHANNELS.modelStatus,
@@ -343,6 +344,49 @@ test('listHistory spawns replay-history-list with fixed argv, no paths, and boun
   assert.equal(result.sessions[0].first_prompt_preview, 'Fix [redacted: secret] bug');
   assert.equal('source_file' in result.sessions[0], false);
   assert.equal('root_path' in result.roots[0], false);
+});
+
+test('listPrompts validates input and lazily spawns the fixed aggregate command', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const listPrompts = value.ipcMain.handlers.get(CHANNELS.listPrompts);
+  assert.ok(listPrompts);
+  await assert.rejects(() => listPrompts(value.event, '../unsafe', 'codex'), /invalid or unsafe/);
+
+  const promise = listPrompts(value.event, 'session-one', 'codex');
+  assert.deepEqual(
+    value.spawns.at(-1)[1],
+    ['replay-history-prompts', 'session-one', '--tool', 'codex'],
+  );
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  const child = value.children.at(-1);
+  child.stdout.emit('data', Buffer.from(JSON.stringify({
+    schema_version: 'history-prompt-index-1.0',
+    session_id: 'session-one',
+    source_file_sha256: 'a'.repeat(64),
+    cached: false,
+    prompts: [{
+      prompt_id: 'prompt-one',
+      first_line: 'Change [redacted: token]',
+      start_sequence: 2,
+      end_sequence: 4,
+      changed_files: ['src/app.py'],
+      changed_file_count: 1,
+      started_at: '2026-11-01T10:00:00Z',
+      ended_at: '2026-11-01T10:01:00Z',
+      test_observation: 'passed',
+      grouping: 'prompt_turn',
+    }],
+  })));
+  child.emit('close', 0, null);
+
+  const result = await promise;
+  assert.equal(result.prompts.length, 1);
+  assert.equal(result.prompts[0].first_line, 'Change [redacted: token]');
+  assert.deepEqual(result.prompts[0].changed_files, ['src/app.py']);
 });
 
 test('importSession validates inputs, spawns fixed argv, cleans up temp file, and returns export text without paths', async (context) => {

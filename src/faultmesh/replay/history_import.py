@@ -110,13 +110,19 @@ def _build_export(
     records: tuple[ReplayRecord, ...],
     *,
     project_root: Path | None = None,
+    reconstruct_file_state: bool = True,
 ) -> ReplayExport:
-    reconstruction = reconstruct_history_file_state(
-        records,
-        project_root,
-        max_file_bytes=session.limits.max_file_bytes,
+    reconstruction = (
+        reconstruct_history_file_state(
+            records,
+            project_root,
+            max_file_bytes=session.limits.max_file_bytes,
+        )
+        if reconstruct_file_state
+        else None
     )
-    records = reconstruction.records
+    if reconstruction is not None:
+        records = reconstruction.records
     timeline_started_at = min(
         (record.captured_at for record in records), default=session.created_at
     )
@@ -142,6 +148,8 @@ def _build_export(
                 record,
                 changed_files=list(
                     reconstruction.changed_files_by_sequence.get(record.sequence, ())
+                    if reconstruction is not None
+                    else ()
                 ),
             )
             for record in records
@@ -164,6 +172,7 @@ def import_history_session(
     thread_history_path: Path | None = None,
     catalog_path: Path | None = None,
     project_root: Path | None = None,
+    reconstruct_file_state: bool = True,
 ) -> ReplayExport:
     """Parse and validate one selected session; listing alone never calls this function."""
     discovered = discover_history(
@@ -250,6 +259,7 @@ def import_history_session(
                 )
             ),
             project_root=project_root,
+            reconstruct_file_state=reconstruct_file_state,
         )
         if indexed is not None and indexed.source_title is not None:
             updated_session = exported.session.model_copy(
@@ -270,10 +280,18 @@ def import_history_session(
                 "source_title": indexed.source_title if indexed else None,
             }
         )
-        return _build_export(session, codex_parsed.records, project_root=project_root)
+        return _build_export(
+            session,
+            codex_parsed.records,
+            project_root=project_root,
+            reconstruct_file_state=reconstruct_file_state,
+        )
     claude_parsed = parse_claude_history(source, max_source_bytes=max_source_bytes)
     return _build_export(
-        claude_parsed.session, claude_parsed.records, project_root=project_root
+        claude_parsed.session,
+        claude_parsed.records,
+        project_root=project_root,
+        reconstruct_file_state=reconstruct_file_state,
     )
 
 
@@ -285,13 +303,19 @@ def import_thread_history_session(
     title: str | None = None,
     history_state: HistoryState | None = None,
     project_root: Path | None = None,
+    reconstruct_file_state: bool = True,
 ) -> ReplayExport:
     """Import one projected Codex thread when its rollout file is unavailable."""
     parsed = parse_thread_history_thread(database, thread_id, cwd=cwd, title=title)
     session = parsed.session
     if history_state is not None:
         session = session.model_copy(update={"history_state": history_state})
-    return _build_export(session, parsed.records, project_root=project_root)
+    return _build_export(
+        session,
+        parsed.records,
+        project_root=project_root,
+        reconstruct_file_state=reconstruct_file_state,
+    )
 
 
 def real_history_smoke_summary(

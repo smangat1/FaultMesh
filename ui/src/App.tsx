@@ -496,7 +496,10 @@ export const App: React.FC<AppProps> = ({
   };
 
   const loadValidatedRecording = useCallback(
-    async (result: { name: string; text: string; size: number }): Promise<ReplayAdapter> => {
+    async (
+      result: { name: string; text: string; size: number },
+      focusSequence?: number,
+    ): Promise<ReplayAdapter> => {
       let json: Record<string, unknown>;
       try {
         json = JSON.parse(result.text);
@@ -508,6 +511,9 @@ export const App: React.FC<AppProps> = ({
         throw new Error(`Replay validation failed for "${result.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
       }
       const replayAdapter = new ReplayAdapter(val.data!, val.origin);
+      if (focusSequence !== undefined) {
+        replayAdapter.setCurrentSequence(focusSequence);
+      }
       activeAdapterRef.current = replayAdapter;
       liveAdapterRef.current = null;
       setLiveChangedNodeIds([]);
@@ -548,7 +554,7 @@ export const App: React.FC<AppProps> = ({
   };
 
   const handleImportSession = useCallback(
-    async (sessionId: string, tool: string) => {
+    async (sessionId: string, tool: string, focusSequence?: number) => {
       setSelectedHistoryTool(tool);
       onDemandModelReadyRef.current = false;
       setOnDemandModelReady(false);
@@ -557,7 +563,7 @@ export const App: React.FC<AppProps> = ({
         throw new Error('Desktop bridge is not available for session import');
       }
       const result = await bridge.importSession(sessionId, tool);
-      await loadValidatedRecording(result);
+      await loadValidatedRecording(result, focusSequence);
       importedHistorySessionIdRef.current = sessionId;
       selectedHistoryToolRef.current = tool;
       setImportedHistorySessionId(sessionId);

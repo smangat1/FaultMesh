@@ -179,6 +179,19 @@ def parse_recorded_patch(patch: str) -> list[_PatchOperation]:
     return output
 
 
+def recorded_changed_file_paths(record: ReplayRecord) -> tuple[str, ...]:
+    """Return safe paths named by recorded edit evidence without reconstructing file text."""
+    paths: set[str] = set()
+    if record.edit_patch:
+        for operation in parse_recorded_patch(record.edit_patch):
+            paths.add(operation.path)
+            if operation.move_to is not None:
+                paths.add(operation.move_to)
+    if record.edit_command:
+        paths.update(view.path for view in _command_views(record.edit_command))
+    return tuple(sorted(paths))
+
+
 def _apply_reverse_unified(after_text: str, patch: str) -> str:
     source = after_text.splitlines(keepends=True)
     patch_lines = patch.splitlines(keepends=True)

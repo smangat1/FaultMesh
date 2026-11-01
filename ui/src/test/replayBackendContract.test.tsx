@@ -22,6 +22,9 @@ describe('Replay Backend Contract Regression Tests (Real Export Artifacts)', () 
     const adapter = new ReplayAdapter(valResult.data as ReplayExportDocument, valResult.origin);
     const { unmount } = render(<ReplayWorkspace adapter={adapter} />);
 
+    // The legacy contract assertions below inspect exact raw sequences.
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
+
     // Model-interpretation chapters labeled "model interpretation"
     const modelChapter = screen.getByTestId('replay-chapter-item-chapter:model-replay-4');
     expect(modelChapter).toBeDefined();
@@ -94,6 +97,8 @@ describe('Replay Backend Contract Regression Tests (Real Export Artifacts)', () 
     expect(summary.replaySessionStatus).toBe('active');
 
     render(<ReplayWorkspace adapter={adapter} />);
+
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
     // Plain replay chrome avoids status jargon while retaining technical details on demand.
     expect(screen.getByTestId('replay-step-plain-label')).toBeDefined();

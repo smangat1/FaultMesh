@@ -30,6 +30,7 @@ import {
   CircleStop,
   HelpCircle,
   RotateCcw,
+  ListTree,
   X,
 } from 'lucide-react';
 
@@ -96,6 +97,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   onSummarizeSelection,
 }) => {
   const timeline = useMemo(() => adapter.getTimeline(), [adapter]);
+  const promptGroups = useMemo(() => adapter.getPromptGroups(), [adapter]);
+  const [rawStepMode, setRawStepMode] = useState(false);
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
@@ -134,6 +137,31 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const granularity = adapter.detectCaptureGranularity();
   const hasModelChapters = adapter.isModelNarrationAvailable();
   const sessionSummary = adapter.getSessionSummary();
+  const activePromptIndex = Math.max(
+    0,
+    promptGroups.findIndex(
+      (prompt) => currentSeq >= prompt.startSequence && currentSeq <= prompt.endSequence
+    )
+  );
+  const activePrompt = promptGroups[activePromptIndex] || null;
+  const promptStopSequences = useMemo(() => {
+    const stops = promptGroups.flatMap((prompt) => (
+      prompt.fileChangingSequences.length > 0
+        ? prompt.fileChangingSequences
+        : [prompt.startSequence]
+    ));
+    return new Set(stops);
+  }, [promptGroups]);
+  const navigationTimeline = useMemo(
+    () => rawStepMode ? timeline : timeline.filter((entry) => promptStopSequences.has(entry.sequence)),
+    [promptStopSequences, rawStepMode, timeline]
+  );
+  const foldedSequences = useMemo(
+    () => rawStepMode
+      ? []
+      : timeline.filter((entry) => !promptStopSequences.has(entry.sequence)).map((entry) => entry.sequence),
+    [promptStopSequences, rawStepMode, timeline]
+  );
 
   const stepLabels = useMemo(() => new Map(
     timeline.map((entry) => [
@@ -180,6 +208,24 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const allTests = useMemo(() => {
     return adapter.getAllTests ? adapter.getAllTests() : [];
   }, [adapter]);
+
+  const foldedRecordsForCurrent = useMemo(() => {
+    if (rawStepMode || !activePrompt || activePrompt.fileChangingSequences.length === 0) return [];
+    return timeline
+      .filter((entry) => (
+        entry.sequence >= activePrompt.startSequence
+        && entry.sequence <= activePrompt.endSequence
+        && !promptStopSequences.has(entry.sequence)
+      ))
+      .filter((entry) => {
+        const nearest = activePrompt.fileChangingSequences.reduce((best, sequence) => (
+          Math.abs(sequence - entry.sequence) < Math.abs(best - entry.sequence) ? sequence : best
+        ));
+        return nearest === currentSeq;
+      })
+      .map((entry) => adapter.getRecordForSequence(entry.sequence))
+      .filter((record): record is NonNullable<typeof record> => record !== null);
+  }, [activePrompt, adapter, currentSeq, promptStopSequences, rawStepMode, timeline]);
 
   // Set sequence and update adapter
   const isTrivialStep = useCallback((seq: number) => {
@@ -274,6 +320,15 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     [adapter, requestStepExplanation, timeline]
   );
 
+  useEffect(() => {
+    if (rawStepMode || promptStopSequences.has(currentSeq)) return;
+    const prompt = promptGroups.find(
+      (item) => currentSeq >= item.startSequence && currentSeq <= item.endSequence
+    );
+    const target = prompt?.fileChangingSequences[0] ?? prompt?.startSequence;
+    if (target !== undefined) handleSelectSequence(target);
+  }, [currentSeq, handleSelectSequence, promptGroups, promptStopSequences, rawStepMode]);
+
   const handleRangeSelect = useCallback((seq: number, extend: boolean) => {
     if (extend && selectionAnchor !== null) {
       setSelectionRange({
@@ -318,17 +373,23 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
   // Navigate previous / next checkpoint
   const handlePrevCheckpoint = useCallback(() => {
-    const currentIndex = timeline.findIndex((t) => t.sequence === currentSeq);
+    const currentIndex = navigationTimeline.findIndex((t) => t.sequence === currentSeq);
     if (currentIndex > 0) {
-      handleSelectSequence(timeline[currentIndex - 1].sequence);
+      handleSelectSequence(navigationTimeline[currentIndex - 1].sequence);
     }
-  }, [currentSeq, handleSelectSequence, timeline]);
+  }, [currentSeq, handleSelectSequence, navigationTimeline]);
 
   const handleNextCheckpoint = useCallback(() => {
-    const currentIndex = timeline.findIndex((t) => t.sequence === currentSeq);
-    if (currentIndex >= 0 && currentIndex < timeline.length - 1) {
-      handleSelectSequence(timeline[currentIndex + 1].sequence);
+    const currentIndex = navigationTimeline.findIndex((t) => t.sequence === currentSeq);
+    if (currentIndex >= 0 && currentIndex < navigationTimeline.length - 1) {
+      handleSelectSequence(navigationTimeline[currentIndex + 1].sequence);
     }
+  }, [currentSeq, handleSelectSequence, navigationTimeline]);
+
+  const moveRawStep = useCallback((delta: -1 | 1) => {
+    const currentIndex = timeline.findIndex((entry) => entry.sequence === currentSeq);
+    const target = timeline[currentIndex + delta];
+    if (target) handleSelectSequence(target.sequence);
   }, [currentSeq, handleSelectSequence, timeline]);
 
   // Keyboard navigation: Left/Right arrows or j/k, C (chapters), E (evidence), M (mini-map), Escape
@@ -354,7 +415,15 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         return;
       }
 
-      if (e.key === 'ArrowLeft' || e.key === 'j') {
+      if (e.shiftKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setRawStepMode(true);
+        moveRawStep(-1);
+      } else if (e.shiftKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        setRawStepMode(true);
+        moveRawStep(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'j') {
         e.preventDefault();
         handlePrevCheckpoint();
       } else if (e.key === 'ArrowRight' || e.key === 'k') {
@@ -383,7 +452,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePrevCheckpoint, handleNextCheckpoint, isChaptersOpen, isEvidenceOpen, isMiniMapOpen]);
+  }, [handlePrevCheckpoint, handleNextCheckpoint, isChaptersOpen, isEvidenceOpen, isMiniMapOpen, moveRawStep]);
 
   const getHistoricalContent = useCallback(
     (path: string) => {
@@ -392,7 +461,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     [adapter, currentSeq]
   );
 
-  const currentIndex = timeline.findIndex((t) => t.sequence === currentSeq);
+  const currentIndex = navigationTimeline.findIndex((t) => t.sequence === currentSeq);
   const recordedAtLabel = currentEntry ? formatRecordedAt(currentEntry.captured_at, timelineOptions?.timeZone) : '';
 
   return (
@@ -416,25 +485,27 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             onClick={handlePrevCheckpoint}
             disabled={currentIndex <= 0}
             className="replay-toolbar-icon"
-            title="Previous step · Left arrow or J"
-            aria-label="Previous step"
+            title={rawStepMode ? 'Previous raw step · Left arrow or J' : 'Previous prompt change · Left arrow or J'}
+            aria-label={rawStepMode ? 'Previous raw step' : 'Previous prompt change'}
             data-testid="replay-prev-btn"
           >
             <ChevronLeft size={16} />
           </button>
           <span
-            className="replay-dev-badge"
+            className="replay-navigation-count"
             title={recordedAtLabel}
             data-testid="replay-current-seq-badge"
           >
-            Step {currentSeq} of {timeline.length}
+            {rawStepMode
+              ? `Step ${currentSeq} of ${timeline.length}`
+              : `Prompt ${activePromptIndex + 1} of ${promptGroups.length}`}
           </span>
           <button
             onClick={handleNextCheckpoint}
-            disabled={currentIndex >= timeline.length - 1}
+            disabled={currentIndex >= navigationTimeline.length - 1}
             className="replay-toolbar-icon"
-            title="Next step · Right arrow or K"
-            aria-label="Next step"
+            title={rawStepMode ? 'Next raw step · Right arrow or K' : 'Next prompt change · Right arrow or K'}
+            aria-label={rawStepMode ? 'Next raw step' : 'Next prompt change'}
             data-testid="replay-next-btn"
           >
             <ChevronRight size={16} />
@@ -457,6 +528,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         </div>
 
         <div className="replay-toolbar-cluster" data-testid="replay-header-tools">
+          <button
+            type="button"
+            onClick={() => setRawStepMode((value) => !value)}
+            className={`replay-toolbar-icon ${rawStepMode ? 'active' : ''}`}
+            title={rawStepMode ? 'Switch to prompt view' : 'Switch to raw step view'}
+            aria-label={rawStepMode ? 'Switch to prompt view' : 'Switch to raw step view'}
+            data-testid="replay-raw-step-toggle"
+          >
+            <ListTree size={16} />
+            <span className="sr-only">{rawStepMode ? 'Prompt view' : 'Raw step view'}</span>
+          </button>
           <button
             onClick={() => setIsChaptersOpen((prev) => !prev)}
             className={`replay-toolbar-icon ${isChaptersOpen ? 'active' : ''}`}
@@ -551,7 +633,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
       )}
 
       {narrationError && (
-        <div data-testid="replay-narration-error" style={{ padding: '6px 16px', fontSize: '10px', color: 'var(--replay-status-warning, #946c32)' }}>
+        <div data-testid="replay-narration-error" style={{ padding: '6px 16px', fontSize: '10px', color: 'var(--replay-accent)' }}>
           {narrationError}
         </div>
       )}
@@ -568,13 +650,14 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         data-testid="replay-hero-bar-container"
       >
         <ReplayTimelineBar
-          timeline={timeline}
+          timeline={navigationTimeline}
           currentSequence={currentSeq}
           onSelectSequence={handleSelectSequence}
           chapters={chapters}
           tests={allTests}
           options={timelineOptions}
           stepLabels={stepLabels}
+          foldedSequences={foldedSequences}
         />
       </div>
 
@@ -638,7 +721,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             <ReplayTimeline
-              timeline={timeline}
+              timeline={navigationTimeline}
               currentSequence={currentSeq}
               onSelectSequence={handleSelectSequence}
               chapters={chapters}
@@ -656,12 +739,14 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               onRangeSelect={handleRangeSelect}
               onSummarizeSelection={handleSummarizeSelection}
               selectionLoading={selectionLoading}
+              promptMode={!rawStepMode}
             />
           </div>
         </div>
 
         {/* Center Main Stage: Diff View as Hero (Always Focused, Full-Width by default) */}
         <div
+          className="replay-main-stage"
           style={{
             flex: 1,
             minWidth: 0,
@@ -671,20 +756,65 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           }}
           data-testid="replay-main-stage"
         >
-          <ReplayDiffViewer
-            selectedFile={selectedFile}
-            changedFiles={currentEntry?.changed_files || []}
-            changedSymbols={currentEntry?.changed_symbols || []}
-            onSelectFile={setSelectedFile}
-            getHistoricalContent={getHistoricalContent}
-            entry={currentEntry}
-            record={currentRecord}
-            completenessInfo={completenessInfo}
-            isModelNarrationAvailable={hasModelChapters}
-            narration={narration}
-            explanationLoading={explanationLoadingSequence === currentSeq}
-            instantStepNote={instantStepNote}
-          />
+          {!rawStepMode && activePrompt && (
+            <section className="replay-prompt-card" data-testid="replay-prompt-card">
+              <div className="replay-prompt-card-heading">
+                <div>
+                  <span className="replay-prompt-kicker">Prompt {activePromptIndex + 1}</span>
+                  <h2>{activePrompt.promptText?.split(/\r?\n/)[0] || 'Prompt text unavailable'}</h2>
+                </div>
+                <span className="replay-prompt-test-status" data-state={
+                  activePrompt.testEvidence.some((test) => test.state === 'fail' || test.state === 'error')
+                    ? 'fail'
+                    : activePrompt.testEvidence.some((test) => test.state === 'pass')
+                    ? 'pass'
+                    : 'not-observed'
+                }>
+                  {activePrompt.testEvidence.some((test) => test.state === 'fail' || test.state === 'error')
+                    ? 'Tests failed'
+                    : activePrompt.testEvidence.some((test) => test.state === 'pass')
+                    ? 'Tests passed'
+                    : 'Tests not observed'}
+                </span>
+              </div>
+              {activePrompt.promptText && activePrompt.promptText.includes('\n') && (
+                <details>
+                  <summary>Full prompt</summary>
+                  <pre>{activePrompt.promptText}</pre>
+                </details>
+              )}
+              <div className="replay-prompt-card-meta">
+                <span>{activePrompt.changedFiles.length} {activePrompt.changedFiles.length === 1 ? 'file' : 'files'} changed</span>
+                <span>
+                  {activePrompt.grouping === 'prompt_turn'
+                    ? 'Grouped from recorded prompt evidence'
+                    : 'Grouped from recorded events (prompt link unavailable)'}
+                </span>
+              </div>
+            </section>
+          )}
+          {!rawStepMode && activePrompt && activePrompt.changedFiles.length === 0 ? (
+            <div className="replay-prompt-no-files" data-testid="replay-prompt-no-files">
+              <strong>No recorded file changes for this prompt</strong>
+              <span>Commands and other recorded evidence remain available in the Evidence panel.</span>
+            </div>
+          ) : (
+            <ReplayDiffViewer
+              selectedFile={selectedFile}
+              changedFiles={currentEntry?.changed_files || []}
+              changedSymbols={currentEntry?.changed_symbols || []}
+              onSelectFile={setSelectedFile}
+              getHistoricalContent={getHistoricalContent}
+              entry={currentEntry}
+              record={currentRecord}
+              completenessInfo={completenessInfo}
+              isModelNarrationAvailable={hasModelChapters}
+              narration={narration}
+              explanationLoading={explanationLoadingSequence === currentSeq}
+              instantStepNote={instantStepNote}
+              foldedRecords={foldedRecordsForCurrent}
+            />
+          )}
 
           {/* Graph Mini Map Dock (Resizable, Size-cycling, Honest empty state) */}
           <ReplayMiniMapDock

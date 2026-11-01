@@ -124,6 +124,27 @@ export interface HistorySession {
   parent_dir?: string | null;
 }
 
+export interface HistoryPromptSummary {
+  prompt_id: string;
+  first_line: string | null;
+  start_sequence: number;
+  end_sequence: number;
+  changed_files: string[];
+  changed_file_count: number;
+  started_at: string;
+  ended_at: string;
+  test_observation: 'passed' | 'failed' | 'not_observed';
+  grouping: 'prompt_turn' | 'recorded_events';
+}
+
+export interface HistoryPromptIndex {
+  schema_version: 'history-prompt-index-1.0';
+  session_id: string;
+  source_file_sha256: string;
+  prompts: HistoryPromptSummary[];
+  cached: boolean;
+}
+
 export interface HistoryListPayload {
   roots: HistoryRoot[];
   sessions: HistorySession[];
@@ -170,6 +191,7 @@ export interface SpectateBridge {
   onSpectateEvent(callback: (event: SpectateEvent) => void): () => void;
   openRecording?(): Promise<HistoryImportPayload | null>;
   listHistory?(): Promise<HistoryListPayload>;
+  listPrompts?(sessionId: string, tool: string): Promise<HistoryPromptIndex>;
   importSession?(sessionId: string, tool: string): Promise<HistoryImportPayload>;
   linkSessionProject?(sessionId: string, projectHandle: string): Promise<{ linked: true; displayName: string }>;
   modelStatus?(): Promise<ReplayModelStatus>;

@@ -44,6 +44,7 @@ from faultmesh.replay.history_discovery import (
     discover_history,
 )
 from faultmesh.replay.history_import import import_history_session
+from faultmesh.replay.history_prompts import list_history_prompts
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.llama_server import LlamaServer
 from faultmesh.replay.model_manager import (
@@ -523,6 +524,29 @@ def replay_history_list(
         )
     except Exception as exc:
         typer.secho(f"FaultMesh history discovery failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("replay-history-prompts")
+def replay_history_prompts(
+    session_id: Annotated[str, typer.Argument(help="Session id returned by replay-history-list.")],
+    tool: Annotated[
+        str | None, typer.Option(help="Optional codex or claude_code disambiguator.")
+    ] = None,
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """List redacted prompt aggregates for one session without reconstruction or model work."""
+    if tool not in {None, "codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    try:
+        result = list_history_prompts(
+            session_id,
+            tool=cast(HistoryTool, tool) if tool is not None else None,
+            store_root=store,
+        )
+    except Exception as exc:
+        typer.secho(f"FaultMesh prompt listing failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(result.model_dump_json(indent=2))
 

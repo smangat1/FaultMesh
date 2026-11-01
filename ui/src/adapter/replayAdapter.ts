@@ -28,6 +28,17 @@ import type {
 import { isReplayExportV2 } from '../replay/types';
 import { decodeBase64ToUtf8 } from '../replay/utils';
 
+export interface ReplayPromptGroup {
+  id: string;
+  promptText: string | null;
+  startSequence: number;
+  endSequence: number;
+  grouping: 'prompt_turn' | 'recorded_events';
+  fileChangingSequences: number[];
+  changedFiles: string[];
+  testEvidence: StructuredTestEvidence[];
+}
+
 export class ReplayAdapter implements FaultMeshAdapter {
   private exported: AnyReplayExport;
   private readonly origin: ReplayOrigin;
@@ -103,6 +114,54 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public getTimeline(): TimelineEntry[] {
     return this.exported.timeline;
+  }
+
+  public getPromptGroups(fixedGroupSize: number = 20): ReplayPromptGroup[] {
+    const records = [...this.exported.records].sort((left, right) => left.sequence - right.sequence);
+    if (records.length === 0) return [];
+    const recordGroups: Array<{ records: ReplayRecord[]; grouping: ReplayPromptGroup['grouping'] }> = [];
+    let current: ReplayRecord[] = [];
+    let currentKey: string | null = null;
+    let currentGrouping: ReplayPromptGroup['grouping'] = 'recorded_events';
+    for (const record of records) {
+      const key = record.prompt_id || record.turn_id || null;
+      const grouping: ReplayPromptGroup['grouping'] = key ? 'prompt_turn' : 'recorded_events';
+      const samePrompt = grouping === 'prompt_turn' && currentGrouping === grouping && currentKey === key;
+      const sameFallback = grouping === 'recorded_events'
+        && currentGrouping === grouping
+        && current.length < fixedGroupSize;
+      if (current.length > 0 && !samePrompt && !sameFallback) {
+        recordGroups.push({ records: current, grouping: currentGrouping });
+        current = [];
+      }
+      if (current.length === 0) {
+        currentKey = key;
+        currentGrouping = grouping;
+      }
+      current.push(record);
+    }
+    if (current.length > 0) recordGroups.push({ records: current, grouping: currentGrouping });
+
+    return recordGroups.map(({ records: groupRecords, grouping }, index) => {
+      const startSequence = groupRecords[0].sequence;
+      const endSequence = groupRecords[groupRecords.length - 1].sequence;
+      const entries = this.exported.timeline.filter(
+        (entry) => entry.sequence >= startSequence && entry.sequence <= endSequence
+      );
+      const nativeId = groupRecords.find((record) => record.prompt_id || record.turn_id);
+      return {
+        id: nativeId?.prompt_id || nativeId?.turn_id || `recorded-events-${index + 1}`,
+        promptText: groupRecords.find((record) => record.prompt_text)?.prompt_text || null,
+        startSequence,
+        endSequence,
+        grouping,
+        fileChangingSequences: entries
+          .filter((entry) => entry.changed_files.length > 0)
+          .map((entry) => entry.sequence),
+        changedFiles: Array.from(new Set(entries.flatMap((entry) => entry.changed_files.map((file) => file.path)))).sort(),
+        testEvidence: entries.flatMap((entry) => entry.test_evidence),
+      };
+    });
   }
 
   public getManifests(): SnapshotManifest[] {

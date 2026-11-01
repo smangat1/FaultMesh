@@ -23,6 +23,7 @@ interface ReplayDiffViewerProps {
   narration?: StepNarration | null;
   explanationLoading?: boolean;
   instantStepNote?: string | null;
+  foldedRecords?: ReplayRecord[];
 }
 
 const EvidenceBlock: React.FC<{ label: string; value: string; testId: string }> = ({
@@ -66,6 +67,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   narration,
   explanationLoading = false,
   instantStepNote = null,
+  foldedRecords = [],
 }) => {
   const [viewMode, setViewMode] = useState<'diff' | 'source'>('diff');
 
@@ -219,7 +221,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   <EvidenceBlock label="Recorded edit" value={record.edit_patch} testId="replay-history-edit" />
                 )}
                 {record?.file_state === 'unknown' && (
-                  <div data-testid="replay-history-file-state" style={{ color: 'var(--replay-status-warning, #946c32)' }}>
+                  <div data-testid="replay-history-file-state" style={{ color: 'var(--replay-accent)' }}>
                     Historical file state: unknown — action evidence only; source bytes were not reconstructed.
                   </div>
                 )}
@@ -240,7 +242,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                 border: isPartial ? '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))' : '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
               }}
             >
-              <div style={{ color: isPartial ? 'var(--replay-status-warning, #946c32)' : 'var(--replay-text-muted, #8b97ad)', fontSize: '10px' }}>
+              <div style={{ color: isPartial ? 'var(--replay-accent)' : 'var(--replay-text-muted, #8b97ad)', fontSize: '10px' }}>
                 {entry?.gap_reason
                   ? `Gap details: ${entry.gap_reason}`
                   : isPartial
@@ -454,6 +456,26 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
             Derived file state: unknown — the recorded patch could not be reconstructed.
           </div>
         )}
+
+          {foldedRecords.length > 0 && (
+            <details className="replay-editor-provenance" data-testid="replay-folded-evidence">
+              <summary>
+                {foldedRecords.length} nearby recorded {foldedRecords.length === 1 ? 'event' : 'events'}
+              </summary>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                {foldedRecords.map((folded) => (
+                  <div key={folded.id}>
+                    <strong>{folded.tool_name || 'Recorded event'}</strong>
+                    {evidenceText(folded.tool_response) && (
+                      <pre style={{ whiteSpace: 'pre-wrap', marginTop: '4px' }}>
+                        {evidenceText(folded.tool_response)}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         {symbolsForFile.length > 0 && (
           <div className="replay-symbol-strip">
             <span>Functions</span>

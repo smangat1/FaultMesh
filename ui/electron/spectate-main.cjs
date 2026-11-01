@@ -14,6 +14,7 @@ const CHANNELS = Object.freeze({
   openRecording: 'faultmesh:spectate:open-recording',
   event: 'faultmesh:spectate:event',
   listHistory: 'faultmesh:spectate:list-history',
+  listPrompts: 'faultmesh:spectate:list-prompts',
   importSession: 'faultmesh:spectate:import-session',
   linkSessionProject: 'faultmesh:spectate:link-session-project',
   modelStatus: 'faultmesh:replay:model-status',
@@ -632,6 +633,82 @@ function attachSpectateBridge({
     });
   });
 
+  ipcMain.handle(CHANNELS.listPrompts, async (event, ...args) => {
+    assertTrustedSender(event);
+    if (args.length !== 2) {
+      throw new Error('listPrompts requires exactly (sessionId, tool) arguments');
+    }
+    const [sessionId, tool] = args;
+    if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 128 || /[\/\\]/.test(sessionId) || sessionId.includes('..')) {
+      throw new Error('invalid or unsafe sessionId');
+    }
+    if (tool !== 'codex' && tool !== 'claude_code') {
+      throw new Error('unsupported or invalid tool');
+    }
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let proc;
+      let timer;
+      try {
+        proc = spawn(command, ['replay-history-prompts', sessionId, '--tool', tool], {
+          shell: false,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (error) {
+        return reject(error);
+      }
+      timer = setTimeout(() => {
+        try { proc.kill('SIGTERM'); } catch (_) {}
+        reject(new Error('replay-history-prompts timed out'));
+      }, 30000);
+      timer.unref?.();
+      proc.stdout.on('data', (chunk) => {
+        stdout += chunk.toString('utf8');
+        if (stdout.length > 8 * 1024 * 1024) {
+          try { proc.kill('SIGTERM'); } catch (_) {}
+          clearTimeout(timer);
+          reject(new Error('replay-history-prompts output exceeded 8 MB limit'));
+        }
+      });
+      proc.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+      proc.once('error', (error) => { clearTimeout(timer); reject(error); });
+      proc.once('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          return reject(new Error(`replay-history-prompts failed with code ${code}: ${stderr.slice(0, 1000)}`));
+        }
+        try {
+          const parsed = JSON.parse(stdout);
+          if (!parsed || !Array.isArray(parsed.prompts)) {
+            return reject(new Error('invalid replay-history-prompts payload structure'));
+          }
+          resolve({
+            schema_version: 'history-prompt-index-1.0',
+            session_id: String(parsed.session_id || ''),
+            source_file_sha256: String(parsed.source_file_sha256 || ''),
+            cached: Boolean(parsed.cached),
+            prompts: parsed.prompts.map((prompt) => ({
+              prompt_id: String(prompt.prompt_id || ''),
+              first_line: prompt.first_line === null || prompt.first_line === undefined ? null : String(prompt.first_line),
+              start_sequence: Number.isSafeInteger(prompt.start_sequence) ? prompt.start_sequence : 1,
+              end_sequence: Number.isSafeInteger(prompt.end_sequence) ? prompt.end_sequence : 1,
+              changed_files: Array.isArray(prompt.changed_files) ? prompt.changed_files.map(String) : [],
+              changed_file_count: Number.isSafeInteger(prompt.changed_file_count) ? prompt.changed_file_count : 0,
+              started_at: String(prompt.started_at || ''),
+              ended_at: String(prompt.ended_at || ''),
+              test_observation: ['passed', 'failed', 'not_observed'].includes(prompt.test_observation) ? prompt.test_observation : 'not_observed',
+              grouping: prompt.grouping === 'prompt_turn' ? 'prompt_turn' : 'recorded_events',
+            })),
+          });
+        } catch (error) {
+          reject(new Error(`failed to parse replay-history-prompts output: ${error.message}`));
+        }
+      });
+    });
+  });
+
   ipcMain.handle(CHANNELS.importSession, async (event, ...args) => {
     assertTrustedSender(event);
     if (args.length !== 2) {
@@ -1101,6 +1178,7 @@ function attachSpectateBridge({
       ipcMain.removeHandler(CHANNELS.stop);
       ipcMain.removeHandler(CHANNELS.openRecording);
       ipcMain.removeHandler(CHANNELS.listHistory);
+      ipcMain.removeHandler(CHANNELS.listPrompts);
       ipcMain.removeHandler(CHANNELS.importSession);
       ipcMain.removeHandler(CHANNELS.linkSessionProject);
       ipcMain.removeHandler(CHANNELS.modelStatus);

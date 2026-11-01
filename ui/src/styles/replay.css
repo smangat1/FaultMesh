@@ -400,7 +400,7 @@
   border-radius: 50%;
   transform: translate(-50%, -50%);
   background-color: #ffffff;
-  border: 2px solid #3b82f6;
+  border: 2px solid var(--accent);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35), 0 2px 6px rgba(0, 0, 0, 0.5);
   cursor: grab;
   z-index: 10;
@@ -630,6 +630,8 @@
 /* On-Demand Left Rail (Chapters & Steps) */
 .replay-chapters-rail {
   width: 300px;
+  min-width: 0;
+  box-sizing: border-box;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -638,6 +640,117 @@
   background-color: var(--replay-bg-surface-1);
   overflow: hidden;
   z-index: 20;
+}
+
+.replay-main-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+.replay-main-stage > .replay-file-workbench,
+.replay-main-stage > .replay-empty-stage {
+  flex: 1;
+  min-height: 0;
+  height: auto !important;
+}
+
+.replay-prompt-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--replay-border-subtle);
+  background: var(--replay-bg-surface-1);
+  flex-shrink: 0;
+}
+
+.replay-prompt-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.replay-prompt-card h2 {
+  margin: 2px 0 0;
+  color: var(--replay-text-primary);
+  font-size: var(--type-sm);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.replay-prompt-kicker,
+.replay-prompt-card-meta,
+.replay-prompt-test-status {
+  color: var(--replay-text-muted);
+  font-size: var(--type-xs);
+}
+
+.replay-prompt-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.replay-prompt-test-status {
+  flex-shrink: 0;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--replay-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.replay-prompt-test-status[data-state='pass'] {
+  color: var(--semantic-success);
+  border-color: var(--semantic-success-border);
+}
+
+.replay-prompt-test-status[data-state='fail'] {
+  color: var(--semantic-danger);
+  border-color: var(--semantic-danger-border);
+}
+
+.replay-prompt-card details summary {
+  color: var(--replay-accent);
+  cursor: pointer;
+  font-size: var(--type-xs);
+}
+
+.replay-prompt-card pre {
+  max-height: 140px;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--replay-text-secondary);
+  background: var(--replay-bg-canvas);
+  border: 1px solid var(--replay-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.replay-prompt-no-files {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--replay-text-muted);
+  text-align: center;
+}
+
+.replay-prompt-no-files strong {
+  color: var(--replay-text-primary);
+}
+
+.replay-timeline-folded-tick {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 5px;
+  background: var(--replay-text-faint);
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 /* On-Demand Right Drawer (Evidence Inspector) */
@@ -765,6 +878,15 @@
 
 .replay-dev-badge {
   display: none;
+}
+
+.replay-navigation-count {
+  min-width: 82px;
+  color: var(--replay-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+  text-align: center;
+  white-space: nowrap;
 }
 
 .replay-origin-label,

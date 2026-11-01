@@ -9,6 +9,7 @@ const CHANNELS = Object.freeze({
   openRecording: 'faultmesh:spectate:open-recording',
   event: 'faultmesh:spectate:event',
   listHistory: 'faultmesh:spectate:list-history',
+  listPrompts: 'faultmesh:spectate:list-prompts',
   importSession: 'faultmesh:spectate:import-session',
   linkSessionProject: 'faultmesh:spectate:link-session-project',
   modelStatus: 'faultmesh:replay:model-status',
@@ -28,6 +29,7 @@ contextBridge.exposeInMainWorld('faultmeshSpectate', Object.freeze({
   stopWatch: () => ipcRenderer.invoke(CHANNELS.stop),
   openRecording: () => ipcRenderer.invoke(CHANNELS.openRecording),
   listHistory: () => ipcRenderer.invoke(CHANNELS.listHistory),
+  listPrompts: (sessionId, tool) => ipcRenderer.invoke(CHANNELS.listPrompts, sessionId, tool),
   importSession: (sessionId, tool) => ipcRenderer.invoke(CHANNELS.importSession, sessionId, tool),
   linkSessionProject: (sessionId, projectHandle) => ipcRenderer.invoke(
     CHANNELS.linkSessionProject,
