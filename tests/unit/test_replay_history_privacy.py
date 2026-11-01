@@ -101,6 +101,16 @@ def test_common_serialized_and_shell_secret_forms_are_redacted_completely() -> N
     assert "# synthetic comment" in result.value
 
 
+def test_non_sensitive_label_does_not_hide_assignment_inside_json() -> None:
+    value = 'Facts: {"changed_paths":["password=synthetic-title-secret"]}'
+
+    result = redact_history_text(value, 64 * 1024)
+
+    assert isinstance(result.value, str)
+    assert "synthetic-title-secret" not in result.value
+    assert "[redacted: password]" in result.value
+
+
 def test_history_redaction_bounds_output_after_redacting() -> None:
     result = redact_history_text(
         "API_KEY=synthetic-secret-value\n" + ("visible " * 100),

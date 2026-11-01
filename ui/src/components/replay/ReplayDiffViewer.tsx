@@ -21,6 +21,8 @@ interface ReplayDiffViewerProps {
   completenessInfo?: { completeness: Completeness; gaps: string[] };
   isModelNarrationAvailable?: boolean;
   narration?: StepNarration | null;
+  explanationLoading?: boolean;
+  instantStepNote?: string | null;
 }
 
 const EvidenceBlock: React.FC<{ label: string; value: string; testId: string }> = ({
@@ -62,6 +64,8 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   completenessInfo,
   isModelNarrationAvailable,
   narration,
+  explanationLoading = false,
+  instantStepNote = null,
 }) => {
   const [viewMode, setViewMode] = useState<'diff' | 'source'>('diff');
 
@@ -154,6 +158,12 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
+            {explanationLoading && (
+              <div data-testid="replay-step-explanation-loading">Checking this step with the local model…</div>
+            )}
+            {instantStepNote && (
+              <div data-testid="replay-step-deterministic-note">{instantStepNote}</div>
+            )}
             {narration?.explanation && (
               <div
                 data-testid="replay-ai-summary"
@@ -531,6 +541,30 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
           </button>
         </div>
       </div>
+
+      {explanationLoading && (
+        <div
+          data-testid="replay-step-explanation-loading"
+          style={{ padding: '8px 14px', fontSize: '11px', color: 'var(--replay-text-muted, #8b97ad)' }}
+        >
+          Checking this step with the local model…
+        </div>
+      )}
+
+      {instantStepNote && (
+        <div
+          data-testid="replay-step-deterministic-note"
+          style={{
+            padding: '8px 14px',
+            borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
+            backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
+            color: 'var(--replay-text-muted, #8b97ad)',
+            fontSize: '11px',
+          }}
+        >
+          {instantStepNote}
+        </div>
+      )}
 
       {narration?.explanation && (
         <div

@@ -53,6 +53,27 @@ export class ReplayAdapter implements FaultMeshAdapter {
     this.exported = { ...this.exported, narration, chapters };
   }
 
+  public applyChapterUpdate(chapter: ReplayChapter, chapterRun: ChapterRunRecord): void {
+    if (!isReplayExportV2(this.exported)) return;
+    const chapters = this.exported.chapters.map((item) => (
+      item.id === chapter.id ? chapter : item
+    ));
+    this.exported = { ...this.exported, chapters, chapter_run: chapterRun };
+  }
+
+  public applyStepNarration(step: StepNarration): void {
+    if (!isReplayExportV2(this.exported)) return;
+    const narration = this.exported.narration.filter((item) => item.sequence !== step.sequence);
+    narration.push(step);
+    narration.sort((left, right) => left.sequence - right.sequence);
+    this.exported = { ...this.exported, narration };
+  }
+
+  public applySessionSummary(summary: SessionSummary): void {
+    if (!isReplayExportV2(this.exported)) return;
+    this.exported = { ...this.exported, summary };
+  }
+
   public replaceNarratedExport(exported: AnyReplayExport): void {
     this.exported = exported;
   }
@@ -106,7 +127,9 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public isModelNarrationAvailable(): boolean {
     if (!isReplayExportV2(this.exported)) return false;
-    return this.exported.chapters.length > 0 || this.exported.narration.length > 0;
+    return this.exported.chapters.some(
+      (chapter) => chapter.title_status === 'model interpretation'
+    ) || this.exported.narration.length > 0;
   }
 
   public getChapters(): ReplayChapter[] {

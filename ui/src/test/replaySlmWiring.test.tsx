@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReplayAdapter } from '../adapter/replayAdapter';
 import { ReplayEvidenceInspector } from '../components/replay/ReplayEvidenceInspector';
 import { ReplayWorkspace } from '../components/replay/ReplayWorkspace';
@@ -95,9 +95,82 @@ describe('replay local narration wiring', () => {
     const view = render(
       <ReplayWorkspace adapter={adapter} narrationProgress={{ done: 3, total: 8 }} />
     );
-    expect(screen.getByTestId('replay-narration-progress').textContent).toBe('Narrating 3/8');
+    expect(screen.getByTestId('replay-narration-progress').textContent).toBe('Titling chapters 3/8');
+    expect(screen.getByText('Stop titling')).toBeDefined();
     view.rerender(<ReplayWorkspace adapter={adapter} narrationProgress={null} />);
     expect(screen.queryByTestId('replay-narration-progress')).toBeNull();
+  });
+
+  it('test_baseline_chapters_render_before_model_ready', () => {
+    window.localStorage.setItem(
+      FIRST_USE_TIPS_STORAGE_KEY,
+      JSON.stringify({ home: true, entrance: true, replay: true, replayHistory: true })
+    );
+    const source = structuredClone(narratedFixture) as unknown as AnyReplayExport;
+    if (source.schema_version === 'replay-export-2.0') {
+      source.chapters = structuredClone(source.baseline_chapters);
+      source.narration = [];
+    }
+    const adapter = new ReplayAdapter(source);
+    render(<ReplayWorkspace adapter={adapter} defaultChaptersOpen={true} plainMode={true} />);
+    const baseline = adapter.getBaselineChapters()[0];
+    expect(screen.getAllByText(baseline.title).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('replay-narration-progress')).toBeNull();
+  });
+
+  it('test_selection_flow_renders_checked_counts_and_reuses_ui_cache', async () => {
+    window.localStorage.setItem(
+      FIRST_USE_TIPS_STORAGE_KEY,
+      JSON.stringify({ home: true, entrance: true, replay: true, replayHistory: true })
+    );
+    const summarize = vi.fn().mockResolvedValue({
+      schema_version: 'replay-selection-summary-1.0',
+      start_sequence: 1,
+      end_sequence: 3,
+      total_steps: 3,
+      non_trivial_steps: 2,
+      checked_claim_steps: 2,
+      text: 'Summarized 2 of 3 steps with checked claims.',
+      source: 'model',
+      fallback_used: false,
+      error: null,
+    });
+    render(
+      <ReplayWorkspace
+        adapter={new ReplayAdapter(structuredClone(narratedFixture) as unknown as AnyReplayExport)}
+        defaultChaptersOpen={true}
+        onSummarizeSelection={summarize}
+      />
+    );
+    fireEvent.click(screen.getByTestId('replay-checkpoint-row-1'));
+    fireEvent.click(screen.getByTestId('replay-checkpoint-row-3'), { shiftKey: true });
+    const button = screen.getByTestId('replay-summarize-selection');
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByTestId('replay-selection-checked-counts').textContent).toContain('2 of 3'));
+    fireEvent.click(button);
+    await waitFor(() => expect(summarize).toHaveBeenCalledTimes(1));
+  });
+
+  it('test_trivial_step_click_is_instant_and_never_calls_model', () => {
+    window.localStorage.setItem(
+      FIRST_USE_TIPS_STORAGE_KEY,
+      JSON.stringify({ home: true, entrance: true, replay: true, replayHistory: true })
+    );
+    const source = structuredClone(historyFixture) as unknown as AnyReplayExport;
+    source.timeline[0].changed_files = [];
+    source.timeline[0].test_evidence = [];
+    source.records[0].tool_response = null;
+    const explain = vi.fn();
+    render(
+      <ReplayWorkspace
+        adapter={new ReplayAdapter(source)}
+        defaultChaptersOpen={true}
+        onExplainStep={explain}
+      />
+    );
+    fireEvent.click(screen.getByTestId(`replay-checkpoint-row-${source.timeline[0].sequence}`));
+    expect(screen.getByTestId('replay-step-deterministic-note').textContent).toContain('No recorded changes');
+    expect(explain).not.toHaveBeenCalled();
   });
 
   it('test_yellow_claim_shows_plain_reason', () => {

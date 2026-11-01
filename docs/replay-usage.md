@@ -45,6 +45,10 @@ redacted before export. Historical file bytes remain unknown, so the export cont
 or source content and edit records carry `file_state: unknown`. The resulting file is validated by
 the same `replay-export-1.0` model and can be opened through the ordinary export loader.
 
+Pass `--template-narration` to produce the chapter-first `replay-export-2.0` baseline used by the
+desktop app. This adds deterministic chapters and a factual session overview without building
+per-step evidence packets or calling a model.
+
 Poll for newly added, changed or removed history files without reading their contents:
 
 ```console
@@ -136,6 +140,31 @@ resource caps for 1.5B-, 3B- and 7B-class files, not claims that any specific mo
 fits memory or performs well. Missing, invalid or timed-out model output falls back to deterministic
 claims and chapters. Recording and ordinary playback never start an inference job.
 
+### Desktop chapter-first flow
+
+The desktop app imports and displays deterministic chapters first. If the configured local model
+is ready, `replay-narrate-session` streams chapter title updates newest-first, followed by one
+session summary. The progress chip counts chapters, and **Stop titling** leaves completed title
+updates in place.
+
+Select one timeline step to request its checked explanation. Shift-click another step to form a
+contiguous range, then choose **Summarize selection**. The selection path checks at most 32
+evidence-bearing steps and reports both the checked count and total range size. Repeated identical
+steps and ranges use the content-hash cache. Trivial steps are answered with a deterministic note
+without a model call.
+
+The app-facing commands are also available for diagnostics:
+
+```console
+faultmesh replay-narrate-session <session-id> --tool codex
+faultmesh replay-explain-step <session-id> <sequence> --tool codex
+faultmesh replay-summarize-selection <session-id> <start> <end> --tool codex
+```
+
+They share the configured model, loopback-only server policy, redaction wrapper and persistent
+narration cache. Their JSON output is an internal desktop bridge contract; `replay-narrate` remains
+the stable offline file command and keeps full per-step behavior by default.
+
 ## Delete a recording
 
 ```console
@@ -155,5 +184,6 @@ whole selected session. It is local and irreversible unless the store has been b
   version-tested parser.
 - Existing investigator, spectate and isolated failed-test rerun features remain separate legacy
   capabilities and are not prerequisites for playback.
-- History replay has prompts, ordered steps and timings but no exact before/after file bytes,
-  trustworthy changed-file reconstruction or verified causal attribution.
+- History replay has prompts, ordered steps and timings. Recorded patches can derive before/after
+  text only when a linked current checkout can be reversed cleanly; that content is explicitly
+  labeled reconstructed and unverified. Causal attribution remains unknown.

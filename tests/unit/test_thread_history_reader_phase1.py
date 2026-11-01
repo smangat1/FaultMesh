@@ -487,6 +487,7 @@ def test_projected_items_map_to_replay_schema_with_redaction_and_gap_flags(
     assert command.tool_response is not None
     assert "[redacted: password]" in json.dumps(command.tool_response)
     assert "commandActions" in command.tool_response
+    assert command.tool_response["exit_code"] == 0
     file_change = next(record for record in result.records if record.tool_name == "FileChange")
     assert "[redacted: secret]" in (file_change.edit_patch or "")
     mcp = next(

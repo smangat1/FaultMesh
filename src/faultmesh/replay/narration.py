@@ -214,7 +214,9 @@ def suggest_likely_reason(
 
 class ModelExplanation(StrictModel):
     text: str = Field(min_length=1, max_length=1_000)
-    label: Literal["model interpretation"] = "model interpretation"
+    label: Literal["model interpretation", "deterministic note"] = "model interpretation"
+    fallback_used: bool = False
+    error: str | None = None
 
 
 class StepNarration(StrictModel):
@@ -248,6 +250,21 @@ class ReplayNarrationExport(StrictModel):
     chapters: list[ReplayChapter]
     chapter_run: ChapterRunRecord
     summary: SessionSummary | None = None
+
+
+class SelectionSummary(StrictModel):
+    schema_version: Literal["replay-selection-summary-1.0"] = (
+        "replay-selection-summary-1.0"
+    )
+    start_sequence: int = Field(ge=1)
+    end_sequence: int = Field(ge=1)
+    total_steps: int = Field(ge=1)
+    non_trivial_steps: int = Field(ge=0)
+    checked_claim_steps: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=4_000)
+    source: Literal["deterministic_facts", "model"]
+    fallback_used: bool
+    error: str | None = None
 
 
 def fallback_session_summary(

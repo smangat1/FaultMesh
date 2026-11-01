@@ -56,7 +56,7 @@ _ESCAPED_JSON_SECRET = re.compile(
 )
 _ASSIGNMENT_SECRET = re.compile(
     r"(?i)(?P<prefix>\b(?P<key>[A-Za-z_][A-Za-z0-9_-]*)\s*[:=]\s*)"
-    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s#;]+)"
+    r"(?P<value>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s#;{\[]+)"
 )
 _HEADER_SECRET = re.compile(
     r"(?im)(?P<prefix>^\s*(?P<key>authorization|cookie|set-cookie)\s*:\s*)"

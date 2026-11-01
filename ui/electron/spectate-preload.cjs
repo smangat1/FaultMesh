@@ -17,6 +17,8 @@ const CHANNELS = Object.freeze({
   startNarration: 'faultmesh:replay:start-narration',
   cancelNarration: 'faultmesh:replay:cancel-narration',
   rerunNarration: 'faultmesh:replay:rerun-narration',
+  explainStep: 'faultmesh:replay:explain-step',
+  summarizeSelection: 'faultmesh:replay:summarize-selection',
   narrationEvent: 'faultmesh:replay:narration-event',
 });
 
@@ -45,6 +47,19 @@ contextBridge.exposeInMainWorld('faultmeshSpectate', Object.freeze({
     CHANNELS.rerunNarration,
     sessionId,
     tool,
+  ),
+  explainStep: (sessionId, tool, sequence) => ipcRenderer.invoke(
+    CHANNELS.explainStep,
+    sessionId,
+    tool,
+    sequence,
+  ),
+  summarizeSelection: (sessionId, tool, start, end) => ipcRenderer.invoke(
+    CHANNELS.summarizeSelection,
+    sessionId,
+    tool,
+    start,
+    end,
   ),
   onNarrationEvent: (callback) => {
     if (typeof callback !== 'function') throw new TypeError('narration callback must be a function');
