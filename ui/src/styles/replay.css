@@ -408,7 +408,7 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  transition: left 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: left var(--replay-transition-quick);
 }
 
 .replay-timeline-thumb.dragging {
@@ -647,8 +647,29 @@
   flex-direction: column;
 }
 
-.replay-main-stage > .replay-file-workbench,
-.replay-main-stage > .replay-empty-stage {
+.replay-stop-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  animation: replay-stop-enter var(--replay-transition-quick) both;
+}
+
+@keyframes replay-stop-enter {
+  from {
+    opacity: 0;
+    transform: translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.replay-stop-content > .replay-file-workbench,
+.replay-stop-content > .replay-empty-stage {
   flex: 1;
   min-height: 0;
   height: auto !important;
@@ -662,6 +683,12 @@
   border-bottom: 1px solid var(--replay-border-subtle);
   background: var(--replay-bg-surface-1);
   flex-shrink: 0;
+  transition: background var(--replay-transition-quick), box-shadow var(--replay-transition-quick);
+}
+
+.replay-prompt-card.is-playing {
+  background: var(--replay-accent-glow);
+  box-shadow: inset 2px 0 0 var(--replay-accent);
 }
 
 .replay-prompt-card-heading {
@@ -874,6 +901,46 @@
 
 .replay-toolbar-icon:disabled {
   opacity: 0.28;
+}
+
+.replay-playback-controls,
+.replay-speed-control {
+  display: flex;
+  align-items: center;
+}
+
+.replay-playback-controls {
+  gap: var(--space-1);
+  margin-left: var(--space-1);
+}
+
+.replay-play-button.active {
+  border-color: var(--replay-border-focus);
+  background: var(--replay-accent-glow);
+}
+
+.replay-speed-control {
+  padding: 2px;
+  border: 1px solid var(--replay-border-subtle);
+  border-radius: var(--replay-radius-control);
+  background: var(--replay-bg-surface-2);
+}
+
+.replay-speed-control button {
+  min-width: 28px;
+  height: 24px;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: calc(var(--replay-radius-control) - 2px);
+  color: var(--replay-text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.replay-speed-control button:hover,
+.replay-speed-control button.active {
+  background: var(--replay-accent-glow);
+  color: var(--replay-text-primary);
 }
 
 .replay-dev-badge {
@@ -1296,6 +1363,18 @@
 
   .replay-file-workbench {
     grid-template-columns: 150px minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .replay-stop-content {
+    animation: none !important;
+  }
+
+  .replay-prompt-card,
+  .replay-toolbar-icon,
+  .replay-speed-control button {
+    transition: none !important;
   }
 }
 

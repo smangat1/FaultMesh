@@ -31,11 +31,35 @@ import {
   HelpCircle,
   RotateCcw,
   ListTree,
+  Pause,
+  Play,
   X,
 } from 'lucide-react';
 
 const DETERMINISTIC_STEP_NOTE = 'No recorded changes, command exit, or test evidence for this step.';
 const MODEL_NOT_READY_STEP_NOTE = 'Set up the local model to check this step.';
+const PROMPT_PLAYBACK_DELAY_MS = 2400;
+const FILE_STEP_PLAYBACK_DELAY_MS = 1200;
+
+type PlaybackSpeed = 1 | 2 | 4;
+
+function usePrefersReducedMotion(): boolean {
+  const query = '(prefers-reduced-motion: reduce)';
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
+    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.(query).matches)
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const media = window.matchMedia(query);
+    const update = () => setPrefersReducedMotion(media.matches);
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, []);
+
+  return prefersReducedMotion;
+}
 
 export interface ReplayWorkspaceProps {
   adapter: ReplayAdapter;
@@ -99,6 +123,9 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const timeline = useMemo(() => adapter.getTimeline(), [adapter]);
   const promptGroups = useMemo(() => adapter.getPromptGroups(), [adapter]);
   const [rawStepMode, setRawStepMode] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
+  const prefersReducedMotion = usePrefersReducedMotion();
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
@@ -162,6 +189,15 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
       : timeline.filter((entry) => !promptStopSequences.has(entry.sequence)).map((entry) => entry.sequence),
     [promptStopSequences, rawStepMode, timeline]
   );
+  const promptEntrySequences = useMemo(
+    () => new Set(promptGroups.map((prompt) => (
+      prompt.fileChangingSequences[0] ?? prompt.startSequence
+    ))),
+    [promptGroups]
+  );
+  const currentIndex = navigationTimeline.findIndex((entry) => entry.sequence === currentSeq);
+
+  const pausePlayback = useCallback(() => setIsPlaying(false), []);
 
   const stepLabels = useMemo(() => new Map(
     timeline.map((entry) => [
@@ -320,6 +356,54 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     [adapter, requestStepExplanation, timeline]
   );
 
+  const handleUserSelectSequence = useCallback((seq: number) => {
+    pausePlayback();
+    handleSelectSequence(seq);
+  }, [handleSelectSequence, pausePlayback]);
+
+  useEffect(() => {
+    if (!isPlaying) return undefined;
+    if (currentIndex < 0 || currentIndex >= navigationTimeline.length - 1) {
+      setIsPlaying(false);
+      return undefined;
+    }
+    const delay = (
+      promptEntrySequences.has(currentSeq)
+        ? PROMPT_PLAYBACK_DELAY_MS
+        : FILE_STEP_PLAYBACK_DELAY_MS
+    ) / playbackSpeed;
+    const timer = window.setTimeout(() => {
+      const next = navigationTimeline[currentIndex + 1];
+      if (next) handleSelectSequence(next.sequence);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [
+    currentIndex,
+    currentSeq,
+    handleSelectSequence,
+    isPlaying,
+    navigationTimeline,
+    playbackSpeed,
+    promptEntrySequences,
+  ]);
+
+  const togglePlayback = useCallback(() => {
+    if (!isPlaying && (currentIndex < 0 || currentIndex >= navigationTimeline.length - 1)) {
+      return;
+    }
+    setIsPlaying((playing) => !playing);
+  }, [currentIndex, isPlaying, navigationTimeline.length]);
+
+  const handleSelectFile = useCallback((path: string | null) => {
+    pausePlayback();
+    setSelectedFile(path);
+  }, [pausePlayback]);
+
+  const handleWorkspacePointerDown = useCallback((event: React.PointerEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest('.replay-playback-controls')) pausePlayback();
+  }, [pausePlayback]);
+
   useEffect(() => {
     if (rawStepMode || promptStopSequences.has(currentSeq)) return;
     const prompt = promptGroups.find(
@@ -330,6 +414,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   }, [currentSeq, handleSelectSequence, promptGroups, promptStopSequences, rawStepMode]);
 
   const handleRangeSelect = useCallback((seq: number, extend: boolean) => {
+    pausePlayback();
     if (extend && selectionAnchor !== null) {
       setSelectionRange({
         start: Math.min(selectionAnchor, seq),
@@ -341,7 +426,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     }
     setSelectionSummary(null);
     setSelectionError(null);
-  }, [selectionAnchor]);
+  }, [pausePlayback, selectionAnchor]);
 
   const handleSummarizeSelection = useCallback(() => {
     if (!selectionRange || !onSummarizeSelection) return;
@@ -373,24 +458,27 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
   // Navigate previous / next checkpoint
   const handlePrevCheckpoint = useCallback(() => {
+    pausePlayback();
     const currentIndex = navigationTimeline.findIndex((t) => t.sequence === currentSeq);
     if (currentIndex > 0) {
       handleSelectSequence(navigationTimeline[currentIndex - 1].sequence);
     }
-  }, [currentSeq, handleSelectSequence, navigationTimeline]);
+  }, [currentSeq, handleSelectSequence, navigationTimeline, pausePlayback]);
 
   const handleNextCheckpoint = useCallback(() => {
+    pausePlayback();
     const currentIndex = navigationTimeline.findIndex((t) => t.sequence === currentSeq);
     if (currentIndex >= 0 && currentIndex < navigationTimeline.length - 1) {
       handleSelectSequence(navigationTimeline[currentIndex + 1].sequence);
     }
-  }, [currentSeq, handleSelectSequence, navigationTimeline]);
+  }, [currentSeq, handleSelectSequence, navigationTimeline, pausePlayback]);
 
   const moveRawStep = useCallback((delta: -1 | 1) => {
+    pausePlayback();
     const currentIndex = timeline.findIndex((entry) => entry.sequence === currentSeq);
     const target = timeline[currentIndex + delta];
     if (target) handleSelectSequence(target.sequence);
-  }, [currentSeq, handleSelectSequence, timeline]);
+  }, [currentSeq, handleSelectSequence, pausePlayback, timeline]);
 
   // Keyboard navigation: Left/Right arrows or j/k, C (chapters), E (evidence), M (mini-map), Escape
   useEffect(() => {
@@ -415,7 +503,19 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         return;
       }
 
-      if (e.shiftKey && e.key === 'ArrowLeft') {
+      if (
+        (e.code === 'Space' || e.key === ' ')
+        && target
+        && typeof target.closest === 'function'
+        && target.closest('button')
+      ) {
+        return;
+      }
+
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        togglePlayback();
+      } else if (e.shiftKey && e.key === 'ArrowLeft') {
         e.preventDefault();
         setRawStepMode(true);
         moveRawStep(-1);
@@ -431,14 +531,18 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         handleNextCheckpoint();
       } else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
+        pausePlayback();
         setIsChaptersOpen((prev) => !prev);
       } else if (e.key === 'e' || e.key === 'E') {
         e.preventDefault();
+        pausePlayback();
         setIsEvidenceOpen((prev) => !prev);
       } else if (e.key === 'm' || e.key === 'M') {
         e.preventDefault();
+        pausePlayback();
         setIsMiniMapOpen((prev) => !prev);
       } else if (e.key === 'Escape') {
+        pausePlayback();
         // Dismiss topmost active panel
         if (isMiniMapOpen) {
           setIsMiniMapOpen(false);
@@ -452,7 +556,16 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePrevCheckpoint, handleNextCheckpoint, isChaptersOpen, isEvidenceOpen, isMiniMapOpen, moveRawStep]);
+  }, [
+    handlePrevCheckpoint,
+    handleNextCheckpoint,
+    isChaptersOpen,
+    isEvidenceOpen,
+    isMiniMapOpen,
+    moveRawStep,
+    pausePlayback,
+    togglePlayback,
+  ]);
 
   const getHistoricalContent = useCallback(
     (path: string) => {
@@ -461,7 +574,6 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     [adapter, currentSeq]
   );
 
-  const currentIndex = navigationTimeline.findIndex((t) => t.sequence === currentSeq);
   const recordedAtLabel = currentEntry ? formatRecordedAt(currentEntry.captured_at, timelineOptions?.timeZone) : '';
 
   return (
@@ -478,6 +590,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         overflow: 'hidden',
       }}
       data-testid="replay-workspace"
+      data-motion={prefersReducedMotion ? 'reduced' : 'full'}
+      onPointerDownCapture={handleWorkspacePointerDown}
     >
       <div className="replay-workspace-header" data-testid="replay-workspace-header">
         <div className="replay-toolbar-cluster">
@@ -510,6 +624,34 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           >
             <ChevronRight size={16} />
           </button>
+          <div className="replay-playback-controls" data-testid="replay-playback-controls">
+            <button
+              type="button"
+              onClick={togglePlayback}
+              disabled={!isPlaying && currentIndex >= navigationTimeline.length - 1}
+              className={`replay-toolbar-icon replay-play-button ${isPlaying ? 'active' : ''}`}
+              title={isPlaying ? 'Pause replay · Space' : 'Play replay · Space'}
+              aria-label={isPlaying ? 'Pause replay' : 'Play replay'}
+              aria-pressed={isPlaying}
+              data-testid="replay-play-toggle"
+            >
+              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+            <div className="replay-speed-control" role="group" aria-label="Replay speed">
+              {([1, 2, 4] as PlaybackSpeed[]).map((speed) => (
+                <button
+                  type="button"
+                  key={speed}
+                  className={playbackSpeed === speed ? 'active' : ''}
+                  onClick={() => setPlaybackSpeed(speed)}
+                  aria-pressed={playbackSpeed === speed}
+                  data-testid={`replay-speed-${speed}`}
+                >
+                  {speed}×
+                </button>
+              ))}
+            </div>
+          </div>
           <span className="replay-origin-label" data-testid="replay-header-origin">
             {origin === 'synthetic_fixture'
               ? 'Synthetic sample'
@@ -530,7 +672,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         <div className="replay-toolbar-cluster" data-testid="replay-header-tools">
           <button
             type="button"
-            onClick={() => setRawStepMode((value) => !value)}
+            onClick={() => {
+              pausePlayback();
+              setRawStepMode((value) => !value);
+            }}
             className={`replay-toolbar-icon ${rawStepMode ? 'active' : ''}`}
             title={rawStepMode ? 'Switch to prompt view' : 'Switch to raw step view'}
             aria-label={rawStepMode ? 'Switch to prompt view' : 'Switch to raw step view'}
@@ -540,7 +685,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             <span className="sr-only">{rawStepMode ? 'Prompt view' : 'Raw step view'}</span>
           </button>
           <button
-            onClick={() => setIsChaptersOpen((prev) => !prev)}
+            onClick={() => {
+              pausePlayback();
+              setIsChaptersOpen((prev) => !prev);
+            }}
             className={`replay-toolbar-icon ${isChaptersOpen ? 'active' : ''}`}
             title="Chapters · C"
             aria-label="Toggle chapters rail"
@@ -552,7 +700,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </button>
 
           <button
-            onClick={() => setIsEvidenceOpen((prev) => !prev)}
+            onClick={() => {
+              pausePlayback();
+              setIsEvidenceOpen((prev) => !prev);
+            }}
             className={`replay-toolbar-icon ${isEvidenceOpen ? 'active' : ''}`}
             title="Evidence · E"
             aria-label="Toggle evidence inspector"
@@ -564,7 +715,10 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </button>
 
           <button
-            onClick={() => setIsMiniMapOpen((prev) => !prev)}
+            onClick={() => {
+              pausePlayback();
+              setIsMiniMapOpen((prev) => !prev);
+            }}
             className={`replay-toolbar-icon ${isMiniMapOpen ? 'active' : ''}`}
             title="Project map · M"
             aria-label="Toggle Project Map dock"
@@ -652,7 +806,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         <ReplayTimelineBar
           timeline={navigationTimeline}
           currentSequence={currentSeq}
-          onSelectSequence={handleSelectSequence}
+          onSelectSequence={handleUserSelectSequence}
+          onInteractionStart={pausePlayback}
           chapters={chapters}
           tests={allTests}
           options={timelineOptions}
@@ -723,7 +878,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             <ReplayTimeline
               timeline={navigationTimeline}
               currentSequence={currentSeq}
-              onSelectSequence={handleSelectSequence}
+              onSelectSequence={handleUserSelectSequence}
               chapters={chapters}
               selectedChapterId={selectedChapterId}
               onSelectChapter={setSelectedChapterId}
@@ -756,8 +911,16 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           }}
           data-testid="replay-main-stage"
         >
+          <div
+            key={`${rawStepMode ? 'raw' : 'prompt'}:${currentSeq}`}
+            className="replay-stop-content"
+            data-testid="replay-stop-content"
+          >
           {!rawStepMode && activePrompt && (
-            <section className="replay-prompt-card" data-testid="replay-prompt-card">
+            <section
+              className={`replay-prompt-card ${isPlaying ? 'is-playing' : ''}`}
+              data-testid="replay-prompt-card"
+            >
               <div className="replay-prompt-card-heading">
                 <div>
                   <span className="replay-prompt-kicker">Prompt {activePromptIndex + 1}</span>
@@ -803,7 +966,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               selectedFile={selectedFile}
               changedFiles={currentEntry?.changed_files || []}
               changedSymbols={currentEntry?.changed_symbols || []}
-              onSelectFile={setSelectedFile}
+              onSelectFile={handleSelectFile}
               getHistoricalContent={getHistoricalContent}
               entry={currentEntry}
               record={currentRecord}
@@ -815,6 +978,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               foldedRecords={foldedRecordsForCurrent}
             />
           )}
+          </div>
 
           {/* Graph Mini Map Dock (Resizable, Size-cycling, Honest empty state) */}
           <ReplayMiniMapDock
@@ -822,7 +986,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             onClose={() => setIsMiniMapOpen(false)}
             graphData={graphData}
             tests={adapter.getAllTests() as any}
-            onSelectFile={(f) => setSelectedFile(f)}
+            onSelectFile={handleSelectFile}
             selectedFile={selectedFile}
           />
         </div>

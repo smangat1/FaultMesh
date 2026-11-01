@@ -14,6 +14,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
   it('renders default timeline-first layout: hero bar visible, diff viewer as main stage, panels closed by default', () => {
     const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
     render(<ReplayWorkspace adapter={adapter} />);
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
     // 1. Hero timeline bar is rendered
     expect(screen.getByTestId('replay-hero-bar-container')).toBeDefined();
@@ -360,6 +361,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
   it('prevents keyboard arrow resizing from leaking through to global replay checkpoint navigation', () => {
     const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
     render(<ReplayWorkspace adapter={adapter} defaultMiniMapOpen={true} />);
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
     // Move to checkpoint 3
     const nextBtn = screen.getByTestId('replay-next-btn');

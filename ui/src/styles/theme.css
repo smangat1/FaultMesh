@@ -66,8 +66,8 @@
   --radius-sm: 12px;
   --radius-md: 16px;
   --radius-lg: 20px;
-  --motion-duration: 160ms;
-  --motion-easing: ease;
+  --motion-duration: 200ms;
+  --motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --motion: var(--motion-duration) var(--motion-easing);
 
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;

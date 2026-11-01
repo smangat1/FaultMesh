@@ -168,6 +168,7 @@ describe('replay local narration wiring', () => {
         onExplainStep={explain}
       />
     );
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
     fireEvent.click(screen.getByTestId(`replay-checkpoint-row-${source.timeline[0].sequence}`));
     expect(screen.getByTestId('replay-step-deterministic-note').textContent).toContain('No recorded changes');
     expect(explain).not.toHaveBeenCalled();
@@ -200,6 +201,7 @@ describe('replay local narration wiring', () => {
       />
     );
 
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
     fireEvent.click(screen.getByTestId('replay-checkpoint-row-3'));
     fireEvent.click(screen.getByTestId('replay-checkpoint-row-6'));
     expect(explain).toHaveBeenCalledTimes(1);

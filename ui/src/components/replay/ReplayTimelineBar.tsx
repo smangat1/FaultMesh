@@ -16,6 +16,7 @@ export interface ReplayTimelineBarProps {
   timeline: TimelineEntry[];
   currentSequence: number;
   onSelectSequence: (sequence: number) => void;
+  onInteractionStart?: () => void;
   chapters?: ReplayChapter[];
   tests?: StructuredTestEvidence[];
   options?: TimeModelOptions;
@@ -34,6 +35,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
   timeline,
   currentSequence,
   onSelectSequence,
+  onInteractionStart,
   chapters = [],
   tests = [],
   options,
@@ -117,6 +119,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
       // Primary button only (allow undefined for test synthetics)
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
+      onInteractionStart?.();
 
       const ratio = getRatioFromClientX(e.clientX);
       isDraggingRef.current = true;
@@ -132,7 +135,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         // Fallback for jsdom / tests
       }
     },
-    [getRatioFromClientX, geometry]
+    [getRatioFromClientX, geometry, onInteractionStart]
   );
 
   const handlePointerMove = useCallback(
