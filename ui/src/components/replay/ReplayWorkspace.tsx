@@ -27,6 +27,9 @@ import {
   Layers,
   BookOpen,
   ShieldCheck,
+  CircleStop,
+  HelpCircle,
+  RotateCcw,
   X,
 } from 'lucide-react';
 
@@ -119,19 +122,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   // On-demand panel visibility states (Rule 2 + Visual Direction: closed by default)
   const [isChaptersOpen, setIsChaptersOpen] = useState<boolean>(defaultChaptersOpen);
   const [isEvidenceOpen, setIsEvidenceOpen] = useState<boolean>(defaultEvidenceOpen);
-  const [isMiniMapOpen, setIsMiniMapOpen] = useState<boolean>(() => {
-    if (defaultMiniMapOpen !== undefined) return defaultMiniMapOpen;
-    try {
-      const saved = localStorage.getItem('faultmesh:replay:minimap:state');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.isOpen === 'boolean') return parsed.isOpen;
-      }
-    } catch {
-      // Ignore
-    }
-    return false;
-  });
+  const [isMiniMapOpen, setIsMiniMapOpen] = useState<boolean>(() => Boolean(defaultMiniMapOpen));
 
   const currentEntry = adapter.getTimelineEntry(currentSeq) || timeline[0] || null;
   const currentRecord = adapter.getRecordForSequence(currentSeq);
@@ -399,6 +390,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
   return (
     <div
+      className="replay-workspace-root"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -411,204 +403,122 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
       }}
       data-testid="replay-workspace"
     >
-      {/* 1. Minimal Header (Step position + Origin + On-demand panel controls only) */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '6px 16px',
-          borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-          backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
-          flexWrap: 'wrap',
-          gap: '10px',
-          flexShrink: 0,
-        }}
-        data-testid="replay-workspace-header"
-      >
-        {/* Left: Minimal Position + Origin */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              onClick={handlePrevCheckpoint}
-              disabled={currentIndex <= 0}
-              className="btn-ghost"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '4px 8px',
-                fontSize: '12px',
-                borderRadius: 'var(--replay-radius-control, 7px)',
-                border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-                backgroundColor: currentIndex <= 0 ? 'transparent' : 'var(--replay-bg-surface-2, #141a26)',
-                color: 'var(--replay-text-primary, #e6edf8)',
-                cursor: currentIndex <= 0 ? 'not-allowed' : 'pointer',
-                opacity: currentIndex <= 0 ? 0.35 : 1,
-                transition: 'background-color var(--replay-transition-quick, 160ms ease)',
-              }}
-              title="Previous checkpoint (Left arrow or j)"
-              aria-label="Previous checkpoint"
-              data-testid="replay-prev-btn"
-            >
-              <ChevronLeft size={14} />
-              <span>Prev</span>
-            </button>
-
-            <span
-              style={{
-                fontFamily: 'var(--font-mono, monospace)',
-                fontSize: '12px',
-                fontWeight: 600,
-                padding: '4px 8px',
-                color: 'var(--replay-accent, #4a7bb0)',
-                backgroundColor: 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))',
-                border: '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))',
-                borderRadius: 'var(--replay-radius-control, 7px)',
-                cursor: 'help',
-              }}
-              title={recordedAtLabel}
-              data-testid="replay-current-seq-badge"
-            >
-              Checkpoint #{currentSeq} of {timeline.length}
-            </span>
-
-            <button
-              onClick={handleNextCheckpoint}
-              disabled={currentIndex >= timeline.length - 1}
-              className="btn-ghost"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '4px 8px',
-                fontSize: '12px',
-                borderRadius: 'var(--replay-radius-control, 7px)',
-                border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-                backgroundColor: currentIndex >= timeline.length - 1 ? 'transparent' : 'var(--replay-bg-surface-2, #141a26)',
-                color: 'var(--replay-text-primary, #e6edf8)',
-                cursor: currentIndex >= timeline.length - 1 ? 'not-allowed' : 'pointer',
-                opacity: currentIndex >= timeline.length - 1 ? 0.35 : 1,
-                transition: 'background-color var(--replay-transition-quick, 160ms ease)',
-              }}
-              title="Next checkpoint (Right arrow or k)"
-              aria-label="Next checkpoint"
-              data-testid="replay-next-btn"
-            >
-              <span>Next</span>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-
-          {/* Origin Badge */}
-          <span
-            style={{
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono, monospace)',
-              fontWeight: 600,
-              padding: '2px 7px',
-              borderRadius: 'var(--replay-radius-control, 7px)',
-              backgroundColor: origin === 'real_recording' ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))' : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
-              border: origin === 'real_recording' ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))' : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
-              color: origin === 'real_recording' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
-            }}
-            data-testid="replay-header-origin"
+      <div className="replay-workspace-header" data-testid="replay-workspace-header">
+        <div className="replay-toolbar-cluster">
+          <button
+            onClick={handlePrevCheckpoint}
+            disabled={currentIndex <= 0}
+            className="replay-toolbar-icon"
+            title="Previous step · Left arrow or J"
+            aria-label="Previous step"
+            data-testid="replay-prev-btn"
           >
+            <ChevronLeft size={16} />
+          </button>
+          <span
+            className="replay-dev-badge"
+            title={recordedAtLabel}
+            data-testid="replay-current-seq-badge"
+          >
+            Checkpoint #{currentSeq} of {timeline.length}
+          </span>
+          <button
+            onClick={handleNextCheckpoint}
+            disabled={currentIndex >= timeline.length - 1}
+            className="replay-toolbar-icon"
+            title="Next step · Right arrow or K"
+            aria-label="Next step"
+            data-testid="replay-next-btn"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <span className="replay-origin-label" data-testid="replay-header-origin">
             {origin === 'synthetic_fixture'
               ? 'SYNTHETIC FIXTURE'
               : origin === 'simulated_demo'
               ? 'SIMULATED DEMO'
               : 'REAL RECORDING'}
           </span>
-
           {narrationProgress && (
-            <span
-              data-testid="replay-narration-progress"
-              style={{
-                fontSize: '10px',
-                padding: '3px 7px',
-                borderRadius: '7px',
-                background: 'rgba(148, 108, 50, 0.12)',
-                border: '1px solid rgba(148, 108, 50, 0.30)',
-                color: 'var(--replay-status-warning, #946c32)',
-              }}
-            >
+            <span className="replay-progress-label" data-testid="replay-narration-progress">
               Titling chapters {narrationProgress.done}/{narrationProgress.total}
             </span>
           )}
-
           {plainMode && !narrationProgress && (
-            <span data-testid="replay-plain-mode" style={{ fontSize: '10px', color: 'var(--replay-text-muted, #8b97ad)' }}>
-              Plain mode
-            </span>
+            <span className="replay-muted-label" data-testid="replay-plain-mode">Plain mode</span>
           )}
-
         </div>
 
-        {/* Right: On-Demand Controls (Chapters [C], Evidence [E], Mini Map [M]) & Help */}
-        <div
-          data-testid="replay-header-tools"
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
-        >
+        <div className="replay-toolbar-cluster" data-testid="replay-header-tools">
           <button
             onClick={() => setIsChaptersOpen((prev) => !prev)}
-            className={`replay-header-toggle-btn ${isChaptersOpen ? 'active' : ''}`}
-            title="Toggle chapters left rail (Shortcut: C)"
+            className={`replay-toolbar-icon ${isChaptersOpen ? 'active' : ''}`}
+            title="Chapters · C"
             aria-label="Toggle chapters rail"
             aria-expanded={isChaptersOpen}
             data-testid="replay-toggle-chapters"
           >
-            <BookOpen size={12} />
-            <span>Chapters</span>
-            <span className="replay-shortcut-tag">C</span>
+            <BookOpen size={16} />
+            <span className="sr-only">Chapters</span>
           </button>
 
           <button
             onClick={() => setIsEvidenceOpen((prev) => !prev)}
-            className={`replay-header-toggle-btn ${isEvidenceOpen ? 'active' : ''}`}
-            title="Toggle evidence & claims inspector (Shortcut: E)"
+            className={`replay-toolbar-icon ${isEvidenceOpen ? 'active' : ''}`}
+            title="Evidence · E"
             aria-label="Toggle evidence inspector"
             aria-expanded={isEvidenceOpen}
             data-testid="replay-toggle-evidence"
           >
-            <ShieldCheck size={12} />
-            <span>Evidence</span>
-            <span className="replay-shortcut-tag">E</span>
+            <ShieldCheck size={16} />
+            <span className="sr-only">Evidence</span>
           </button>
 
           <button
             onClick={() => setIsMiniMapOpen((prev) => !prev)}
-            className={`replay-header-toggle-btn ${isMiniMapOpen ? 'active' : ''}`}
-            title="Toggle project structure mini map (Shortcut: M)"
+            className={`replay-toolbar-icon ${isMiniMapOpen ? 'active' : ''}`}
+            title="Project map · M"
             aria-label="Toggle Project Map dock"
             aria-expanded={isMiniMapOpen}
             data-testid="replay-toggle-minimap"
           >
-            <Layers size={12} />
-            <span>Mini Map</span>
-            <span className="replay-shortcut-tag">M</span>
+            <Layers size={16} />
+            <span className="sr-only">Project map</span>
           </button>
 
           <button
             type="button"
-            className="first-use-help-btn"
+            className="replay-toolbar-icon"
             data-testid="replay-help-tips-btn"
             onClick={() => setShowTips(true)}
-            title="First-use guide (?)"
+            title="Replay guide"
             aria-label="First-use guide"
           >
-            ?
+            <HelpCircle size={16} />
+            <span className="sr-only">Replay guide</span>
           </button>
           {narrationProgress ? (
-            <button type="button" className="replay-header-toggle-btn" onClick={onCancelNarration}>
-              Stop titling
+            <button
+              type="button"
+              className="replay-toolbar-icon"
+              title="Stop chapter titling"
+              aria-label="Stop chapter titling"
+              onClick={onCancelNarration}
+            >
+              <CircleStop size={16} />
+              <span className="sr-only">Stop titling</span>
             </button>
           ) : importedSessionId && !modelSetupOpen && !plainMode ? (
             <button
               type="button"
-              className="replay-header-toggle-btn"
+              className="replay-toolbar-icon"
               data-testid="replay-rerun-narration"
+              title="Re-run narration"
+              aria-label="Re-run narration"
               onClick={onRerunNarration}
             >
-              Re-run narration
+              <RotateCcw size={16} />
+              <span className="sr-only">Re-run narration</span>
             </button>
           ) : null}
         </div>
@@ -641,6 +551,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
 
       {/* 2. Hero Timeline Bar (Spanning Full Workspace Width) */}
       <div
+        className="replay-scrubber-shell"
         style={{
           padding: '8px 16px 10px 16px',
           borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',

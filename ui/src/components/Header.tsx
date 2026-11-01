@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header
       style={{
         borderBottom: '1px solid var(--border-default)',
-        backgroundColor: '#11141a',
+        backgroundColor: 'var(--bg-surface)',
         flexShrink: 0,
         // @ts-expect-error WebkitAppRegion
         WebkitAppRegion: 'drag',
@@ -77,10 +77,10 @@ export const Header: React.FC<HeaderProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 14px',
-          paddingLeft: isMacDesktop ? '78px' : '14px',
-          gap: '10px',
-          minHeight: '40px',
+          padding: 'var(--space-2) var(--space-4)',
+          paddingLeft: isMacDesktop ? '78px' : 'var(--space-4)',
+          gap: 'var(--space-3)',
+          minHeight: '48px',
           flexWrap: 'wrap',
           rowGap: '6px',
           columnGap: '10px',

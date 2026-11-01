@@ -11,15 +11,15 @@
   bottom: 14px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   max-width: min(560px, calc(100vw - 28px));
-  padding: 5px 7px 5px 9px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: rgba(21, 25, 34, 0.96);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: 11px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  font-size: var(--type-xs);
+  box-shadow: none;
   pointer-events: auto;
 }
 
@@ -32,7 +32,7 @@
 
 .spectate-status.is-watching .spectate-status-dot {
   background: var(--status-pass);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  box-shadow: 0 0 0 3px var(--status-pass-bg);
 }
 
 .spectate-status-note {
@@ -43,7 +43,7 @@
   padding: 6px 9px;
   border: 1px solid var(--status-error-border);
   border-radius: var(--radius-sm);
-  background: rgba(28, 34, 46, 0.98);
+  background: var(--bg-raised);
   color: var(--text-secondary);
   font-size: 11px;
   pointer-events: auto;
@@ -60,11 +60,11 @@
   min-width: 360px;
   max-width: calc(100vw - 40px);
   padding: 8px 10px 8px 12px;
-  border: 1px solid var(--change-modified-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: rgba(28, 34, 46, 0.98);
+  background: var(--bg-raised);
   color: var(--text-secondary);
-  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.34);
+  box-shadow: none;
   pointer-events: auto;
 }
 
@@ -95,8 +95,8 @@
   padding: 16px;
   overflow: auto;
   border-left: 1px solid var(--border-default);
-  background: rgba(14, 17, 23, 0.985);
-  box-shadow: -18px 0 45px rgba(0, 0, 0, 0.32);
+  background: var(--bg-app);
+  box-shadow: none;
   pointer-events: auto;
 }
 
@@ -145,7 +145,7 @@
   border-left: 3px solid var(--status-error);
   border-radius: var(--radius-sm);
   background: var(--status-error-bg);
-  color: #fdba74;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
@@ -170,7 +170,7 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--bg-code);
-  color: #d8dee9;
+  color: var(--text-primary);
   line-height: 1.55;
   white-space: pre;
 }
@@ -194,9 +194,9 @@
   max-width: 100%;
   padding: 2px 5px;
   overflow: hidden;
-  border: 1px solid var(--change-modified-border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  color: var(--change-modified);
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 9px;
   text-overflow: ellipsis;
