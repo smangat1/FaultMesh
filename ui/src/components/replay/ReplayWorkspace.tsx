@@ -30,6 +30,8 @@ import {
   X,
 } from 'lucide-react';
 
+const DETERMINISTIC_STEP_NOTE = 'No recorded changes, command exit, or test evidence for this step.';
+
 export interface ReplayWorkspaceProps {
   adapter: ReplayAdapter;
   graphData?: GraphData | null;
@@ -50,6 +52,7 @@ export interface ReplayWorkspaceProps {
   modelSetupBusy?: boolean;
   modelDownloadProgress?: { downloaded: number; total: number } | null;
   plainMode?: boolean;
+  onDemandModelReady?: boolean;
   onDownloadModel?: () => void;
   onChooseModel?: () => void;
   onSkipModelSetup?: () => void;
@@ -79,6 +82,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   modelSetupBusy = false,
   modelDownloadProgress = null,
   plainMode = false,
+  onDemandModelReady = true,
   onDownloadModel,
   onChooseModel,
   onSkipModelSetup,
@@ -101,6 +105,9 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const selectionCache = useRef(new Map<string, SelectionSummary>());
   const [explanationLoadingSequence, setExplanationLoadingSequence] = useState<number | null>(null);
   const [instantStepNote, setInstantStepNote] = useState<string | null>(null);
+  const explanationInFlightRef = useRef(false);
+  const latestExplanationSequenceRef = useRef<number | null>(null);
+  const explanationTargetSequenceRef = useRef<number | null>(null);
   const tipScreenId = importedSessionId ? 'replayHistory' : 'replay';
   const [showTips, setShowTips] = useState<boolean>(() => !isScreenTipSeen(tipScreenId));
   const [showWatchPrompt, setShowWatchPrompt] = useState<boolean>(() => Boolean(
@@ -202,17 +209,55 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   }, [adapter, timeline]);
 
   const requestStepExplanation = useCallback((seq: number) => {
+    explanationTargetSequenceRef.current = seq;
     setInstantStepNote(null);
-    if (isTrivialStep(seq)) {
-      setInstantStepNote('No recorded changes, command exit, or test evidence for this step.');
+    if (isTrivialStep(seq) || !onDemandModelReady) {
+      latestExplanationSequenceRef.current = null;
+      setExplanationLoadingSequence(null);
+      setInstantStepNote(DETERMINISTIC_STEP_NOTE);
       return;
     }
-    if (adapter.getNarration(seq) || !onExplainStep) return;
+    if (adapter.getNarration(seq) || !onExplainStep) {
+      latestExplanationSequenceRef.current = null;
+      setExplanationLoadingSequence(null);
+      return;
+    }
+    latestExplanationSequenceRef.current = seq;
     setExplanationLoadingSequence(seq);
-    void onExplainStep(seq).catch((error: unknown) => {
-      setInstantStepNote(error instanceof Error ? error.message : 'The step explanation was unavailable.');
-    }).finally(() => setExplanationLoadingSequence((current) => current === seq ? null : current));
-  }, [adapter, isTrivialStep, onExplainStep]);
+    if (explanationInFlightRef.current) return;
+    explanationInFlightRef.current = true;
+    const runLatest = async () => {
+      try {
+        while (latestExplanationSequenceRef.current !== null) {
+          const requested = latestExplanationSequenceRef.current;
+          latestExplanationSequenceRef.current = null;
+          try {
+            const result = await onExplainStep(requested);
+            if (
+              !result
+              && explanationTargetSequenceRef.current === requested
+              && latestExplanationSequenceRef.current === null
+            ) {
+              setInstantStepNote(DETERMINISTIC_STEP_NOTE);
+            }
+          } catch (error: unknown) {
+            if (
+              explanationTargetSequenceRef.current === requested
+              && latestExplanationSequenceRef.current === null
+            ) {
+              setInstantStepNote(
+                error instanceof Error ? error.message : 'The step explanation was unavailable.'
+              );
+            }
+          }
+        }
+      } finally {
+        explanationInFlightRef.current = false;
+        setExplanationLoadingSequence(null);
+      }
+    };
+    void runLatest();
+  }, [adapter, isTrivialStep, onDemandModelReady, onExplainStep]);
 
   const handleSelectSequence = useCallback(
     (seq: number) => {
@@ -255,6 +300,12 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
       setSelectionError(null);
       return;
     }
+    if (!onDemandModelReady) {
+      setSelectionLoading(false);
+      setSelectionError(null);
+      setInstantStepNote(DETERMINISTIC_STEP_NOTE);
+      return;
+    }
     setSelectionLoading(true);
     setSelectionError(null);
     void onSummarizeSelection(selectionRange.start, selectionRange.end).then((summary) => {
@@ -265,7 +316,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     }).catch((error: unknown) => {
       setSelectionError(error instanceof Error ? error.message : 'The selection summary was unavailable.');
     }).finally(() => setSelectionLoading(false));
-  }, [onSummarizeSelection, selectionRange]);
+  }, [onDemandModelReady, onSummarizeSelection, selectionRange]);
 
   // Navigate previous / next checkpoint
   const handlePrevCheckpoint = useCallback(() => {

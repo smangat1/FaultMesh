@@ -262,6 +262,8 @@ function attachSpectateBridge({
   let disposed = false;
   let narrationChild = null;
   let downloadChild = null;
+  let onDemandChild = null;
+  let queuedOnDemand = null;
 
   function assertTrustedSender(event) {
     if (disposed) throw new Error('spectate bridge is closed');
@@ -992,41 +994,85 @@ function attachSpectateBridge({
       : ['replay-summarize-selection', sessionId, String(start), String(end), '--tool', tool];
     commandArgs.push(...linkedProjectArgs(sessionId));
     return new Promise((resolve, reject) => {
-      const active = spawn(command, commandArgs, {
+      const request = { commandArgs, kind, resolve, reject };
+      if (onDemandChild) {
+        if (queuedOnDemand) queuedOnDemand.resolve({ superseded: true });
+        queuedOnDemand = request;
+        return;
+      }
+      startOnDemand(request);
+    });
+  }
+
+  function startOnDemand(request) {
+    let active;
+    try {
+      active = spawn(command, request.commandArgs, {
         shell: false,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      let output = '';
-      active.stdout.on('data', (chunk) => {
-        output += chunk.toString('utf8');
-        if (Buffer.byteLength(output) > 8 * 1024 * 1024) {
-          active.kill('SIGTERM');
-          reject(new Error('on-demand narration output exceeded limit'));
-        }
-      });
-      active.stderr.on('data', () => {});
-      active.once('error', () => reject(new Error('local narration could not start')));
-      active.once('close', (code) => {
-        if (code !== 0) {
-          reject(new Error('local narration stopped'));
-          return;
-        }
-        try {
-          const lines = output.split('\n').filter((line) => line.trim());
-          const parsed = JSON.parse(lines.at(-1) || '{}');
-          if (!isPlainObject(parsed) || parsed.event !== 'result') {
-            throw new Error('invalid on-demand narration output');
-          }
-          if (kind === 'explain' && isPlainObject(parsed.step)) resolve({ step: parsed.step });
-          else if (kind === 'selection' && isPlainObject(parsed.summary)) {
-            resolve({ summary: parsed.summary });
-          } else throw new Error('invalid on-demand narration result');
-        } catch (error) {
-          reject(error);
-        }
-      });
+    } catch (_) {
+      request.reject(new Error('local narration could not start'));
+      startQueuedOnDemand();
+      return;
+    }
+    onDemandChild = active;
+    let settled = false;
+    let closed = false;
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      callback();
+    };
+    const finish = () => {
+      if (closed) return;
+      closed = true;
+      if (onDemandChild === active) onDemandChild = null;
+      startQueuedOnDemand();
+    };
+    let output = '';
+    active.stdout.on('data', (chunk) => {
+      output += chunk.toString('utf8');
+      if (Buffer.byteLength(output) > 8 * 1024 * 1024) {
+        active.kill('SIGTERM');
+        settle(() => request.reject(new Error('on-demand narration output exceeded limit')));
+      }
     });
+    active.stderr.on('data', () => {});
+    active.once('error', () => {
+      settle(() => request.reject(new Error('local narration could not start')));
+      finish();
+    });
+    active.once('close', (code) => {
+      finish();
+      if (settled) return;
+      if (code !== 0) {
+        settle(() => request.reject(new Error('local narration stopped')));
+        return;
+      }
+      try {
+        const lines = output.split('\n').filter((line) => line.trim());
+        const parsed = JSON.parse(lines.at(-1) || '{}');
+        if (!isPlainObject(parsed) || parsed.event !== 'result') {
+          throw new Error('invalid on-demand narration output');
+        }
+        if (request.kind === 'explain' && isPlainObject(parsed.step)) {
+          settle(() => request.resolve({ step: parsed.step }));
+        } else if (request.kind === 'selection' && isPlainObject(parsed.summary)) {
+          settle(() => request.resolve({ summary: parsed.summary }));
+        } else throw new Error('invalid on-demand narration result');
+      } catch (error) {
+        settle(() => request.reject(error));
+      }
+    });
+  }
+
+  function startQueuedOnDemand() {
+    if (disposed || onDemandChild || !queuedOnDemand) return;
+    const next = queuedOnDemand;
+    queuedOnDemand = null;
+    startOnDemand(next);
   }
 
   ipcMain.handle(CHANNELS.explainStep, async (event, ...args) => (
@@ -1044,8 +1090,12 @@ function attachSpectateBridge({
       if (active) void terminate(active, reason, immediate);
       if (narrationChild) narrationChild.kill('SIGTERM');
       if (downloadChild) downloadChild.kill('SIGTERM');
+      if (onDemandChild) onDemandChild.kill('SIGTERM');
+      if (queuedOnDemand) queuedOnDemand.resolve({ superseded: true });
       narrationChild = null;
       downloadChild = null;
+      onDemandChild = null;
+      queuedOnDemand = null;
       ipcMain.removeHandler(CHANNELS.choose);
       ipcMain.removeHandler(CHANNELS.start);
       ipcMain.removeHandler(CHANNELS.stop);

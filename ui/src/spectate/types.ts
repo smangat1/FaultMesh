@@ -178,13 +178,17 @@ export interface SpectateBridge {
   startNarration?(sessionId: string, tool: string): Promise<{ started: true }>;
   cancelNarration?(): Promise<{ cancelled: boolean }>;
   rerunNarration?(sessionId: string, tool: string): Promise<{ started: true }>;
-  explainStep?(sessionId: string, tool: string, sequence: number): Promise<{ step: unknown }>;
+  explainStep?(
+    sessionId: string,
+    tool: string,
+    sequence: number,
+  ): Promise<{ step: unknown } | { superseded: true }>;
   summarizeSelection?(
     sessionId: string,
     tool: string,
     start: number,
     end: number,
-  ): Promise<{ summary: unknown }>;
+  ): Promise<{ summary: unknown } | { superseded: true }>;
   onNarrationEvent?(callback: (event: NarrationEvent) => void): () => void;
 }
 

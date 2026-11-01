@@ -514,6 +514,36 @@ test('on-demand narration uses fixed argv and rejects unsafe inputs', async (con
   assert.deepEqual(await selection, { summary: { total_steps: 8 } });
 });
 
+test('on-demand narration is single-flight and coalesces queued work to latest', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const explain = value.ipcMain.handlers.get(CHANNELS.explainStep);
+  const summarize = value.ipcMain.handlers.get(CHANNELS.summarizeSelection);
+
+  const first = explain(value.event, 'session-1', 'codex', 3);
+  const firstChild = value.children.at(-1);
+  const dropped = summarize(value.event, 'session-1', 'codex', 4, 6);
+  const latest = explain(value.event, 'session-1', 'codex', 9);
+
+  assert.equal(value.children.length, 1);
+  assert.deepEqual(await dropped, { superseded: true });
+  firstChild.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'result', step: { sequence: 3 } })}\n`));
+  firstChild.emit('close', 0, null);
+  assert.deepEqual(await first, { step: { sequence: 3 } });
+
+  assert.equal(value.children.length, 2);
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    'replay-explain-step', 'session-1', '9', '--tool', 'codex',
+  ]);
+  const latestChild = value.children.at(-1);
+  latestChild.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'result', step: { sequence: 9 } })}\n`));
+  latestChild.emit('close', 0, null);
+  assert.deepEqual(await latest, { step: { sequence: 9 } });
+});
+
 test('chooseModel accepts only a selected GGUF and returns no path', async (context) => {
   const value = harness();
   value.bridge.dispose();

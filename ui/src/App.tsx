@@ -52,6 +52,14 @@ export interface AppProps {
   isDemo?: boolean;
 }
 
+type OnDemandValue = StepNarration | SelectionSummary | null;
+
+interface OnDemandTask {
+  run: () => Promise<OnDemandValue>;
+  resolve: (value: OnDemandValue) => void;
+  reject: (reason: unknown) => void;
+}
+
 export const App: React.FC<AppProps> = ({
   adapter,
   initialScreen = 'selector',
@@ -144,6 +152,10 @@ export const App: React.FC<AppProps> = ({
   const [modelSetupBusy, setModelSetupBusy] = useState(false);
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloaded: number; total: number } | null>(null);
   const [plainMode, setPlainMode] = useState(false);
+  const [onDemandModelReady, setOnDemandModelReady] = useState(false);
+  const onDemandModelReadyRef = useRef(false);
+  const onDemandInFlightRef = useRef(false);
+  const queuedOnDemandRef = useRef<OnDemandTask | null>(null);
 
   const handleToggleFolderExpanded = useCallback((folderKey: string) => {
     setExpandedFolderKeys((prev) => {
@@ -538,6 +550,8 @@ export const App: React.FC<AppProps> = ({
   const handleImportSession = useCallback(
     async (sessionId: string, tool: string) => {
       setSelectedHistoryTool(tool);
+      onDemandModelReadyRef.current = false;
+      setOnDemandModelReady(false);
       const bridge = window.faultmeshSpectate;
       if (!bridge?.importSession) {
         throw new Error('Desktop bridge is not available for session import');
@@ -556,6 +570,8 @@ export const App: React.FC<AppProps> = ({
       }
       try {
         const status = await bridge.modelStatus();
+        onDemandModelReadyRef.current = status.ready;
+        setOnDemandModelReady(status.ready);
         if (status.ready && bridge.startNarration) {
           try {
             await bridge.startNarration(sessionId, tool);
@@ -572,6 +588,8 @@ export const App: React.FC<AppProps> = ({
         setModelSetupMessage(status.message || 'Choose a local model to upgrade the template narration.');
         setModelSetupOpen(true);
       } catch {
+        onDemandModelReadyRef.current = false;
+        setOnDemandModelReady(false);
         setModelSetupMessage('Local narration setup could not be checked. Template mode is still available.');
         setModelSetupOpen(true);
       }
@@ -606,6 +624,8 @@ export const App: React.FC<AppProps> = ({
     if (!bridge?.modelStatus) return;
     try {
       const status = await bridge.modelStatus();
+      onDemandModelReadyRef.current = status.ready;
+      setOnDemandModelReady(status.ready);
       if (status.ready) {
         await startNarrationForImportedSession(false);
       } else {
@@ -614,6 +634,8 @@ export const App: React.FC<AppProps> = ({
         setModelSetupOpen(true);
       }
     } catch (error) {
+      onDemandModelReadyRef.current = false;
+      setOnDemandModelReady(false);
       setModelSetupBusy(false);
       setModelSetupMessage(error instanceof Error ? error.message : 'Local narration is not ready.');
       setModelSetupOpen(true);
@@ -689,6 +711,27 @@ export const App: React.FC<AppProps> = ({
     });
   }, [checkModelAndStartNarration]);
 
+  const queueOnDemand = useCallback((run: () => Promise<OnDemandValue>) => (
+    new Promise<OnDemandValue>((resolve, reject) => {
+      const start = (task: OnDemandTask) => {
+        onDemandInFlightRef.current = true;
+        void task.run().then(task.resolve, task.reject).finally(() => {
+          onDemandInFlightRef.current = false;
+          const queued = queuedOnDemandRef.current;
+          queuedOnDemandRef.current = null;
+          if (queued) start(queued);
+        });
+      };
+      const task: OnDemandTask = { run, resolve, reject };
+      if (onDemandInFlightRef.current) {
+        queuedOnDemandRef.current?.resolve(null);
+        queuedOnDemandRef.current = task;
+        return;
+      }
+      start(task);
+    })
+  ), []);
+
   const explainImportedStep = useCallback(async (sequence: number): Promise<StepNarration | null> => {
     const sessionId = importedHistorySessionIdRef.current;
     const tool = selectedHistoryToolRef.current;
@@ -699,15 +742,20 @@ export const App: React.FC<AppProps> = ({
     }
     const cached = replayAdapter.getNarration(sequence);
     if (cached) return cached;
-    const result = await bridge.explainStep(sessionId, tool, sequence);
-    const step = result.step as StepNarration;
-    if (!step || step.sequence !== sequence || !step.claims) {
-      throw new Error('The local step explanation was invalid.');
-    }
-    replayAdapter.applyStepNarration(step);
-    setNarrationRevision((value) => value + 1);
-    return step;
-  }, []);
+    if (!onDemandModelReadyRef.current) return null;
+    const scheduled = await queueOnDemand(async () => {
+      const result = await bridge.explainStep!(sessionId, tool, sequence);
+      if ('superseded' in result) return null;
+      const step = result.step as StepNarration;
+      if (!step || step.sequence !== sequence || !step.claims) {
+        throw new Error('The local step explanation was invalid.');
+      }
+      replayAdapter.applyStepNarration(step);
+      setNarrationRevision((value) => value + 1);
+      return step;
+    });
+    return scheduled && 'sequence' in scheduled ? scheduled : null;
+  }, [queueOnDemand]);
 
   const summarizeImportedSelection = useCallback(async (
     start: number,
@@ -717,18 +765,23 @@ export const App: React.FC<AppProps> = ({
     const tool = selectedHistoryToolRef.current;
     const bridge = window.faultmeshSpectate;
     if (!sessionId || !tool || !bridge?.summarizeSelection) return null;
-    const result = await bridge.summarizeSelection(sessionId, tool, start, end);
-    const summary = result.summary as SelectionSummary;
-    if (
-      !summary
-      || summary.start_sequence !== start
-      || summary.end_sequence !== end
-      || typeof summary.text !== 'string'
-    ) {
-      throw new Error('The local selection summary was invalid.');
-    }
-    return summary;
-  }, []);
+    if (!onDemandModelReadyRef.current) return null;
+    const scheduled = await queueOnDemand(async () => {
+      const result = await bridge.summarizeSelection!(sessionId, tool, start, end);
+      if ('superseded' in result) return null;
+      const summary = result.summary as SelectionSummary;
+      if (
+        !summary
+        || summary.start_sequence !== start
+        || summary.end_sequence !== end
+        || typeof summary.text !== 'string'
+      ) {
+        throw new Error('The local selection summary was invalid.');
+      }
+      return summary;
+    });
+    return scheduled && 'start_sequence' in scheduled ? scheduled : null;
+  }, [queueOnDemand]);
 
   const handleDownloadModel = useCallback(() => {
     const bridge = window.faultmeshSpectate;
@@ -776,6 +829,8 @@ export const App: React.FC<AppProps> = ({
     setNarrationError(null);
     setModelSetupOpen(false);
     setPlainMode(false);
+    onDemandModelReadyRef.current = false;
+    setOnDemandModelReady(false);
   }, []);
 
   const handleLiveStateChange = useCallback((state: LiveSpectateState) => {
@@ -1245,6 +1300,7 @@ export const App: React.FC<AppProps> = ({
                   modelSetupBusy={modelSetupBusy}
                   modelDownloadProgress={modelDownloadProgress}
                   plainMode={plainMode}
+                  onDemandModelReady={onDemandModelReady}
                   onDownloadModel={handleDownloadModel}
                   onChooseModel={handleChooseModel}
                   onSkipModelSetup={() => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReplayAdapter } from '../adapter/replayAdapter';
 import { ReplayEvidenceInspector } from '../components/replay/ReplayEvidenceInspector';
@@ -171,6 +171,65 @@ describe('replay local narration wiring', () => {
     fireEvent.click(screen.getByTestId(`replay-checkpoint-row-${source.timeline[0].sequence}`));
     expect(screen.getByTestId('replay-step-deterministic-note').textContent).toContain('No recorded changes');
     expect(explain).not.toHaveBeenCalled();
+  });
+
+  it('test_rapid_step_selects_keep_one_explanation_in_flight_and_run_latest', async () => {
+    window.localStorage.setItem(
+      FIRST_USE_TIPS_STORAGE_KEY,
+      JSON.stringify({ home: true, entrance: true, replay: true, replayHistory: true })
+    );
+    const source = structuredClone(narratedFixture) as unknown as AnyReplayExport;
+    if (source.schema_version === 'replay-export-2.0') source.narration = [];
+    const original = (narratedFixture as unknown as { narration: StepNarration[] }).narration;
+    const resolutions: Array<(value: StepNarration) => void> = [];
+    let active = 0;
+    let maximumActive = 0;
+    const explain = vi.fn((_sequence: number) => new Promise<StepNarration>((resolve) => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      resolutions.push((value) => {
+        active -= 1;
+        resolve(value);
+      });
+    }));
+    render(
+      <ReplayWorkspace
+        adapter={new ReplayAdapter(source)}
+        defaultChaptersOpen={true}
+        onExplainStep={explain}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('replay-checkpoint-row-3'));
+    fireEvent.click(screen.getByTestId('replay-checkpoint-row-6'));
+    expect(explain).toHaveBeenCalledTimes(1);
+    expect(explain).toHaveBeenLastCalledWith(3);
+    expect(screen.getByTestId('replay-step-explanation-loading')).toBeDefined();
+
+    await act(async () => resolutions[0](original.find((item) => item.sequence === 3)!));
+    await waitFor(() => expect(explain).toHaveBeenCalledTimes(2));
+    expect(explain).toHaveBeenLastCalledWith(6);
+    expect(maximumActive).toBe(1);
+    await act(async () => resolutions[1](original.find((item) => item.sequence === 6)!));
+    await waitFor(() => expect(screen.queryByTestId('replay-step-explanation-loading')).toBeNull());
+  });
+
+  it('test_model_not_ready_step_select_never_calls_model', () => {
+    const source = structuredClone(historyFixture) as unknown as AnyReplayExport;
+    const explain = vi.fn();
+    render(
+      <ReplayWorkspace
+        adapter={new ReplayAdapter(source)}
+        defaultChaptersOpen={true}
+        onDemandModelReady={false}
+        onExplainStep={explain}
+      />
+    );
+    fireEvent.click(screen.getByTestId('replay-checkpoint-row-2'));
+    expect(explain).not.toHaveBeenCalled();
+    expect(screen.getByTestId('replay-step-deterministic-note').textContent).toContain(
+      'No recorded changes'
+    );
   });
 
   it('test_yellow_claim_shows_plain_reason', () => {
