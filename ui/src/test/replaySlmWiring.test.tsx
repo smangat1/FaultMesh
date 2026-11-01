@@ -228,7 +228,7 @@ describe('replay local narration wiring', () => {
     fireEvent.click(screen.getByTestId('replay-checkpoint-row-2'));
     expect(explain).not.toHaveBeenCalled();
     expect(screen.getByTestId('replay-step-deterministic-note').textContent).toContain(
-      'No recorded changes'
+      'Set up the local model to check this step.'
     );
   });
 

@@ -157,15 +157,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h1
-              style={{
-                fontSize: '26px',
-                fontWeight: 700,
-                letterSpacing: '-0.02em',
-                margin: 0,
-                color: '#ffffff',
-              }}
-            >
+            <h1 className="faultmesh-wordmark" style={{ margin: 0 }}>
               FaultMesh
             </h1>
             <span
@@ -558,7 +550,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
               }}
             >
               <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
-                No Recorded Runs
+                No recordings yet
               </div>
               <div style={{ fontSize: '12px' }}>
                 No test execution artifacts or recorded runs were discovered for this workspace.
@@ -614,7 +606,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                       </span>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                        {r.isFixture && <span className="badge-status sample">SAMPLE DATA</span>}
+                        {r.isFixture && <span className="badge-status sample">Synthetic sample</span>}
 
                         {/* Status badge: Identical geometry, font, padding, and border */}
                         {r.isLive ? (
@@ -624,7 +616,7 @@ export const ProjectSelectorScreen: React.FC<ProjectSelectorScreenProps> = ({
                         ) : r.status === 'failed' ? (
                           <span className="badge-status error">HARNESS FAILED</span>
                         ) : r.status === 'empty' ? (
-                          <span className="badge-status empty">EMPTY SCAN</span>
+                          <span className="badge-status empty">No tests found</span>
                         ) : r.stats.failed > 0 ? (
                           <span className="badge-status fail">
                             {r.stats.failed} FAILED

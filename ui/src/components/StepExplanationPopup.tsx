@@ -28,13 +28,13 @@ interface StepExplanationPopupProps {
 }
 
 const PHASE_COLORS: Record<AgentPhase, string> = {
-  idle: '#94a3b8',
-  diagnosing: '#ef4444',
-  tracing: '#38bdf8',
-  inspecting: '#f59e0b',
-  patching: '#f59e0b',
-  verifying: '#a855f7',
-  resolved: '#10b981',
+  idle: '#8b97ad',
+  diagnosing: '#c36a6a',
+  tracing: '#5b83b4',
+  inspecting: '#5b83b4',
+  patching: '#5b83b4',
+  verifying: '#5b83b4',
+  resolved: '#5e9a72',
 };
 
 export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
@@ -50,7 +50,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
   isInspectorOpen: _isInspectorOpen = false,
   onSelectNode,
 }) => {
-  const activeColor = PHASE_COLORS[currentPhase] || '#38bdf8';
+  const activeColor = PHASE_COLORS[currentPhase] || '#5b83b4';
 
   // Short target name for display
   const targetShort = targetNodeId ? targetNodeId.split('::').pop() || targetNodeId : '';
@@ -168,7 +168,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
                 flex: 1,
               }}
             >
-              Focus: <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8' }}>{targetShort}()</span>
+              Focus: <span style={{ fontFamily: 'var(--font-mono)', color: '#5b83b4' }}>{targetShort}()</span>
             </div>
           )}
         </div>
@@ -187,7 +187,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
             padding: '2px 7px',
             fontSize: '10px',
             fontWeight: 600,
-            color: isExpanded ? '#38bdf8' : 'var(--text-secondary)',
+            color: isExpanded ? '#5b83b4' : 'var(--text-secondary)',
             backgroundColor: isExpanded ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.05)',
             border: `1px solid ${isExpanded ? 'rgba(56, 189, 248, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
             borderRadius: '4px',
@@ -231,8 +231,8 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <ShieldCheck size={14} style={{ color: '#34d399' }} />
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#34d399', letterSpacing: '0.02em' }}>
+                  <ShieldCheck size={14} style={{ color: '#5e9a72' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#5e9a72', letterSpacing: '0.02em' }}>
                     Final Investigation Summary & Evidence
                   </span>
                 </div>
@@ -271,8 +271,8 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
                   title="Click to inspect initial failure node"
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '2px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
-                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#f87171' }}>1. Initial Failure</span>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#c36a6a' }} />
+                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#c36a6a' }}>1. Initial Failure</span>
                   </div>
                   <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
                     test_login_expired_token
@@ -296,8 +296,8 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
                   title="Click to inspect examined service node"
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '2px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#38bdf8' }} />
-                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#38bdf8' }}>2. Examined Call Chain</span>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#5b83b4' }} />
+                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#5b83b4' }}>2. Examined Call Chain</span>
                   </div>
                   <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
                     login_with_token() → validate_token()
@@ -321,8 +321,8 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
                   title="Click to inspect proposed modification node"
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '2px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
-                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#f59e0b' }}>3. Proposed Modification</span>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#5b83b4' }} />
+                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#5b83b4' }}>3. Proposed Modification</span>
                   </div>
                   <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
                     auth/tokens.py::validate_token
@@ -342,7 +342,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '2px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#5b83b4' }} />
                     <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#fbbf24' }}>4. Candidate Change</span>
                   </div>
                   <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
@@ -363,8 +363,8 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '2px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#34d399' }}>5. Verification Evidence</span>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#5e9a72' }} />
+                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#5e9a72' }}>5. Verification Evidence</span>
                   </div>
                   <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: '#cbd5e1' }}>
                     PASSED in 34ms (0 regressions)
@@ -391,7 +391,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
                     1 test error (rate-limit Redis dependency)
                   </div>
                   <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>
-                    External fixture error isolated outside auth token logic scope.
+                    External test setup error isolated outside auth token logic scope.
                   </div>
                 </div>
               </div>
@@ -400,7 +400,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
 
           {/* Section 1: What happened? */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-            <Search size={13} style={{ color: '#38bdf8', marginTop: '2px', flexShrink: 0 }} />
+            <Search size={13} style={{ color: '#5b83b4', marginTop: '2px', flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 What happened?
@@ -413,7 +413,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
 
           {/* Section 2: Why did it do this? */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-            <HelpCircle size={13} style={{ color: '#f59e0b', marginTop: '2px', flexShrink: 0 }} />
+            <HelpCircle size={13} style={{ color: '#5b83b4', marginTop: '2px', flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Why did it do this?
@@ -426,7 +426,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
 
           {/* Section 3: Evidence supporting decision */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-            <FileText size={13} style={{ color: '#a855f7', marginTop: '2px', flexShrink: 0 }} />
+            <FileText size={13} style={{ color: '#5b83b4', marginTop: '2px', flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 What evidence supported the decision?
@@ -439,7 +439,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
 
           {/* Section 4: What changed? */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-            <GitCommit size={13} style={{ color: '#f59e0b', marginTop: '2px', flexShrink: 0 }} />
+            <GitCommit size={13} style={{ color: '#5b83b4', marginTop: '2px', flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 What changed?
@@ -452,7 +452,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
 
           {/* Section 5: Outcome & Next step */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-            <CheckCircle2 size={13} style={{ color: '#10b981', marginTop: '2px', flexShrink: 0 }} />
+            <CheckCircle2 size={13} style={{ color: '#5e9a72', marginTop: '2px', flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 What was the outcome?
@@ -476,7 +476,7 @@ export const StepExplanationPopup: React.FC<StepExplanationPopupProps> = ({
               fontFamily: 'var(--font-mono)',
             }}
           >
-            <Sparkles size={11} style={{ color: '#38bdf8' }} />
+            <Sparkles size={11} style={{ color: '#5b83b4' }} />
             <span>Sample Investigation Replay • Grounded in recorded pytest failure & AST git diff</span>
           </div>
         </div>

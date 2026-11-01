@@ -70,7 +70,9 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   const [viewMode, setViewMode] = useState<'diff' | 'source'>('diff');
 
   const activeChangedFile = changedFiles.find((f) => f.path === selectedFile) || changedFiles[0] || null;
-  const currentPath = selectedFile || activeChangedFile?.path || null;
+  // A step change can replace the entire impacted-file set. Prefer that step's
+  // first file when the previous selection is no longer present.
+  const currentPath = activeChangedFile?.path || selectedFile || null;
   const historical = currentPath ? getHistoricalContent(currentPath) : { content: null, sha256: null };
 
   const symbolsForFile = currentPath
@@ -103,6 +105,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
     const isPartial = entry?.completeness === 'partial' || completenessInfo?.completeness === 'partial';
     return (
       <div
+        className="replay-empty-stage"
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -117,6 +120,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
         data-testid="replay-empty-diff"
       >
         <div
+          className="replay-empty-panel"
           style={{
             maxWidth: '560px',
             width: '100%',
@@ -149,7 +153,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
             </div>
             <div>
               <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--replay-text-primary, #e6edf8)' }}>
-                Checkpoint #{entry?.sequence ?? 1} Overview
+                No files changed in this step
               </div>
               <div style={{ fontSize: '11px', color: 'var(--replay-text-faint, #4d576a)', fontFamily: 'var(--font-mono, monospace)', marginTop: '2px' }}>
                 {entry?.captured_at ? formatReplayTime(entry.captured_at) : ''}
@@ -175,7 +179,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   color: 'var(--replay-text-primary, #e6edf8)',
                 }}
               >
-                <strong style={{ display: 'block', marginBottom: '4px' }}>AI summary</strong>
+                <strong style={{ display: 'block', marginBottom: '4px' }}>{narration.explanation.label}</strong>
                 {narration.explanation.text}
               </div>
             )}
@@ -192,7 +196,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   border: '1px solid var(--replay-border-card, rgba(255, 255, 255, 0.09))',
                 }}
               >
-                <div style={{ fontWeight: 600 }}>Recorded history step</div>
+                <div style={{ fontWeight: 600 }}>Recorded evidence</div>
                 {record?.prompt_text && (
                   <EvidenceBlock label="Prompt" value={record.prompt_text} testId="replay-history-prompt" />
                 )}
@@ -241,7 +245,7 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
                   ? `Gap details: ${entry.gap_reason}`
                   : isPartial
                   ? 'Missing content hashes detected in recording; code diff unavailable at this sequence.'
-                  : 'No file modifications recorded at this checkpoint; code state is unchanged from previous step.'}
+                  : 'No file changes were recorded for this step; the previous file state remains current.'}
               </div>
             </div>
 
@@ -271,14 +275,14 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
       if (activeChangedFile?.change === 'added') {
         return (
           <div style={{ padding: '16px', color: 'var(--replay-status-complete, #4a7bb0)', fontSize: '12px' }}>
-            New file added at this checkpoint.
+            New file added in this step.
           </div>
         );
       }
       if (activeChangedFile?.change === 'deleted') {
         return (
           <div style={{ padding: '16px', color: 'var(--replay-status-danger, #9c4444)', fontSize: '12px' }}>
-            File deleted at this checkpoint.
+            File deleted in this step.
           </div>
         );
       }
@@ -290,64 +294,43 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
     }
 
     const lines = diffText.split('\n');
+    let oldLine = 0;
+    let newLine = 0;
     return (
-      <div
-        style={{
-          fontFamily: 'var(--font-mono, monospace)',
-          fontSize: '11px',
-          lineHeight: '1.5',
-          overflowX: 'auto',
-          padding: '8px 2px',
-          scrollbarGutter: 'stable',
-          backgroundColor: 'var(--replay-bg-code, #090c12)',
-        }}
-        data-testid="replay-unified-diff-content"
-      >
+      <div className="replay-code-editor" data-testid="replay-unified-diff-content">
         {lines.map((line, idx) => {
-          let bg = 'transparent';
-          let color = 'var(--replay-text-primary, #e6edf8)';
-          let borderLeft = '3px solid transparent';
-
+          let kind = 'context';
+          let oldNumber: number | null = null;
+          let newNumber: number | null = null;
           if (line.startsWith('+++') || line.startsWith('---')) {
-            color = 'var(--replay-text-muted, #8b97ad)';
-            bg = 'rgba(255, 255, 255, 0.02)';
+            kind = 'metadata';
           } else if (line.startsWith('@@')) {
-            color = 'var(--replay-accent, #4a7bb0)';
-            bg = 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))';
+            kind = 'hunk';
+            const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+            if (match) {
+              oldLine = Number(match[1]);
+              newLine = Number(match[2]);
+            }
           } else if (line.startsWith('+')) {
-            color = 'var(--replay-text-primary, #e6edf8)';
-            bg = 'var(--replay-diff-add-bg, rgba(74, 123, 176, 0.12))';
-            borderLeft = '3px solid var(--replay-diff-add-gutter, #4a7bb0)';
+            kind = 'added';
+            newNumber = newLine;
+            newLine += 1;
           } else if (line.startsWith('-')) {
-            color = 'var(--replay-text-primary, #e6edf8)';
-            bg = 'var(--replay-diff-del-bg, rgba(156, 68, 68, 0.12))';
-            borderLeft = '3px solid var(--replay-diff-del-gutter, #9c4444)';
+            kind = 'removed';
+            oldNumber = oldLine;
+            oldLine += 1;
+          } else if (!line.startsWith('\\')) {
+            oldNumber = oldLine;
+            newNumber = newLine;
+            oldLine += 1;
+            newLine += 1;
           }
 
           return (
-            <div
-              key={idx}
-              style={{
-                display: 'flex',
-                backgroundColor: bg,
-                borderLeft,
-                padding: '1px 16px 1px 14px',
-                boxSizing: 'border-box',
-                minWidth: 'fit-content',
-              }}
-            >
-              <span
-                style={{
-                  width: '32px',
-                  color: 'var(--replay-text-faint, #4d576a)',
-                  userSelect: 'none',
-                  flexShrink: 0,
-                  fontSize: '10px',
-                }}
-              >
-                {idx + 1}
-              </span>
-              <span style={{ color, whiteSpace: 'pre', flex: 1 }}>{line}</span>
+            <div key={idx} className={`replay-code-line ${kind}`}>
+              <span className="replay-code-gutter">{oldNumber ?? ''}</span>
+              <span className="replay-code-gutter">{newNumber ?? ''}</span>
+              <span className="replay-code-text">{line || ' '}</span>
             </div>
           );
         })}
@@ -366,40 +349,11 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
 
     const lines = sourceText.split('\n');
     return (
-      <div
-        style={{
-          fontFamily: 'var(--font-mono, monospace)',
-          fontSize: '11px',
-          lineHeight: '1.5',
-          overflowX: 'auto',
-          padding: '8px 2px',
-          scrollbarGutter: 'stable',
-          backgroundColor: 'var(--replay-bg-code, #090c12)',
-        }}
-        data-testid="replay-historical-source-content"
-      >
+      <div className="replay-code-editor" data-testid="replay-historical-source-content">
         {lines.map((line, idx) => (
-          <div
-            key={idx}
-            style={{
-              display: 'flex',
-              padding: '1px 16px 1px 14px',
-              boxSizing: 'border-box',
-              minWidth: 'fit-content',
-            }}
-          >
-            <span
-              style={{
-                width: '36px',
-                color: 'var(--replay-text-faint, #4d576a)',
-                userSelect: 'none',
-                flexShrink: 0,
-                fontSize: '10px',
-              }}
-            >
-              {idx + 1}
-            </span>
-            <span style={{ color: 'var(--replay-text-primary, #e6edf8)', whiteSpace: 'pre', flex: 1 }}>{line}</span>
+          <div key={idx} className="replay-code-line context">
+            <span className="replay-code-gutter">{idx + 1}</span>
+            <span className="replay-code-text">{line || ' '}</span>
           </div>
         ))}
       </div>
@@ -407,326 +361,119 @@ export const ReplayDiffViewer: React.FC<ReplayDiffViewerProps> = ({
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        backgroundColor: 'var(--replay-bg-canvas, #07090e)',
-        color: 'var(--replay-text-primary, #e6edf8)',
-        borderRight: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-        minWidth: 0,
-        overflow: 'hidden',
-      }}
-      data-testid="replay-diff-pane"
-    >
-      {/* File Selector Tabs */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-          backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
-          padding: '4px 8px',
-          gap: '8px',
-          flexWrap: 'wrap',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', overflowX: 'auto', flex: 1, minWidth: 0 }}>
-          {changedFiles.map((f) => {
-            const isSelected = f.path === currentPath;
+    <div className="replay-file-workbench" data-testid="replay-diff-pane">
+      <aside className="replay-file-explorer" data-testid="replay-file-explorer">
+        <div className="replay-file-explorer-title">
+          <span>Changed files</span>
+          <span>{changedFiles.length}</span>
+        </div>
+        <div className="replay-file-list">
+          {changedFiles.map((file, index) => {
+            const isSelected = file.path === currentPath;
             return (
               <button
-                key={f.path}
-                onClick={() => onSelectFile(f.path)}
-                className="btn-ghost"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontFamily: 'var(--font-mono, monospace)',
-                  backgroundColor: isSelected ? 'var(--replay-bg-surface-2, #141a26)' : 'transparent',
-                  border: isSelected ? '1px solid var(--replay-border-focus, rgba(96, 140, 200, 0.45))' : '1px solid transparent',
-                  borderRadius: 'var(--replay-radius-control, 7px)',
-                  color: isSelected ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: isSelected ? 'var(--replay-shadow-subtle)' : 'none',
-                  transition: 'background-color var(--replay-transition-quick, 160ms ease)',
-                }}
-                aria-label={`Select file ${f.path}`}
+                key={file.path}
+                type="button"
+                className={`replay-file-row ${isSelected ? 'active' : ''}`}
+                onClick={() => onSelectFile(file.path)}
+                aria-label={`Select file ${file.path}`}
+                data-testid={`replay-file-row-${index}`}
               >
-                <span>{f.path}</span>
-                <span
-                  style={{
-                    fontSize: '9px',
-                    fontWeight: 600,
-                    padding: '1px 5px',
-                    borderRadius: 'var(--replay-radius-control, 7px)',
-                    backgroundColor:
-                      f.change === 'added'
-                        ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
-                        : f.change === 'deleted'
-                        ? 'var(--replay-status-danger-bg, rgba(156, 68, 68, 0.12))'
-                        : 'var(--replay-status-neutral-bg, rgba(90, 101, 120, 0.12))',
-                    color:
-                      f.change === 'added'
-                        ? 'var(--replay-status-complete, #4a7bb0)'
-                        : f.change === 'deleted'
-                        ? 'var(--replay-status-danger, #9c4444)'
-                        : 'var(--replay-text-muted, #8b97ad)',
-                    border:
-                      f.change === 'added'
-                        ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
-                        : f.change === 'deleted'
-                        ? '1px solid var(--replay-status-danger-border, rgba(156, 68, 68, 0.30))'
-                        : '1px solid var(--replay-status-neutral-border, rgba(90, 101, 120, 0.25))',
-                  }}
-                >
-                  {f.change.toUpperCase()}
-                </span>
+                <FileDiff size={14} />
+                <span className="replay-file-path">{file.path}</span>
+                <span className={`replay-file-change ${file.change}`}>{file.change}</span>
               </button>
             );
           })}
         </div>
+      </aside>
 
-        {/* View mode toggle: Diff vs Full Source */}
-        <div
-          style={{
-            display: 'flex',
-            backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-            padding: '2px',
-            borderRadius: 'var(--replay-radius-control, 7px)',
-            border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={() => setViewMode('diff')}
-            style={{
-              padding: '2px 8px',
-              fontSize: '10px',
-              border: 'none',
-              borderRadius: 'var(--replay-radius-control, 7px)',
-              cursor: 'pointer',
-              backgroundColor: viewMode === 'diff' ? 'var(--replay-bg-surface-3, #1c2436)' : 'transparent',
-              color: viewMode === 'diff' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
-              fontWeight: viewMode === 'diff' ? 600 : 400,
-              transition: 'background-color var(--replay-transition-quick, 160ms ease)',
-            }}
-            aria-label="View diff"
-          >
-            Diff
-          </button>
-          <button
-            onClick={() => setViewMode('source')}
-            style={{
-              padding: '2px 8px',
-              fontSize: '10px',
-              border: 'none',
-              borderRadius: 'var(--replay-radius-control, 7px)',
-              cursor: 'pointer',
-              backgroundColor: viewMode === 'source' ? 'var(--replay-bg-surface-3, #1c2436)' : 'transparent',
-              color: viewMode === 'source' ? 'var(--replay-accent, #4a7bb0)' : 'var(--replay-text-muted, #8b97ad)',
-              fontWeight: viewMode === 'source' ? 600 : 400,
-              transition: 'background-color var(--replay-transition-quick, 160ms ease)',
-            }}
-            aria-label="View full historical source"
-          >
-            Source
-          </button>
-        </div>
-      </div>
-
-      {explanationLoading && (
-        <div
-          data-testid="replay-step-explanation-loading"
-          style={{ padding: '8px 14px', fontSize: '11px', color: 'var(--replay-text-muted, #8b97ad)' }}
-        >
-          Checking this step with the local model…
-        </div>
-      )}
-
-      {instantStepNote && (
-        <div
-          data-testid="replay-step-deterministic-note"
-          style={{
-            padding: '8px 14px',
-            borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-            backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-            color: 'var(--replay-text-muted, #8b97ad)',
-            fontSize: '11px',
-          }}
-        >
-          {instantStepNote}
-        </div>
-      )}
-
-      {narration?.explanation && (
-        <div
-          data-testid="replay-ai-summary"
-          style={{
-            padding: '8px 14px',
-            borderBottom: '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))',
-            backgroundColor: 'var(--replay-accent-glow, rgba(74, 123, 176, 0.15))',
-            color: 'var(--replay-text-primary, #e6edf8)',
-            fontSize: '11px',
-            lineHeight: 1.5,
-            flexShrink: 0,
-          }}
-        >
-          <strong>AI summary: </strong>{narration.explanation.text}
-        </div>
-      )}
-
-      {/* File Header & Hashes */}
-      {currentPath && (
-        <div
-          style={{
-            padding: '6px 12px',
-            borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: '11px',
-            color: 'var(--replay-text-muted, #8b97ad)',
-            backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-            flexWrap: 'wrap',
-            gap: '8px',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--replay-text-primary, #e6edf8)', fontWeight: 600 }}>
-              {currentPath}
-            </span>
+      <section className="replay-file-editor" data-testid="replay-file-editor">
+        <div className="replay-editor-toolbar">
+          <div className="replay-editor-path">
+            <span>{currentPath}</span>
             {historical.sha256 && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  fontFamily: 'var(--font-mono, monospace)',
-                  fontSize: '10px',
-                  color: 'var(--replay-text-faint, #4d576a)',
-                }}
-                title={`Historical content SHA-256: ${historical.sha256}`}
-              >
-                <Hash size={10} />
+              <span className="replay-editor-hash" title={`Historical content SHA-256: ${historical.sha256}`}>
+                <Hash size={11} />
                 {historical.sha256.slice(0, 10)}
               </span>
             )}
           </div>
-
-          {/* Stale AST badge if syntax errors invalidated verified symbols */}
-          {hasStaleAst && (
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '2px 6px',
-                borderRadius: 'var(--replay-radius-control, 7px)',
-                backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
-                border: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
-                color: 'var(--replay-status-warning, #946c32)',
-                fontSize: '10px',
-                fontWeight: 600,
-              }}
-              title="Syntax error or invalid bytes: symbols derived from older parse are unverified"
-              data-testid="replay-stale-ast-badge"
+          <div className="replay-editor-view-switch" role="group" aria-label="File view">
+            <button
+              type="button"
+              className={viewMode === 'diff' ? 'active' : ''}
+              onClick={() => setViewMode('diff')}
+              aria-label="View diff"
             >
-              <AlertTriangle size={11} />
-              <span>Stale AST / Syntax error</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeChangedFile?.file_state === 'reconstructed_from_current_checkout_unverified' && (
-        <div
-          data-testid="replay-derived-file-state"
-          style={{
-            padding: '6px 12px',
-            borderBottom: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
-            backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
-            color: 'var(--replay-status-warning, #946c32)',
-            fontSize: '10px',
-            flexShrink: 0,
-          }}
-        >
-          Derived: {activeChangedFile.reconstruction_label}
-        </div>
-      )}
-
-      {activeChangedFile?.file_state === 'unknown' && (
-        <div
-          data-testid="replay-unknown-file-state"
-          style={{
-            padding: '6px 12px',
-            borderBottom: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
-            backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
-            color: 'var(--replay-status-warning, #946c32)',
-            fontSize: '10px',
-            flexShrink: 0,
-          }}
-        >
-          Derived file state: unknown — the recorded patch could not be reconstructed.
-        </div>
-      )}
-
-      {/* Changed Symbols / Functions bar if any */}
-      {symbolsForFile.length > 0 && (
-        <div
-          style={{
-            padding: '4px 12px',
-            backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
-            borderBottom: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            flexWrap: 'wrap',
-            fontSize: '10px',
-            flexShrink: 0,
-          }}
-        >
-          <span style={{ color: 'var(--replay-text-muted, #8b97ad)' }}>Functions:</span>
-          {symbolsForFile.map((s) => (
-            <span
-              key={s.qualified_name}
-              style={{
-                fontFamily: 'var(--font-mono, monospace)',
-                padding: '1px 5px',
-                borderRadius: 'var(--replay-radius-control, 7px)',
-                backgroundColor: 'var(--replay-bg-surface-2, #141a26)',
-                color: s.verified ? 'var(--replay-text-primary, #e6edf8)' : 'var(--replay-status-warning, #946c32)',
-                border: s.verified ? '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))' : '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
-              }}
-              title={s.verified ? `${s.kind} ${s.change}` : 'Unverified due to syntax error'}
+              Changes
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'source' ? 'active' : ''}
+              onClick={() => setViewMode('source')}
+              aria-label="View full historical source"
             >
-              {s.qualified_name} ({s.change})
-            </span>
-          ))}
+              File
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Code Area */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          minHeight: 0,
-          backgroundColor: 'var(--replay-bg-code, #090c12)',
-        }}
-      >
-        {viewMode === 'diff'
-          ? renderDiffLines(activeChangedFile?.unified_diff)
-          : renderSourceLines(historical.content)}
-      </div>
+        {explanationLoading && (
+          <div className="replay-editor-note" data-testid="replay-step-explanation-loading">
+            Checking this step with the local model…
+          </div>
+        )}
+        {instantStepNote && (
+          <div className="replay-editor-note" data-testid="replay-step-deterministic-note">
+            {instantStepNote}
+          </div>
+        )}
+        {narration?.explanation && (
+          <div className="replay-editor-provenance model" data-testid="replay-ai-summary">
+            <strong>{narration.explanation.label}: </strong>{narration.explanation.text}
+          </div>
+        )}
+        {hasStaleAst && (
+          <div
+            className="replay-editor-provenance"
+            title="Syntax error or invalid bytes: symbols derived from older parse are unverified"
+            data-testid="replay-stale-ast-badge"
+          >
+            <AlertTriangle size={12} />
+            <span>Stale AST / Syntax error</span>
+          </div>
+        )}
+        {activeChangedFile?.file_state === 'reconstructed_from_current_checkout_unverified' && (
+          <div className="replay-editor-provenance" data-testid="replay-derived-file-state">
+            Derived: {activeChangedFile.reconstruction_label}
+          </div>
+        )}
+        {activeChangedFile?.file_state === 'unknown' && (
+          <div className="replay-editor-provenance" data-testid="replay-unknown-file-state">
+            Derived file state: unknown — the recorded patch could not be reconstructed.
+          </div>
+        )}
+        {symbolsForFile.length > 0 && (
+          <div className="replay-symbol-strip">
+            <span>Functions</span>
+            {symbolsForFile.map((symbol) => (
+              <span
+                key={symbol.qualified_name}
+                className={symbol.verified ? '' : 'unverified'}
+                title={symbol.verified ? `${symbol.kind} ${symbol.change}` : 'Unverified due to syntax error'}
+              >
+                {symbol.qualified_name} ({symbol.change})
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="replay-editor-content">
+          {viewMode === 'diff'
+            ? renderDiffLines(activeChangedFile?.unified_diff)
+            : renderSourceLines(historical.content)}
+        </div>
+      </section>
     </div>
   );
 };

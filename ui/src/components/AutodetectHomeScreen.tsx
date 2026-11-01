@@ -411,15 +411,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h1
-                style={{
-                  fontSize: '26px',
-                  fontWeight: 700,
-                  letterSpacing: '-0.02em',
-                  margin: 0,
-                  color: '#ffffff',
-                }}
-              >
+              <h1 className="faultmesh-wordmark" style={{ margin: 0 }}>
                 FaultMesh
               </h1>
               <span
@@ -433,7 +425,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                   letterSpacing: '0.02em',
                 }}
               >
-                Local Autodetect
+                Local sessions
               </span>
             </div>
             <p
@@ -444,7 +436,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                 lineHeight: '1.4',
               }}
             >
-              Automatically discovers recorded coding sessions from local tools on this machine.
+              Recorded coding sessions found on this machine.
             </p>
           </div>
 
@@ -493,10 +485,10 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
             data-testid="autodetect-discovery-error"
             style={{
               padding: '12px 16px',
-              backgroundColor: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              backgroundColor: 'var(--accent-muted)',
+              border: '1px solid var(--border-focus)',
               borderRadius: 'var(--radius-sm)',
-              color: '#fca5a5',
+              color: 'var(--text-primary)',
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
@@ -541,7 +533,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
             <Layers size={36} color="#64748b" />
             <div style={{ maxWidth: '440px' }}>
               <h2 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 6px 0', color: '#f8fafc' }}>
-                Local session autodetect requires the FaultMesh desktop app
+              Local sessions are available in the FaultMesh desktop app
               </h2>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                 FaultMesh automatically indexes local Codex and Claude Code sessions when running inside the desktop app. In the browser, you can open any exported recording (.json) directly below.
@@ -584,7 +576,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
           >
             <Layers size={32} color="#64748b" />
             <h2 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: '#f8fafc' }}>
-              No supported coding tool sessions detected
+              No recorded sessions found
             </h2>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '420px', lineHeight: '1.4' }}>
               FaultMesh detected no active Codex or Claude Code history folders on this machine. You can open a recorded export (.json) or watch a Python codebase live.
@@ -733,7 +725,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                       >
                         {hiddenCount > 0
                           ? 'All sessions in this tool are inside hidden system folders.'
-                          : 'No recorded sessions found in this root.'}
+                          : 'No recorded sessions found for this tool.'}
                       </div>
                     ) : (
                       visibleProjects.map((proj) => {
@@ -1010,9 +1002,9 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                                 fontWeight: 600,
                                                 padding: '1px 5px',
                                                 borderRadius: '3px',
-                                                backgroundColor: sess.parse_status === 'partial' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                                color: sess.parse_status === 'partial' ? '#fde047' : '#fca5a5',
-                                                border: sess.parse_status === 'partial' ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                                                backgroundColor: 'var(--accent-muted)',
+                                                color: 'var(--accent)',
+                                                border: '1px solid var(--border-focus)',
                                                 textTransform: 'uppercase',
                                                 letterSpacing: '0.04em',
                                               }}
@@ -1030,11 +1022,11 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                           style={{
                                             margin: '4px 0',
                                             padding: '6px 10px',
-                                            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                                            backgroundColor: 'var(--accent-muted)',
+                                            border: '1px solid var(--border-focus)',
                                             borderRadius: '4px',
                                             fontSize: '11px',
-                                            color: '#fca5a5',
+                                            color: 'var(--text-primary)',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'space-between',

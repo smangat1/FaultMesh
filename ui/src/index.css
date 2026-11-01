@@ -1,1 +1,8 @@
 @import './styles/theme.css';
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: var(--bg-app);
+}

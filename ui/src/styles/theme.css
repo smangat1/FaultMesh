@@ -1,57 +1,77 @@
 @import './replay.css';
 
 :root {
-  /* Coherent Neutral Graphite Palette */
+  /* FaultMesh UI system: 4px rhythm, one blue accent, two semantic colors. */
   --bg-app: #0e1117;
-  --bg-surface: #151922;
-  --bg-raised: #1c222e;
-  --bg-active: #232a38;
-  --bg-code: #0b0e14;
+  --bg-surface: #131821;
+  --bg-raised: #181f2a;
+  --bg-active: #202938;
+  --bg-code: #0a0d12;
 
-  --border-default: #262f3f;
-  --border-subtle: #1c2330;
-  --border-focus: #3b82f6;
+  --border-default: #293241;
+  --border-subtle: #202735;
+  --border-focus: #668dbd;
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #edf2f8;
+  --text-secondary: #a4afbf;
+  --text-muted: #707d90;
 
-  --accent: #3b82f6;
-  --accent-muted: rgba(59, 130, 246, 0.15);
+  --accent: #5f84b2;
+  --accent-strong: #7699c3;
+  --accent-muted: rgba(95, 132, 178, 0.14);
 
-  /* Semantic status colors with text/icon companions */
-  --status-fail: #ef4444;
-  --status-fail-bg: rgba(239, 68, 68, 0.12);
-  --status-fail-border: rgba(239, 68, 68, 0.35);
+  --semantic-success: #709a7d;
+  --semantic-success-bg: rgba(112, 154, 125, 0.12);
+  --semantic-success-border: rgba(112, 154, 125, 0.32);
+  --semantic-danger: #ad6d76;
+  --semantic-danger-bg: rgba(173, 109, 118, 0.12);
+  --semantic-danger-border: rgba(173, 109, 118, 0.32);
 
-  --status-error: #f97316;
-  --status-error-bg: rgba(249, 115, 22, 0.12);
-  --status-error-border: rgba(249, 115, 22, 0.35);
+  /* Legacy semantic names map to the consolidated palette. */
+  --status-fail: var(--semantic-danger);
+  --status-fail-bg: var(--semantic-danger-bg);
+  --status-fail-border: var(--semantic-danger-border);
+  --status-error: var(--accent);
+  --status-error-bg: var(--accent-muted);
+  --status-error-border: rgba(95, 132, 178, 0.32);
+  --status-pass: var(--semantic-success);
+  --status-pass-bg: var(--semantic-success-bg);
+  --status-pass-border: var(--semantic-success-border);
+  --status-skipped: var(--text-muted);
+  --status-skipped-bg: rgba(112, 125, 144, 0.10);
+  --status-skipped-border: rgba(112, 125, 144, 0.24);
 
-  --status-pass: #10b981;
-  --status-pass-bg: rgba(16, 185, 129, 0.12);
-  --status-pass-border: rgba(16, 185, 129, 0.35);
+  --change-modified: var(--accent);
+  --change-modified-bg: var(--accent-muted);
+  --change-modified-border: rgba(95, 132, 178, 0.32);
+  --change-added: var(--semantic-success);
+  --change-added-bg: var(--semantic-success-bg);
+  --change-added-border: var(--semantic-success-border);
+  --change-unchanged: var(--text-muted);
 
-  --status-skipped: #8b5cf6;
-  --status-skipped-bg: rgba(139, 92, 246, 0.12);
-  --status-skipped-border: rgba(139, 92, 246, 0.35);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
 
-  /* Code change semantics */
-  --change-modified: #f59e0b;
-  --change-modified-bg: rgba(245, 158, 11, 0.12);
-  --change-modified-border: rgba(245, 158, 11, 0.35);
+  --type-xs: 11px;
+  --type-sm: 13px;
+  --type-base: 16px;
+  --type-lg: 20px;
+  --type-xl: 24px;
+  --line-body: 1.5;
 
-  --change-added: #06b6d4;
-  --change-added-bg: rgba(6, 182, 212, 0.12);
-  --change-added-border: rgba(6, 182, 212, 0.35);
-
-  --change-unchanged: #64748b;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --motion-duration: 160ms;
+  --motion-easing: ease;
+  --motion: var(--motion-duration) var(--motion-easing);
 
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-
-  --radius-sm: 4px;
-  --radius-md: 6px;
 }
 
 * {
@@ -65,8 +85,8 @@ html, body {
   background-color: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--type-base);
+  line-height: var(--line-body);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -100,22 +120,22 @@ code, pre, .font-mono {
 
 /* Fixture notification banner */
 .fixture-banner {
-  background: #78350f;
-  color: #fef3c7;
-  padding: 4px 14px;
-  font-size: 11px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--type-xs);
   font-weight: 500;
   letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #92400e;
+  border-bottom: 1px solid var(--border-default);
 }
 
 /* Buttons */
 button {
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--type-sm);
   border: 1px solid transparent;
   background: transparent;
   color: inherit;
@@ -123,10 +143,10 @@ button {
   border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   line-height: 1.2;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  transition: background-color var(--motion), border-color var(--motion), color var(--motion);
   user-select: none;
 }
 
@@ -152,7 +172,7 @@ button:disabled {
   font-weight: 600;
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--accent-strong);
 }
 
 .btn-ghost {
@@ -210,9 +230,9 @@ button:disabled {
   border: 1px solid rgba(148, 163, 184, 0.25);
 }
 .badge-status.sample {
-  background-color: rgba(245, 158, 11, 0.15);
-  color: var(--change-modified);
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  background-color: var(--bg-raised);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
 }
 
 .badge-change {
@@ -257,12 +277,12 @@ button:disabled {
   word-break: normal;
 }
 .diff-line.added {
-  background-color: rgba(16, 185, 129, 0.14);
-  color: #34d399;
+  background-color: var(--semantic-success-bg);
+  color: var(--semantic-success);
 }
 .diff-line.removed {
-  background-color: rgba(239, 68, 68, 0.14);
-  color: #f87171;
+  background-color: var(--semantic-danger-bg);
+  color: var(--semantic-danger);
 }
 .diff-line.header {
   color: #94a3b8;
@@ -272,9 +292,9 @@ button:disabled {
 
 /* Honest Contextual Notice */
 .notice-honest {
-  background-color: rgba(245, 158, 11, 0.06);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-left: 3px solid var(--change-modified);
+  background-color: var(--accent-muted);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent);
   padding: 8px 12px;
   border-radius: var(--radius-sm);
   font-size: 12px;
@@ -325,9 +345,9 @@ button:disabled {
 
 .entrance-card:hover {
   background-color: rgba(255, 255, 255, 0.045) !important;
-  border-color: rgba(56, 189, 248, 0.35) !important;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border-color: var(--border-focus) !important;
+  transform: none;
+  box-shadow: none;
 }
 
 .entrance-card:hover .entrance-card-arrow {
@@ -733,6 +753,50 @@ button:disabled {
   color: var(--text-primary, #f1f5f9);
   border-color: var(--accent, #3b82f6);
   background-color: var(--accent-muted, rgba(59, 130, 246, 0.15));
+}
+
+/* Shared chrome primitives */
+.faultmesh-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--type-lg);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.faultmesh-wordmark::before {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background:
+    linear-gradient(135deg, transparent 42%, var(--accent) 43% 48%, transparent 49%),
+    linear-gradient(45deg, transparent 42%, var(--accent) 43% 48%, transparent 49%);
+  content: '';
+}
+
+.badge-status.sample,
+.badge-status.skipped,
+.badge-change.modified {
+  border-color: var(--border-default);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.badge-change.added {
+  border-color: var(--semantic-success-border);
+  background: var(--semantic-success-bg);
+  color: var(--semantic-success);
+}
+
+.app-surface-flat {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: none;
 }
 
 /* Reduced motion accessibility */

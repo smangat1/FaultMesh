@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header
       style={{
         borderBottom: '1px solid var(--border-default)',
-        backgroundColor: '#11141a',
+        backgroundColor: 'var(--bg-surface)',
         flexShrink: 0,
         // @ts-expect-error WebkitAppRegion
         WebkitAppRegion: 'drag',
@@ -77,10 +77,10 @@ export const Header: React.FC<HeaderProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 14px',
-          paddingLeft: isMacDesktop ? '78px' : '14px',
-          gap: '10px',
-          minHeight: '40px',
+          padding: 'var(--space-2) var(--space-4)',
+          paddingLeft: isMacDesktop ? '78px' : 'var(--space-4)',
+          gap: 'var(--space-3)',
+          minHeight: '48px',
           flexWrap: 'wrap',
           rowGap: '6px',
           columnGap: '10px',
@@ -215,14 +215,14 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Sample Data / Fixture Badge (hidden in replay to avoid duplicate badge row) */}
+          {/* Synthetic provenance badge (hidden in replay to avoid duplicate provenance) */}
           {activeRun?.isFixture && !activeRun.isLive && !activeRun.isReplay && (
             <span
               className="badge-status sample"
-              title={activeRun.fixtureLabel || 'Read-only fixture data: synthetic sample artifacts'}
+              title={activeRun.fixtureLabel || 'Read-only synthetic sample'}
             >
               <AlertTriangle size={10} />
-              SAMPLE DATA
+              Synthetic sample
             </span>
           )}
 
@@ -303,7 +303,7 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {runs.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.id.slice(0, 14)} ({r.fixtureLabel || r.status})
+                    {r.project} — {r.fixtureLabel || r.commitMessage || r.status}
                   </option>
                 ))}
               </select>

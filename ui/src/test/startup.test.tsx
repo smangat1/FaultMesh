@@ -41,7 +41,7 @@ describe('Real-project-first Startup Screen', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'FaultMesh' })).toBeDefined();
     expect(
-      screen.getByText(/Automatically discovers recorded coding sessions from local tools on this machine/i)
+      screen.getByText(/Recorded coding sessions found on this machine/i)
     ).toBeDefined();
 
     const selectBtn = screen.getByRole('button', { name: /select project/i });

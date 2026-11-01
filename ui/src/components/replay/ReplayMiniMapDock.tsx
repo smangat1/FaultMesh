@@ -239,14 +239,14 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
         backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
         border: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.08))',
         borderRadius: sizeState === 'full' ? 0 : 'var(--replay-radius-card, 10px)',
-        boxShadow: sizeState === 'full' ? 'none' : '0 10px 30px rgba(0, 0, 0, 0.5)',
+        boxShadow: 'none',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        transition: isDraggingResize ? 'none' : 'width 180ms ease, height 180ms ease',
+        transition: isDraggingResize ? 'none' : 'width var(--motion-duration) var(--motion-ease), height var(--motion-duration) var(--motion-ease)',
       }}
       data-testid="replay-minimap-dock"
-      aria-label="Project Structure Mini Map"
+      aria-label="Project map"
     >
       {/* Mini Map Top Bar */}
       <div
@@ -293,7 +293,7 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
                 outline: 'none',
               }}
               className="replay-minimap-resize-handle"
-              title="Drag or use arrow keys to resize mini map freely"
+              title="Drag or use arrow keys to resize the project map"
               data-testid="replay-minimap-resize-handle"
             >
               <Move size={11} />
@@ -337,7 +337,7 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
                 ? 'Expand to full panel'
                 : 'Minimize to small preview (~240x160)'
             }
-            aria-label="Cycle mini map size"
+            aria-label="Cycle project map size"
             data-testid="replay-minimap-cycle-size"
           >
             {sizeState === 'full' ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -359,8 +359,8 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
               color: 'var(--replay-text-muted, #8b97ad)',
               cursor: 'pointer',
             }}
-            title="Close mini map (M or Esc)"
-            aria-label="Close mini map"
+            title="Close project map (M or Esc)"
+            aria-label="Close project map"
             data-testid="replay-minimap-close"
           >
             <X size={12} />
@@ -402,7 +402,7 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
                 color: 'var(--replay-text-primary, #e6edf8)',
               }}
             >
-              This recording contains no project-structure data
+              No project map was recorded
             </div>
             <div
               style={{
@@ -412,7 +412,7 @@ export const ReplayMiniMapDock: React.FC<ReplayMiniMapDockProps> = ({
                 maxWidth: '280px',
               }}
             >
-              No dependency graph or AST relationship edges were recorded for this session.
+              The session does not include recorded file or code relationships.
             </div>
           </div>
         ) : (

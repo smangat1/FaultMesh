@@ -224,7 +224,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         style={{
           width: '36px',
           height: '100%',
-          backgroundColor: '#111722',
+          backgroundColor: 'var(--bg-surface)',
           borderRight: '1px solid var(--border-default)',
           display: 'flex',
           flexDirection: 'column',
@@ -260,7 +260,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            backgroundColor: '#131b28',
+            backgroundColor: 'var(--bg-surface)',
           }}
         >
           <span
@@ -345,7 +345,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 display: 'flex',
                 gap: '4px',
                 padding: '4px 12px 8px 12px',
-                backgroundColor: '#131b28',
+                backgroundColor: 'var(--bg-surface)',
                 overflowX: 'auto',
               }}
             >
@@ -475,7 +475,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: '#131b28',
+          backgroundColor: 'var(--bg-surface)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -603,7 +603,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: '#131b28',
+          backgroundColor: 'var(--bg-surface)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -748,7 +748,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: '#111722',
+        backgroundColor: 'var(--bg-surface)',
         borderRight: '1px solid var(--border-default)',
         minWidth: '240px',
         maxWidth: '300px',
@@ -764,7 +764,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         style={{
           padding: '8px 10px',
           borderBottom: '1px solid var(--border-default)',
-          backgroundColor: '#161f2e',
+          backgroundColor: 'var(--bg-surface)',
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
@@ -796,7 +796,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onKeyDown={handleKeyDown}
             style={{
               width: '100%',
-              backgroundColor: '#0d1117',
+              backgroundColor: 'var(--bg-app)',
               border: '1px solid var(--border-default)',
               borderRadius: 'var(--radius-sm)',
               padding: '5px 22px 5px 26px',

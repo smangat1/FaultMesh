@@ -61,17 +61,17 @@ export const SCREEN_DEFAULT_STEPS: Record<ScreenId, TipStep[]> = {
     {
       targetTestId: 'replay-timeline-bar',
       title: 'Hero Timeline',
-      description: 'Scrub through checkpoints with real timestamps, idle breaks, and gaps.',
+      description: 'Scrub through recorded steps with real timestamps, idle breaks, and gaps.',
     },
     {
       targetTestId: 'replay-main-stage',
-      title: 'Step Diff & Evidence',
+      title: 'Files and evidence',
       description: 'View exact file modifications and test outcomes at each step.',
     },
     {
       targetTestId: 'replay-header-tools',
       title: 'Keyboard Navigation',
-      description: 'Press C for Chapters, E for Evidence drawer, and M for Mini Map dock.',
+      description: 'Press C for chapters, E for evidence, and M for the project map.',
     },
   ],
   replayHistory: [
