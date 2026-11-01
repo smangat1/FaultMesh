@@ -429,14 +429,20 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     // Navigate to checkpoint #2
     fireEvent.click(screen.getByTestId('replay-next-btn'));
 
-    // Changed file tab
+    // Changed file explorer and editor
     const fileTabs = screen.getAllByText('calc.py');
     expect(fileTabs.length).toBeGreaterThan(0);
-    expect(screen.getByText('MODIFIED')).toBeDefined();
+    expect(screen.getByTestId('replay-file-explorer')).toBeDefined();
+    expect(screen.getByTestId('replay-file-editor')).toBeDefined();
+    expect(screen.getByTestId('replay-file-row-0').textContent).toContain('modified');
 
-    // Unified diff content
-    expect(screen.getByTestId('replay-unified-diff-content').textContent).toContain('+def calculate():');
-    expect(screen.getByTestId('replay-unified-diff-content').textContent).toContain('+    return 42');
+    // Unified diff content uses paired old/new line gutters and semantic line classes.
+    const diff = screen.getByTestId('replay-unified-diff-content');
+    expect(diff.textContent).toContain('+def calculate():');
+    expect(diff.textContent).toContain('+    return 42');
+    expect(diff.querySelectorAll('.replay-code-gutter').length).toBeGreaterThan(0);
+    expect(diff.querySelectorAll('.replay-code-line.added').length).toBeGreaterThan(0);
+    expect(diff.querySelectorAll('.replay-code-line.removed').length).toBeGreaterThan(0);
 
     // Stale AST / syntax error badge is visibly rendered
     expect(screen.getByTestId('replay-stale-ast-badge').textContent).toContain('Stale AST / Syntax error');
