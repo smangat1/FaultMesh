@@ -135,7 +135,7 @@ function fakeChild() {
   return child;
 }
 
-function harness() {
+function harness(options = {}) {
   const ipcMain = new FakeIpcMain();
   const sent = [];
   const webContents = {
@@ -166,6 +166,8 @@ function harness() {
     },
     terminationGraceMs: 10,
     projectLinksPath: path.join(root, 'replay-project-links.json'),
+    findExecutable: options.findExecutable || (() => '/fixed/code'),
+    platform: options.platform || 'darwin',
   });
   return { ipcMain, sent, root, window, event, children, spawns, bridge };
 }
@@ -191,6 +193,8 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
       CHANNELS.searchHistory,
       CHANNELS.importSession,
       CHANNELS.linkSessionProject,
+      CHANNELS.openSessionFile,
+      CHANNELS.revertPlan,
       CHANNELS.modelStatus,
       CHANNELS.downloadModel,
       CHANNELS.chooseModel,
@@ -231,6 +235,103 @@ test('session project links persist in main without returning a local path', asy
 
   const stored = JSON.parse(fs.readFileSync(path.join(value.root, 'replay-project-links.json'), 'utf8'));
   assert.equal(stored['session-1'].root, fs.realpathSync(value.root));
+});
+
+test('openSessionFile resolves a linked relative file and launches a fixed editor command', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const choose = value.ipcMain.handlers.get(CHANNELS.choose);
+  const link = value.ipcMain.handlers.get(CHANNELS.linkSessionProject);
+  const openFile = value.ipcMain.handlers.get(CHANNELS.openSessionFile);
+  const selected = await choose(value.event);
+  await link(value.event, 'session-1', selected.handle);
+  const sourceDir = path.join(value.root, 'src');
+  const sourcePath = path.join(sourceDir, 'app.py');
+  fs.mkdirSync(sourceDir);
+  fs.writeFileSync(sourcePath, 'print("synthetic")\n');
+
+  await assert.rejects(
+    () => openFile(value.event, 'session-1', '../outside.py'),
+    /file path leaves the linked project folder/,
+  );
+  await assert.rejects(
+    () => openFile(value.event, 'unlinked-session', 'src/app.py'),
+    /does not have a linked project folder/,
+  );
+
+  const pending = openFile(value.event, 'session-1', 'src/app.py');
+  const child = value.children.at(-1);
+  assert.equal(value.spawns.at(-1)[0], '/fixed/code');
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    '--reuse-window',
+    '--goto',
+    fs.realpathSync(sourcePath),
+  ]);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  child.emit('spawn');
+  assert.deepEqual(await pending, { opened: true, method: 'code' });
+});
+
+test('revertPlan uses fixed argv, linked project context, and returns bounded typed text', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const choose = value.ipcMain.handlers.get(CHANNELS.choose);
+  const link = value.ipcMain.handlers.get(CHANNELS.linkSessionProject);
+  const revertPlan = value.ipcMain.handlers.get(CHANNELS.revertPlan);
+  const selected = await choose(value.event);
+  await link(value.event, 'session-1', selected.handle);
+
+  await assert.rejects(
+    () => revertPlan(value.event, 'session-1', 'codex', 5, 2, 'history'),
+    /invalid revert-plan sequence range/,
+  );
+
+  const pending = revertPlan(value.event, 'session-1', 'codex', 2, 5, 'history');
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    'replay-revert-plan',
+    'session-1',
+    '--tool',
+    'codex',
+    '--start',
+    '2',
+    '--end',
+    '5',
+    '--source',
+    'history',
+    '--project-root',
+    fs.realpathSync(value.root),
+  ]);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  const child = value.children.at(-1);
+  child.stdout.emit('data', Buffer.from(JSON.stringify({
+    schema_version: 'replay-revert-plan-1.0',
+    session_id: 'session-1',
+    start_sequence: 2,
+    end_sequence: 5,
+    actions: [{
+      sequence: 5,
+      path: 'src/app.py',
+      action: 'apply_reverse_diff',
+      instruction: 'Review and apply the reverse diff.',
+      provenance: 'recorded_patch',
+      provenance_label: 'recorded patch',
+      reverse_diff: 'synthetic diff',
+      restore_text: null,
+    }],
+    truncated: false,
+    text: 'Read-only synthetic plan.\n',
+  })));
+  child.emit('close', 0, null);
+  const result = await pending;
+  assert.equal(result.text, 'Read-only synthetic plan.\n');
+  assert.equal(result.actions[0].provenance, 'recorded_patch');
+  assert.equal('project_root' in result, false);
 });
 
 test('IPC rejects renderer paths, wrong frames, and unknown channels', async (context) => {

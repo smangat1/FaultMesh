@@ -18,6 +18,8 @@ const CHANNELS = Object.freeze({
   searchHistory: 'faultmesh:spectate:search-history',
   importSession: 'faultmesh:spectate:import-session',
   linkSessionProject: 'faultmesh:spectate:link-session-project',
+  openSessionFile: 'faultmesh:spectate:open-session-file',
+  revertPlan: 'faultmesh:replay:revert-plan',
   modelStatus: 'faultmesh:replay:model-status',
   downloadModel: 'faultmesh:replay:download-model',
   chooseModel: 'faultmesh:replay:choose-model',
@@ -53,6 +55,20 @@ function readProjectLinks(projectLinksPath) {
   if (stat.size > 1024 * 1024) throw new Error('project link storage exceeds size limit');
   const parsed = JSON.parse(fs.readFileSync(projectLinksPath, 'utf8'));
   return isPlainObject(parsed) ? parsed : {};
+}
+
+function findExecutableOnPath(name) {
+  const directories = String(process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const directory of directories) {
+    const candidate = path.join(directory, name);
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch (_) {
+      // Continue through PATH entries.
+    }
+  }
+  return null;
 }
 
 function requireKeys(record, keys) {
@@ -255,6 +271,8 @@ function attachSpectateBridge({
   maxLineBytes = 1024 * 1024,
   terminationGraceMs = 750,
   projectLinksPath = null,
+  findExecutable = findExecutableOnPath,
+  platform = process.platform,
 }) {
   const expectedUrl = pathToFileURL(path.resolve(indexPath)).href;
   let selectedProject = null;
@@ -297,6 +315,56 @@ function attachSpectateBridge({
       && sessionId.length <= 128
       && !/[\/\\]/.test(sessionId)
       && !sessionId.includes('..');
+  }
+
+  function linkedProjectRoot(sessionId) {
+    if (!projectLinksPath) return null;
+    let links;
+    try {
+      links = readProjectLinks(projectLinksPath);
+    } catch (error) {
+      if (error instanceof SyntaxError || error?.code === 'ENOENT') return null;
+      throw error;
+    }
+    const linked = links[sessionId];
+    if (!isPlainObject(linked) || typeof linked.root !== 'string' || !path.isAbsolute(linked.root)) {
+      return null;
+    }
+    try {
+      const root = fs.realpathSync(linked.root);
+      return fs.statSync(root).isDirectory() ? root : null;
+    } catch (error) {
+      if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return null;
+      throw error;
+    }
+  }
+
+  function resolveLinkedFile(sessionId, relativePath) {
+    if (
+      typeof relativePath !== 'string'
+      || relativePath.length === 0
+      || relativePath.length > 4096
+      || path.isAbsolute(relativePath)
+      || relativePath.includes('\0')
+    ) {
+      throw new Error('invalid project-relative file path');
+    }
+    const root = linkedProjectRoot(sessionId);
+    if (!root) throw new Error('this session does not have a linked project folder');
+    const candidate = path.resolve(root, ...relativePath.replace(/\\/g, '/').split('/'));
+    const relation = path.relative(root, candidate);
+    if (!relation || relation.startsWith('..') || path.isAbsolute(relation)) {
+      throw new Error('file path leaves the linked project folder');
+    }
+    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
+      throw new Error('the recorded file is not present in the linked project folder');
+    }
+    const realFile = fs.realpathSync(candidate);
+    const realRelation = path.relative(root, realFile);
+    if (realRelation.startsWith('..') || path.isAbsolute(realRelation)) {
+      throw new Error('linked file resolves outside the project folder');
+    }
+    return realFile;
   }
 
   function runJsonCommand(args, { timeoutMs = 30000, maxBytes = 1024 * 1024 } = {}) {
@@ -527,6 +595,116 @@ function attachSpectateBridge({
     fs.writeFileSync(temporaryPath, JSON.stringify(nextLinks), { encoding: 'utf8', mode: 0o600 });
     fs.renameSync(temporaryPath, projectLinksPath);
     return { linked: true, displayName: selectedProject.displayName };
+  });
+
+  ipcMain.handle(CHANNELS.openSessionFile, async (event, ...args) => {
+    assertTrustedSender(event);
+    if (args.length !== 2) {
+      throw new Error('openSessionFile requires exactly (sessionId, relativePath) arguments');
+    }
+    const [sessionId, relativePath] = args;
+    if (!validSessionId(sessionId)) throw new Error('invalid or unsafe sessionId');
+    const target = resolveLinkedFile(sessionId, relativePath);
+
+    const launch = (executable, launchArgs, method) => new Promise((resolve, reject) => {
+      let proc;
+      try {
+        proc = spawn(executable, launchArgs, {
+          shell: false,
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      proc.once('spawn', () => resolve({ opened: true, method }));
+      proc.once('error', reject);
+    });
+
+    const code = findExecutable('code');
+    if (code) {
+      try {
+        return await launch(code, ['--reuse-window', '--goto', target], 'code');
+      } catch (_) {
+        // Fall through to Finder when the discovered CLI cannot launch.
+      }
+    }
+    if (platform === 'darwin') {
+      return launch('/usr/bin/open', ['-R', target], 'finder');
+    }
+    throw new Error('no supported editor or file reveal command is available');
+  });
+
+  ipcMain.handle(CHANNELS.revertPlan, async (event, ...args) => {
+    assertTrustedSender(event);
+    if (args.length < 4 || args.length > 5) {
+      throw new Error('revertPlan requires (sessionId, tool, start, end, optional source)');
+    }
+    const [sessionId, tool, start, end, source = 'history'] = args;
+    if (!validSessionId(sessionId)) throw new Error('invalid or unsafe sessionId');
+    if (tool !== 'codex' && tool !== 'claude_code') throw new Error('unsupported or invalid tool');
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) {
+      throw new Error('invalid revert-plan sequence range');
+    }
+    if (source !== 'history' && source !== 'replay_store') {
+      throw new Error('unsupported import source');
+    }
+    const commandArgs = [
+      'replay-revert-plan',
+      sessionId,
+      '--tool',
+      tool,
+      '--start',
+      String(start),
+      '--end',
+      String(end),
+      '--source',
+      source,
+    ];
+    if (source === 'history') {
+      const linkedRoot = linkedProjectRoot(sessionId);
+      if (linkedRoot) commandArgs.push('--project-root', linkedRoot);
+    }
+    const parsed = await runJsonCommand(commandArgs, {
+      timeoutMs: 30000,
+      maxBytes: 8 * 1024 * 1024,
+    });
+    if (!isPlainObject(parsed) || !Array.isArray(parsed.actions) || typeof parsed.text !== 'string') {
+      throw new Error('invalid replay-revert-plan payload structure');
+    }
+    const actions = parsed.actions.slice(0, 500).map((action) => {
+      if (!isPlainObject(action)) throw new Error('invalid replay-revert-plan action');
+      return {
+        sequence: Number.isSafeInteger(action.sequence) ? action.sequence : 1,
+        path: String(action.path || ''),
+        action: ['delete_file', 'restore_file', 'apply_reverse_diff', 'manual_review'].includes(action.action)
+          ? action.action
+          : 'manual_review',
+        instruction: String(action.instruction || ''),
+        provenance: [
+          'recorded_patch',
+          'reconstructed_from_current_checkout_unverified',
+          'unknown',
+        ].includes(action.provenance) ? action.provenance : 'unknown',
+        provenance_label: String(action.provenance_label || 'unknown file state'),
+        reverse_diff: action.reverse_diff === null || action.reverse_diff === undefined
+          ? null
+          : String(action.reverse_diff),
+        restore_text: action.restore_text === null || action.restore_text === undefined
+          ? null
+          : String(action.restore_text),
+      };
+    });
+    return {
+      schema_version: 'replay-revert-plan-1.0',
+      session_id: String(parsed.session_id || sessionId),
+      start_sequence: Number.isSafeInteger(parsed.start_sequence) ? parsed.start_sequence : start,
+      end_sequence: Number.isSafeInteger(parsed.end_sequence) ? parsed.end_sequence : end,
+      actions,
+      truncated: Boolean(parsed.truncated),
+      text: parsed.text,
+    };
   });
 
   ipcMain.handle(CHANNELS.stop, async (event, ...args) => {
@@ -845,22 +1023,8 @@ function attachSpectateBridge({
             '--template-narration',
           ];
         if (source === 'history') {
-          try {
-            const links = readProjectLinks(projectLinksPath);
-            const linked = links[sessionId];
-            if (
-              isPlainObject(linked)
-              && typeof linked.root === 'string'
-              && path.isAbsolute(linked.root)
-            ) {
-              const linkedRoot = fs.realpathSync(linked.root);
-              if (fs.statSync(linkedRoot).isDirectory()) {
-                commandArgs.push('--project-root', linkedRoot);
-              }
-            }
-          } catch (error) {
-            if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
-          }
+          const linkedRoot = linkedProjectRoot(sessionId);
+          if (linkedRoot) commandArgs.push('--project-root', linkedRoot);
         }
         proc = spawn(command, commandArgs, {
           shell: false,
@@ -1312,6 +1476,8 @@ function attachSpectateBridge({
       ipcMain.removeHandler(CHANNELS.searchHistory);
       ipcMain.removeHandler(CHANNELS.importSession);
       ipcMain.removeHandler(CHANNELS.linkSessionProject);
+      ipcMain.removeHandler(CHANNELS.openSessionFile);
+      ipcMain.removeHandler(CHANNELS.revertPlan);
       ipcMain.removeHandler(CHANNELS.modelStatus);
       ipcMain.removeHandler(CHANNELS.downloadModel);
       ipcMain.removeHandler(CHANNELS.chooseModel);

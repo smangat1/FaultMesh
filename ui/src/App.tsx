@@ -144,6 +144,7 @@ export const App: React.FC<AppProps> = ({
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<Set<string>>(() => new Set());
   const [selectedHistoryTool, setSelectedHistoryTool] = useState<string | null>(null);
   const [importedHistorySessionId, setImportedHistorySessionId] = useState<string | null>(null);
+  const [importedHistorySource, setImportedHistorySource] = useState<'history' | 'replay_store'>('history');
   const importedHistorySessionIdRef = useRef<string | null>(null);
   const selectedHistoryToolRef = useRef<string | null>(null);
   const [narrationRevision, setNarrationRevision] = useState(0);
@@ -388,6 +389,7 @@ export const App: React.FC<AppProps> = ({
   const handleImportFiles = async (files: FileList | File[]) => {
     setImportError(null);
     setImportedHistorySessionId(null);
+    setImportedHistorySource('history');
     try {
       const fileList = Array.from(files);
       if (fileList.length === 0) return;
@@ -550,6 +552,7 @@ export const App: React.FC<AppProps> = ({
         const result = await bridge.openRecording();
         if (!result) return;
         setImportedHistorySessionId(null);
+        setImportedHistorySource('history');
         await loadValidatedRecording(result);
       } else {
         recordingFileInputRef.current?.click();
@@ -580,6 +583,7 @@ export const App: React.FC<AppProps> = ({
       importedHistorySessionIdRef.current = sessionId;
       selectedHistoryToolRef.current = tool;
       setImportedHistorySessionId(sessionId);
+      setImportedHistorySource(source);
       setNarrationError(null);
       setNarrationProgress(null);
       setPlainMode(false);
@@ -867,6 +871,7 @@ export const App: React.FC<AppProps> = ({
     setPinnedSymbols([]);
     setIsAgentActive(false);
     setImportedHistorySessionId(null);
+    setImportedHistorySource('history');
     importedHistorySessionIdRef.current = null;
     selectedHistoryToolRef.current = null;
     setNarrationProgress(null);
@@ -1329,12 +1334,26 @@ export const App: React.FC<AppProps> = ({
                   adapter={activeAdapter}
                   graphData={graphData}
                   importedSessionId={importedHistorySessionId}
+                  importedSessionTool={selectedHistoryTool}
+                  importedSessionSource={importedHistorySource}
                   hasSpectateBridge={spectate.hasBridge}
                   watchProjectBusy={spectate.busy}
                   onWatchProject={spectate.startWatching}
                   onLinkSessionProject={async (sessionId, projectHandle) => {
                     if (!spectate.bridge?.linkSessionProject) return;
                     await spectate.bridge.linkSessionProject(sessionId, projectHandle);
+                  }}
+                  onOpenSessionFile={async (sessionId, relativePath) => {
+                    if (!spectate.bridge?.openSessionFile) {
+                      throw new Error('Open in editor is available in the desktop app.');
+                    }
+                    return spectate.bridge.openSessionFile(sessionId, relativePath);
+                  }}
+                  onRequestRevertPlan={async (sessionId, tool, start, end, source) => {
+                    if (!spectate.bridge?.revertPlan) {
+                      throw new Error('Revert plans are available in the desktop app.');
+                    }
+                    return spectate.bridge.revertPlan(sessionId, tool, start, end, source);
                   }}
                   narrationRevision={narrationRevision}
                   narrationProgress={narrationProgress}

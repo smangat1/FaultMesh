@@ -13,7 +13,7 @@ import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from '../FirstUseTipOverlay'
 import { isScreenTipSeen } from '../../utils/firstUseTipsStorage';
 import { WatchProjectPrompt } from '../WatchProjectPrompt';
 import { ReplayModelSetup } from './ReplayModelSetup';
-import type { ProjectChoice } from '../../spectate/types';
+import type { ProjectChoice, RevertPlan } from '../../spectate/types';
 import type {
   SelectionSummary,
   StepNarration,
@@ -38,6 +38,10 @@ import {
   ListTree,
   Pause,
   Play,
+  Copy,
+  ExternalLink,
+  Undo2,
+  Check,
   X,
 } from 'lucide-react';
 
@@ -98,10 +102,23 @@ export interface ReplayWorkspaceProps {
   defaultEvidenceOpen?: boolean;
   defaultMiniMapOpen?: boolean;
   importedSessionId?: string | null;
+  importedSessionTool?: string | null;
+  importedSessionSource?: 'history' | 'replay_store';
   hasSpectateBridge?: boolean;
   watchProjectBusy?: boolean;
   onWatchProject?: () => Promise<ProjectChoice | null>;
   onLinkSessionProject?: (sessionId: string, projectHandle: string) => Promise<void>;
+  onOpenSessionFile?: (
+    sessionId: string,
+    relativePath: string,
+  ) => Promise<{ opened: true; method: 'code' | 'finder' }>;
+  onRequestRevertPlan?: (
+    sessionId: string,
+    tool: string,
+    start: number,
+    end: number,
+    source: 'history' | 'replay_store',
+  ) => Promise<RevertPlan>;
   narrationRevision?: number;
   narrationProgress?: {
     done: number;
@@ -132,10 +149,14 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   defaultEvidenceOpen = false,
   defaultMiniMapOpen,
   importedSessionId = null,
+  importedSessionTool = null,
+  importedSessionSource = 'history',
   hasSpectateBridge = false,
   watchProjectBusy = false,
   onWatchProject,
   onLinkSessionProject,
+  onOpenSessionFile,
+  onRequestRevertPlan,
   narrationRevision = 0,
   narrationProgress = null,
   narrationError = null,
@@ -182,6 +203,15 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     && !isSessionProjectLinked(importedSessionId)
     && !isSessionWatchPromptDismissed(importedSessionId)
   ));
+  const [projectLinked, setProjectLinked] = useState<boolean>(() => Boolean(
+    importedSessionId && isSessionProjectLinked(importedSessionId)
+  ));
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [revertPlan, setRevertPlan] = useState<RevertPlan | null>(null);
+  const [revertPlanOpen, setRevertPlanOpen] = useState(false);
+  const [revertPlanLoading, setRevertPlanLoading] = useState(false);
+  const [revertPlanError, setRevertPlanError] = useState<string | null>(null);
+  const actionNoticeTimerRef = useRef<number | null>(null);
 
   // On-demand panel visibility states (Rule 2 + Visual Direction: closed by default)
   const [isChaptersOpen, setIsChaptersOpen] = useState<boolean>(defaultChaptersOpen);
@@ -229,8 +259,39 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     [promptGroups]
   );
   const currentIndex = navigationTimeline.findIndex((entry) => entry.sequence === currentSeq);
+  const activePromptDiff = useMemo(() => {
+    if (!activePrompt) return '';
+    return timeline
+      .filter((entry) => (
+        entry.sequence >= activePrompt.startSequence
+        && entry.sequence <= activePrompt.endSequence
+      ))
+      .flatMap((entry) => entry.changed_files.map((changed) => changed.unified_diff || ''))
+      .filter(Boolean)
+      .join('\n');
+  }, [activePrompt, timeline]);
+  const activePromptFile = activePrompt?.changedFiles.includes(selectedFile || '')
+    ? selectedFile
+    : activePrompt?.changedFiles[0] || null;
 
   const pausePlayback = useCallback(() => setIsPlaying(false), []);
+
+  const announceAction = useCallback((message: string) => {
+    setActionNotice(message);
+    if (actionNoticeTimerRef.current !== null) {
+      window.clearTimeout(actionNoticeTimerRef.current);
+    }
+    actionNoticeTimerRef.current = window.setTimeout(() => {
+      setActionNotice(null);
+      actionNoticeTimerRef.current = null;
+    }, 2400);
+  }, []);
+
+  useEffect(() => () => {
+    if (actionNoticeTimerRef.current !== null) {
+      window.clearTimeout(actionNoticeTimerRef.current);
+    }
+  }, []);
 
   const stepLabels = useMemo(() => new Map(
     timeline.map((entry) => [
@@ -242,6 +303,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   useEffect(() => {
     if (!importedSessionId) return;
     setShowTips(!isScreenTipSeen('replayHistory'));
+    setProjectLinked(isSessionProjectLinked(importedSessionId));
     setShowWatchPrompt(
       !isSessionProjectLinked(importedSessionId)
       && !isSessionWatchPromptDismissed(importedSessionId)
@@ -259,8 +321,60 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     if (!project) return;
     await onLinkSessionProject?.(importedSessionId, project.handle);
     storeSessionProjectLink(importedSessionId, project);
+    setProjectLinked(true);
     setShowWatchPrompt(false);
   }, [importedSessionId, onLinkSessionProject, onWatchProject]);
+
+  const copyText = useCallback(async (text: string, successMessage: string) => {
+    if (!navigator.clipboard?.writeText) {
+      throw new Error('Clipboard access is unavailable.');
+    }
+    await navigator.clipboard.writeText(text);
+    announceAction(successMessage);
+  }, [announceAction]);
+
+  const handleCopyPromptDiff = useCallback(() => {
+    if (!activePromptDiff) return;
+    void copyText(activePromptDiff, 'Prompt diff copied.').catch((error: unknown) => {
+      announceAction(error instanceof Error ? error.message : 'The prompt diff could not be copied.');
+    });
+  }, [activePromptDiff, announceAction, copyText]);
+
+  const handleOpenPromptFile = useCallback(() => {
+    if (!importedSessionId || !activePromptFile || !onOpenSessionFile) return;
+    void onOpenSessionFile(importedSessionId, activePromptFile).then((result) => {
+      announceAction(result.method === 'code' ? 'Opened in your editor.' : 'Revealed in Finder.');
+    }).catch((error: unknown) => {
+      announceAction(error instanceof Error ? error.message : 'The file could not be opened.');
+    });
+  }, [activePromptFile, announceAction, importedSessionId, onOpenSessionFile]);
+
+  const handleRevertPlan = useCallback(() => {
+    if (!activePrompt || !importedSessionId || !importedSessionTool || !onRequestRevertPlan) return;
+    setRevertPlanOpen(true);
+    setRevertPlanLoading(true);
+    setRevertPlanError(null);
+    setRevertPlan(null);
+    void onRequestRevertPlan(
+      importedSessionId,
+      importedSessionTool,
+      activePrompt.startSequence,
+      activePrompt.endSequence,
+      importedSessionSource,
+    ).then((plan) => {
+      setRevertPlan(plan);
+      setRevertPlanLoading(false);
+    }).catch((error: unknown) => {
+      setRevertPlanError(error instanceof Error ? error.message : 'The revert plan is unavailable.');
+      setRevertPlanLoading(false);
+    });
+  }, [
+    activePrompt,
+    importedSessionId,
+    importedSessionSource,
+    importedSessionTool,
+    onRequestRevertPlan,
+  ]);
 
   const chapters = useMemo(() => {
     return isBaselineMode ? adapter.getBaselineChapters() : adapter.getChapters();
@@ -1062,6 +1176,50 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                     : 'Grouped from recorded events (prompt link unavailable)'}
                 </span>
               </div>
+              <div className="replay-prompt-actions" data-testid="replay-prompt-actions">
+                <button
+                  type="button"
+                  onClick={handleCopyPromptDiff}
+                  disabled={!activePromptDiff}
+                  title={activePromptDiff ? 'Copy the combined recorded diff' : 'No recorded diff to copy'}
+                  data-testid="replay-copy-prompt-diff"
+                >
+                  <Copy size={13} />
+                  Copy diff
+                </button>
+                {hasSpectateBridge && importedSessionId && (
+                  <button
+                    type="button"
+                    onClick={handleOpenPromptFile}
+                    disabled={!projectLinked || !activePromptFile || !onOpenSessionFile}
+                    title={projectLinked
+                      ? 'Open the selected changed file in your editor'
+                      : 'Link the project folder to open files'}
+                    data-testid="replay-open-prompt-file"
+                  >
+                    <ExternalLink size={13} />
+                    Open in editor
+                  </button>
+                )}
+                {hasSpectateBridge && importedSessionId && (
+                  <button
+                    type="button"
+                    onClick={handleRevertPlan}
+                    disabled={!onRequestRevertPlan}
+                    title="Generate a read-only plan; no files will be changed"
+                    data-testid="replay-generate-revert-plan"
+                  >
+                    <Undo2 size={13} />
+                    Revert plan
+                  </button>
+                )}
+                {actionNotice && (
+                  <span className="replay-prompt-action-notice" role="status">
+                    <Check size={12} />
+                    {actionNotice}
+                  </span>
+                )}
+              </div>
             </section>
           )}
           {!rawStepMode && activePrompt && activePrompt.changedFiles.length === 0 ? (
@@ -1141,6 +1299,83 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         active={showTips}
         onDismiss={() => setShowTips(false)}
       />
+      {revertPlanOpen && (
+        <div
+          className="replay-revert-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRevertPlanOpen(false);
+          }}
+        >
+          <section
+            className="replay-revert-plan"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="replay-revert-plan-title"
+            data-testid="replay-revert-plan"
+          >
+            <header>
+              <div>
+                <span className="replay-prompt-kicker">Derived, not applied</span>
+                <h2 id="replay-revert-plan-title">Read-only revert plan</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRevertPlanOpen(false)}
+                aria-label="Close revert plan"
+                title="Close"
+              >
+                <X size={15} />
+              </button>
+            </header>
+            <p className="replay-revert-provenance">
+              This plan is derived from recorded patches and reconstructed file evidence. It never
+              writes files or runs commands. Reconstructed content is unverified; unknown evidence
+              remains marked unknown.
+            </p>
+            <div className="replay-revert-body">
+              {revertPlanLoading && (
+                <div className="replay-panel-empty" role="status">
+                  <strong>Building the plan</strong>
+                  <span>Reading the recorded file evidence for this prompt.</span>
+                </div>
+              )}
+              {revertPlanError && (
+                <div className="replay-panel-empty" role="alert">
+                  <strong>Revert plan unavailable</strong>
+                  <span>{revertPlanError}</span>
+                </div>
+              )}
+              {revertPlan && (
+                <>
+                  <div className="replay-revert-summary">
+                    <span>{revertPlan.actions.length} planned {revertPlan.actions.length === 1 ? 'action' : 'actions'}</span>
+                    {revertPlan.truncated && <span>Plan is truncated</span>}
+                  </div>
+                  <pre data-testid="replay-revert-plan-text">{revertPlan.text}</pre>
+                </>
+              )}
+            </div>
+            <footer>
+              <span>No changes are made from this screen.</span>
+              <button
+                type="button"
+                disabled={!revertPlan}
+                onClick={() => {
+                  if (!revertPlan) return;
+                  void copyText(revertPlan.text, 'Revert plan copied.').catch((error: unknown) => {
+                    announceAction(error instanceof Error ? error.message : 'The plan could not be copied.');
+                  });
+                }}
+                data-testid="replay-copy-revert-plan"
+              >
+                <Copy size={13} />
+                Copy plan
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
       <ReplayModelSetup
         open={!showTips && modelSetupOpen}
         message={modelSetupMessage}

@@ -189,6 +189,30 @@ export interface HistoryImportPayload {
   size: number;
 }
 
+export interface RevertPlanAction {
+  sequence: number;
+  path: string;
+  action: 'delete_file' | 'restore_file' | 'apply_reverse_diff' | 'manual_review';
+  instruction: string;
+  provenance:
+    | 'recorded_patch'
+    | 'reconstructed_from_current_checkout_unverified'
+    | 'unknown';
+  provenance_label: string;
+  reverse_diff: string | null;
+  restore_text: string | null;
+}
+
+export interface RevertPlan {
+  schema_version: 'replay-revert-plan-1.0';
+  session_id: string;
+  start_sequence: number;
+  end_sequence: number;
+  actions: RevertPlanAction[];
+  truncated: boolean;
+  text: string;
+}
+
 export interface ReplayModelStatus {
   ready: boolean;
   status: string;
@@ -247,6 +271,17 @@ export interface SpectateBridge {
     source?: 'history' | 'replay_store',
   ): Promise<HistoryImportPayload>;
   linkSessionProject?(sessionId: string, projectHandle: string): Promise<{ linked: true; displayName: string }>;
+  openSessionFile?(
+    sessionId: string,
+    relativePath: string,
+  ): Promise<{ opened: true; method: 'code' | 'finder' }>;
+  revertPlan?(
+    sessionId: string,
+    tool: string,
+    start: number,
+    end: number,
+    source?: 'history' | 'replay_store',
+  ): Promise<RevertPlan>;
   modelStatus?(): Promise<ReplayModelStatus>;
   downloadModel?(modelId: string): Promise<{ started: boolean; reason?: string }>;
   chooseModel?(): Promise<{ selected: true; modelFilename: string } | null>;

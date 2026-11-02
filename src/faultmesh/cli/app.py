@@ -73,6 +73,7 @@ from faultmesh.replay.narration_runner import (
     session_content_hash,
     summarize_selection_on_demand,
 )
+from faultmesh.replay.revert_plan import build_revert_plan
 from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.replay.thread_history_import import thread_history_smoke_summary
 from faultmesh.replay.views import (
@@ -585,6 +586,45 @@ def replay_history_search_refresh(
             fg=typer.colors.RED,
             err=True,
         )
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("replay-revert-plan")
+def replay_revert_plan(
+    session_id: Annotated[str, typer.Argument(help="Recorded or stored replay session id.")],
+    start: Annotated[int, typer.Option(min=1, help="First recorded step in the prompt.")],
+    end: Annotated[int, typer.Option(min=1, help="Last recorded step in the prompt.")],
+    tool: Annotated[str, typer.Option(help="codex or claude_code.")] = "codex",
+    source: Annotated[str, typer.Option(help="history or replay_store.")] = "history",
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+    project_root: Annotated[
+        Path | None,
+        typer.Option(
+            file_okay=False,
+            resolve_path=True,
+            help="Optional linked checkout used read-only for unverified reconstruction.",
+        ),
+    ] = None,
+) -> None:
+    """Generate a text-only reverse plan; never write files or run commands."""
+    if tool not in {"codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    if source not in {"history", "replay_store"}:
+        raise typer.BadParameter("source must be history or replay_store")
+    try:
+        if source == "replay_store":
+            with ReplayStore(_replay_store_path(store)) as replay_store:
+                exported = export_session(replay_store, session_id)
+        else:
+            exported = import_history_session(
+                session_id,
+                tool=cast(HistoryTool, tool),
+                project_root=project_root,
+            )
+        result = build_revert_plan(exported, start, end)
+    except Exception as exc:
+        typer.secho(f"FaultMesh revert plan failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(result.model_dump_json(indent=2))
 
