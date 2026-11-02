@@ -145,6 +145,39 @@ export interface HistoryPromptIndex {
   cached: boolean;
 }
 
+export type HistorySearchField = 'session_title' | 'prompt_text' | 'changed_file';
+
+export interface HistorySearchPrompt {
+  prompt_id: string;
+  first_line: string | null;
+  start_sequence: number;
+  end_sequence: number;
+  changed_files: string[];
+  changed_file_count: number;
+  started_at: string;
+  ended_at: string;
+  matched_in: HistorySearchField[];
+}
+
+export interface HistorySearchSession {
+  session_id: string;
+  tool: 'codex' | 'claude_code';
+  source: 'history' | 'replay_store';
+  title: string;
+  project_display_name: string;
+  started_at: string;
+  ended_at: string;
+  prompts: HistorySearchPrompt[];
+}
+
+export interface HistorySearchResult {
+  schema_version: 'history-search-1.0';
+  query: string;
+  sessions: HistorySearchSession[];
+  match_count: number;
+  indexed_session_count: number;
+}
+
 export interface HistoryListPayload {
   roots: HistoryRoot[];
   sessions: HistorySession[];
@@ -207,7 +240,12 @@ export interface SpectateBridge {
   openRecording?(): Promise<HistoryImportPayload | null>;
   listHistory?(): Promise<HistoryListPayload>;
   listPrompts?(sessionId: string, tool: string): Promise<HistoryPromptIndex>;
-  importSession?(sessionId: string, tool: string): Promise<HistoryImportPayload>;
+  searchHistory?(query: string): Promise<HistorySearchResult>;
+  importSession?(
+    sessionId: string,
+    tool: string,
+    source?: 'history' | 'replay_store',
+  ): Promise<HistoryImportPayload>;
   linkSessionProject?(sessionId: string, projectHandle: string): Promise<{ linked: true; displayName: string }>;
   modelStatus?(): Promise<ReplayModelStatus>;
   downloadModel?(modelId: string): Promise<{ started: boolean; reason?: string }>;

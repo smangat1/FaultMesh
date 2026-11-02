@@ -45,6 +45,7 @@ from faultmesh.replay.history_discovery import (
 )
 from faultmesh.replay.history_import import import_history_session
 from faultmesh.replay.history_prompts import list_history_prompts
+from faultmesh.replay.history_search import refresh_history_search_index, search_history
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.llama_server import LlamaServer
 from faultmesh.replay.model_manager import (
@@ -548,6 +549,42 @@ def replay_history_prompts(
         )
     except Exception as exc:
         typer.secho(f"FaultMesh prompt listing failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        result.model_dump_json(
+            indent=2,
+            exclude={"prompts": {"__all__": {"search_text"}}},
+        )
+    )
+
+
+@app.command("replay-history-search")
+def replay_history_search(
+    query: Annotated[str, typer.Argument(help="Local prompt, title, or changed-file query.")],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Search redacted cached history metadata without reconstruction or model work."""
+    try:
+        result = search_history(query, store_root=store)
+    except Exception as exc:
+        typer.secho(f"FaultMesh history search failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("replay-history-search-refresh")
+def replay_history_search_refresh(
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Refresh the local prompt search cache after history discovery."""
+    try:
+        result = refresh_history_search_index(store_root=store)
+    except Exception as exc:
+        typer.secho(
+            f"FaultMesh history search refresh failed: {exc}",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(code=2) from exc
     typer.echo(result.model_dump_json(indent=2))
 

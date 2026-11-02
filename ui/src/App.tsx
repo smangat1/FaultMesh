@@ -560,7 +560,12 @@ export const App: React.FC<AppProps> = ({
   };
 
   const handleImportSession = useCallback(
-    async (sessionId: string, tool: string, focusSequence?: number) => {
+    async (
+      sessionId: string,
+      tool: string,
+      focusSequence?: number,
+      source: 'history' | 'replay_store' = 'history',
+    ) => {
       setSelectedHistoryTool(tool);
       onDemandModelReadyRef.current = false;
       setOnDemandModelReady(false);
@@ -568,7 +573,9 @@ export const App: React.FC<AppProps> = ({
       if (!bridge?.importSession) {
         throw new Error('Desktop bridge is not available for session import');
       }
-      const result = await bridge.importSession(sessionId, tool);
+      const result = source === 'history'
+        ? await bridge.importSession(sessionId, tool)
+        : await bridge.importSession(sessionId, tool, source);
       await loadValidatedRecording(result, focusSequence);
       importedHistorySessionIdRef.current = sessionId;
       selectedHistoryToolRef.current = tool;
@@ -576,6 +583,10 @@ export const App: React.FC<AppProps> = ({
       setNarrationError(null);
       setNarrationProgress(null);
       setPlainMode(false);
+      if (source === 'replay_store') {
+        setPlainMode(true);
+        return;
+      }
       if (!bridge.modelStatus) {
         setPlainMode(true);
         return;

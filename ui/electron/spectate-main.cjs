@@ -15,6 +15,7 @@ const CHANNELS = Object.freeze({
   event: 'faultmesh:spectate:event',
   listHistory: 'faultmesh:spectate:list-history',
   listPrompts: 'faultmesh:spectate:list-prompts',
+  searchHistory: 'faultmesh:spectate:search-history',
   importSession: 'faultmesh:spectate:import-session',
   linkSessionProject: 'faultmesh:spectate:link-session-project',
   modelStatus: 'faultmesh:replay:model-status',
@@ -265,6 +266,7 @@ function attachSpectateBridge({
   let downloadChild = null;
   let onDemandChild = null;
   let queuedOnDemand = null;
+  let historyIndexChild = null;
 
   function assertTrustedSender(event) {
     if (disposed) throw new Error('spectate bridge is closed');
@@ -347,6 +349,26 @@ function attachSpectateBridge({
         }
       }));
     });
+  }
+
+  function startHistoryIndexRefresh() {
+    if (disposed || historyIndexChild) return;
+    let proc;
+    try {
+      proc = spawn(command, ['replay-history-search-refresh'], {
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'ignore', 'ignore'],
+      });
+    } catch (_) {
+      return;
+    }
+    historyIndexChild = proc;
+    const clear = () => {
+      if (historyIndexChild === proc) historyIndexChild = null;
+    };
+    proc.once('error', clear);
+    proc.once('close', clear);
   }
 
   function syntheticSessionEnd(reason) {
@@ -626,6 +648,7 @@ function attachSpectateBridge({
             project_parent_name: s.project_parent_name ? String(s.project_parent_name) : (s.parent_display_name ? String(s.parent_display_name) : undefined),
           }));
           resolve({ roots, sessions });
+          setImmediate(startHistoryIndexRefresh);
         } catch (err) {
           reject(new Error(`failed to parse replay-history-list output: ${err.message}`));
         }
@@ -709,18 +732,91 @@ function attachSpectateBridge({
     });
   });
 
+  ipcMain.handle(CHANNELS.searchHistory, async (event, ...args) => {
+    assertTrustedSender(event);
+    if (args.length !== 1) {
+      throw new Error('searchHistory requires exactly one query argument');
+    }
+    const [query] = args;
+    if (
+      typeof query !== 'string'
+      || query.trim().length === 0
+      || query.trim().length > 200
+      || /[\u0000-\u001f]/.test(query)
+    ) {
+      throw new Error('invalid history search query');
+    }
+    const parsed = await runJsonCommand(
+      ['replay-history-search', query.trim()],
+      { timeoutMs: 30000, maxBytes: 8 * 1024 * 1024 },
+    );
+    if (!isPlainObject(parsed) || !Array.isArray(parsed.sessions)) {
+      throw new Error('invalid replay-history-search payload structure');
+    }
+    const sessions = parsed.sessions.slice(0, 500).map((session) => {
+      if (!isPlainObject(session) || !Array.isArray(session.prompts)) {
+        throw new Error('invalid replay-history-search session');
+      }
+      return {
+        session_id: String(session.session_id || ''),
+        tool: session.tool === 'claude_code' ? 'claude_code' : 'codex',
+        source: session.source === 'replay_store' ? 'replay_store' : 'history',
+        title: String(session.title || 'Untitled session'),
+        project_display_name: String(session.project_display_name || 'Unknown project'),
+        started_at: String(session.started_at || ''),
+        ended_at: String(session.ended_at || ''),
+        prompts: session.prompts.slice(0, 500).map((prompt) => {
+          if (!isPlainObject(prompt)) throw new Error('invalid replay-history-search prompt');
+          return {
+            prompt_id: String(prompt.prompt_id || ''),
+            first_line: prompt.first_line === null || prompt.first_line === undefined
+              ? null
+              : String(prompt.first_line),
+            start_sequence: Number.isSafeInteger(prompt.start_sequence) ? prompt.start_sequence : 1,
+            end_sequence: Number.isSafeInteger(prompt.end_sequence) ? prompt.end_sequence : 1,
+            changed_files: Array.isArray(prompt.changed_files)
+              ? prompt.changed_files.slice(0, 1000).map(String)
+              : [],
+            changed_file_count: Number.isSafeInteger(prompt.changed_file_count)
+              ? prompt.changed_file_count
+              : 0,
+            started_at: String(prompt.started_at || ''),
+            ended_at: String(prompt.ended_at || ''),
+            matched_in: Array.isArray(prompt.matched_in)
+              ? prompt.matched_in.filter((field) => (
+                field === 'session_title' || field === 'prompt_text' || field === 'changed_file'
+              ))
+              : [],
+          };
+        }),
+      };
+    });
+    return {
+      schema_version: 'history-search-1.0',
+      query: String(parsed.query || query.trim()),
+      sessions,
+      match_count: sessions.reduce((count, session) => count + session.prompts.length, 0),
+      indexed_session_count: Number.isSafeInteger(parsed.indexed_session_count)
+        ? parsed.indexed_session_count
+        : 0,
+    };
+  });
+
   ipcMain.handle(CHANNELS.importSession, async (event, ...args) => {
     assertTrustedSender(event);
-    if (args.length !== 2) {
-      throw new Error('importSession requires exactly (sessionId, tool) arguments');
+    if (args.length < 2 || args.length > 3) {
+      throw new Error('importSession requires (sessionId, tool, optional source) arguments');
     }
-    const [sessionId, tool] = args;
+    const [sessionId, tool, source = 'history'] = args;
     if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 128 || /[\/\\]/.test(sessionId) || sessionId.includes('..')) {
       throw new Error('invalid or unsafe sessionId');
     }
     const ALLOWED_TOOLS = new Set(['codex', 'claude_code']);
     if (typeof tool !== 'string' || !ALLOWED_TOOLS.has(tool)) {
       throw new Error('unsupported or invalid tool');
+    }
+    if (source !== 'history' && source !== 'replay_store') {
+      throw new Error('unsupported import source');
     }
 
     const tempOut = path.join(os.tmpdir(), `faultmesh-import-${crypto.randomUUID()}.json`);
@@ -737,32 +833,36 @@ function attachSpectateBridge({
       let timer = null;
       let proc = null;
       try {
-        const args = [
-          'replay-history-import',
-          sessionId,
-          '--tool',
-          tool,
-          '--out',
-          tempOut,
-          '--template-narration',
-        ];
-        try {
-          const links = readProjectLinks(projectLinksPath);
-          const linked = links[sessionId];
-          if (
-            isPlainObject(linked)
-            && typeof linked.root === 'string'
-            && path.isAbsolute(linked.root)
-          ) {
-            const linkedRoot = fs.realpathSync(linked.root);
-            if (fs.statSync(linkedRoot).isDirectory()) {
-              args.push('--project-root', linkedRoot);
+        const commandArgs = source === 'replay_store'
+          ? ['replay-export', sessionId, '--out', tempOut]
+          : [
+            'replay-history-import',
+            sessionId,
+            '--tool',
+            tool,
+            '--out',
+            tempOut,
+            '--template-narration',
+          ];
+        if (source === 'history') {
+          try {
+            const links = readProjectLinks(projectLinksPath);
+            const linked = links[sessionId];
+            if (
+              isPlainObject(linked)
+              && typeof linked.root === 'string'
+              && path.isAbsolute(linked.root)
+            ) {
+              const linkedRoot = fs.realpathSync(linked.root);
+              if (fs.statSync(linkedRoot).isDirectory()) {
+                commandArgs.push('--project-root', linkedRoot);
+              }
             }
+          } catch (error) {
+            if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
           }
-        } catch (error) {
-          if (!(error instanceof SyntaxError) && error?.code !== 'ENOENT') throw error;
         }
-        proc = spawn(command, args, {
+        proc = spawn(command, commandArgs, {
           shell: false,
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -1196,17 +1296,20 @@ function attachSpectateBridge({
       if (narrationChild) narrationChild.kill('SIGTERM');
       if (downloadChild) downloadChild.kill('SIGTERM');
       if (onDemandChild) onDemandChild.kill('SIGTERM');
+      if (historyIndexChild) historyIndexChild.kill('SIGTERM');
       if (queuedOnDemand) queuedOnDemand.resolve({ superseded: true });
       narrationChild = null;
       downloadChild = null;
       onDemandChild = null;
       queuedOnDemand = null;
+      historyIndexChild = null;
       ipcMain.removeHandler(CHANNELS.choose);
       ipcMain.removeHandler(CHANNELS.start);
       ipcMain.removeHandler(CHANNELS.stop);
       ipcMain.removeHandler(CHANNELS.openRecording);
       ipcMain.removeHandler(CHANNELS.listHistory);
       ipcMain.removeHandler(CHANNELS.listPrompts);
+      ipcMain.removeHandler(CHANNELS.searchHistory);
       ipcMain.removeHandler(CHANNELS.importSession);
       ipcMain.removeHandler(CHANNELS.linkSessionProject);
       ipcMain.removeHandler(CHANNELS.modelStatus);

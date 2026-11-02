@@ -15,8 +15,15 @@ import {
   FileText,
   Layers,
   Info,
+  Search,
+  X,
 } from 'lucide-react';
-import type { HistoryPromptSummary, HistoryRoot, HistorySession } from '../spectate/types';
+import type {
+  HistoryPromptSummary,
+  HistoryRoot,
+  HistorySearchResult,
+  HistorySession,
+} from '../spectate/types';
 import type { RunSummary } from '../types';
 import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from './FirstUseTipOverlay';
 import { isScreenTipSeen } from '../utils/firstUseTipsStorage';
@@ -35,7 +42,12 @@ export interface AutodetectHomeScreenProps {
   activeRun?: RunSummary | null;
   onReturnToWorkspace?: () => void;
   onOpenRecording?: () => void;
-  onImportSession?: (sessionId: string, tool: string, focusSequence?: number) => Promise<void>;
+  onImportSession?: (
+    sessionId: string,
+    tool: string,
+    focusSequence?: number,
+    source?: 'history' | 'replay_store',
+  ) => Promise<void>;
   cachedRoots?: HistoryRoot[] | null;
   cachedSessions?: HistorySession[] | null;
   onCacheHistory?: (roots: HistoryRoot[], sessions: HistorySession[]) => void;
@@ -218,8 +230,14 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
   const [promptsBySession, setPromptsBySession] = useState<Record<string, HistoryPromptSummary[]>>({});
   const [promptLoadingIds, setPromptLoadingIds] = useState<Set<string>>(() => new Set());
   const [promptErrors, setPromptErrors] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<HistorySearchResult | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchRequestRef = useRef(0);
 
   const isMacDesktop =
     typeof navigator !== 'undefined' &&
@@ -273,12 +291,66 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
     }
   }, [cachedRoots, hasHistoryBridge, fetchHistory]);
 
-  const handlePromptClick = async (sessionId: string, tool: string, focusSequence?: number) => {
+  useEffect(() => {
+    const onSearchShortcut = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof Element
+        && target.matches('input, textarea, [contenteditable="true"]')
+      ) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener('keydown', onSearchShortcut);
+    return () => window.removeEventListener('keydown', onSearchShortcut);
+  }, []);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+    if (!query) {
+      setSearchResult(null);
+      setSearchError(null);
+      setSearchLoading(false);
+      return undefined;
+    }
+    const bridge = window.faultmeshSpectate;
+    if (!bridge?.searchHistory) {
+      setSearchResult(null);
+      setSearchLoading(false);
+      setSearchError('Local history search is available in the desktop app.');
+      return undefined;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
+    const timer = window.setTimeout(() => {
+      void bridge.searchHistory!(query).then((result) => {
+        if (searchRequestRef.current !== requestId) return;
+        setSearchResult(result);
+        setSearchLoading(false);
+      }).catch((error: unknown) => {
+        if (searchRequestRef.current !== requestId) return;
+        setSearchResult(null);
+        setSearchError(error instanceof Error ? error.message : String(error));
+        setSearchLoading(false);
+      });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handlePromptClick = async (
+    sessionId: string,
+    tool: string,
+    focusSequence?: number,
+    source: 'history' | 'replay_store' = 'history',
+  ) => {
     if (importingSessionId || !onImportSession) return;
     setImportingSessionId(sessionId);
     setImportError(null);
     try {
-      await onImportSession(sessionId, tool, focusSequence);
+      await onImportSession(sessionId, tool, focusSequence, source);
     } catch (err) {
       setImportError({
         sessionId,
@@ -568,6 +640,38 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
           </div>
         </div>
 
+        <div className="history-search-shell" data-testid="history-search-shell">
+          <Search size={16} aria-hidden="true" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            inputMode="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search prompts, session titles, and changed files"
+            aria-label="Search recorded sessions"
+            data-testid="history-search-input"
+            maxLength={200}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchLoading && <RefreshCw size={14} className="animate-spin" aria-label="Searching" />}
+          {searchQuery && !searchLoading && (
+            <button
+              type="button"
+              className="history-search-clear"
+              aria-label="Clear history search"
+              onClick={() => {
+                setSearchQuery('');
+                searchInputRef.current?.focus();
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+          <kbd aria-hidden="true">/</kbd>
+        </div>
+
         {/* Discovery Error */}
         {discoveryError && (
           <div
@@ -603,7 +707,95 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
         )}
 
         {/* Body Content */}
-        {!hasHistoryBridge ? (
+        {searchQuery.trim() ? (
+          <section className="history-search-results" data-testid="history-search-results">
+            <header>
+              <div>
+                <h2>Search results</h2>
+                <p>
+                  {searchLoading
+                    ? 'Searching the local prompt index…'
+                    : `${searchResult?.match_count ?? 0} matching ${(searchResult?.match_count ?? 0) === 1 ? 'prompt' : 'prompts'}`}
+                </p>
+              </div>
+              {searchResult && (
+                <span>{searchResult.indexed_session_count} indexed sessions</span>
+              )}
+            </header>
+            {searchError && (
+              <div className="history-search-state is-error" role="alert">
+                Search unavailable: {searchError}
+              </div>
+            )}
+            {searchLoading && !searchResult && (
+              <div className="history-search-state" role="status">
+                <RefreshCw size={16} className="animate-spin" />
+                Searching recorded sessions…
+              </div>
+            )}
+            {!searchLoading && !searchError && searchResult?.sessions.length === 0 && (
+              <div className="history-search-empty" data-testid="history-search-empty">
+                <Search size={22} aria-hidden="true" />
+                <strong>No matching prompts</strong>
+                <span>
+                  Try a session title, a file name, or a phrase from a prompt. Newly discovered
+                  sessions are indexed quietly in the background.
+                </span>
+              </div>
+            )}
+            {!searchError && searchResult?.sessions.map((session) => (
+              <article
+                key={`${session.tool}:${session.session_id}`}
+                className="history-search-session"
+                data-testid={`history-search-session-${session.session_id}`}
+              >
+                <div className="history-search-session-heading">
+                  <div>
+                    <strong>{session.title}</strong>
+                    <span>{formatToolDisplayName(session.tool)} · {session.project_display_name}</span>
+                  </div>
+                  <time dateTime={session.ended_at}>{formatRelativeTime(session.ended_at)}</time>
+                </div>
+                <div className="history-search-prompts">
+                  {session.prompts.map((prompt) => {
+                    const matchedPaths = prompt.matched_in.includes('changed_file')
+                      ? prompt.changed_files.filter((path) => (
+                        path.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())
+                      ))
+                      : prompt.changed_files;
+                    return (
+                      <button
+                        type="button"
+                        key={`${prompt.prompt_id}:${prompt.start_sequence}`}
+                        className="history-search-prompt"
+                        data-testid={`history-search-prompt-${session.session_id}-${prompt.start_sequence}`}
+                        disabled={importingSessionId !== null}
+                        onClick={() => void handlePromptClick(
+                          session.session_id,
+                          session.tool,
+                          prompt.start_sequence,
+                          session.source,
+                        )}
+                      >
+                        <span className="history-search-prompt-copy">
+                          <strong>{prompt.first_line || 'Prompt preview unavailable'}</strong>
+                          <span>
+                            {matchedPaths.length > 0
+                              ? matchedPaths.slice(0, 3).join(' · ')
+                              : prompt.changed_file_count === 0
+                              ? 'No recorded file changes'
+                              : `${prompt.changed_file_count} ${prompt.changed_file_count === 1 ? 'file' : 'files'} changed`}
+                          </span>
+                        </span>
+                        <ArrowRight size={15} aria-hidden="true" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            ))}
+          </section>
+        ) : !hasHistoryBridge ? (
           /* Empty State: No Desktop Bridge */
           <div
             data-testid="autodetect-no-bridge-empty-state"

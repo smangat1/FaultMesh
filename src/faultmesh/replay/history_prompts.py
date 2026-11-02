@@ -25,6 +25,7 @@ class HistoryPromptSummary(BaseModel):
 
     prompt_id: str
     first_line: str | None = None
+    search_text: str | None = None
     start_sequence: int = Field(ge=1)
     end_sequence: int = Field(ge=1)
     changed_files: list[str]
@@ -43,6 +44,7 @@ class HistoryPromptIndex(BaseModel):
     source_file_sha256: str
     prompts: list[HistoryPromptSummary]
     cached: bool = False
+    search_ready: bool = False
 
 
 _TEST_COMMAND = re.compile(
@@ -50,6 +52,7 @@ _TEST_COMMAND = re.compile(
     r"yarn\s+test|cargo\s+test|go\s+test|swift\s+test|dotnet\s+test)(?:\s|$)",
     re.IGNORECASE,
 )
+_MAX_SEARCH_TEXT_CHARS = 64 * 1024
 
 
 def _command_text(record: ReplayRecord) -> str | None:
@@ -96,6 +99,11 @@ def _first_line(records: list[ReplayRecord]) -> str | None:
     return next((line.strip() for line in prompt.splitlines() if line.strip()), None)
 
 
+def _prompt_text(records: list[ReplayRecord]) -> str | None:
+    prompt = next((record.prompt_text for record in records if record.prompt_text), None)
+    return prompt[:_MAX_SEARCH_TEXT_CHARS] if prompt is not None else None
+
+
 def build_history_prompt_index(
     session_id: str, source_digest: str, exported: ReplayExport
 ) -> HistoryPromptIndex:
@@ -137,6 +145,7 @@ def build_history_prompt_index(
             HistoryPromptSummary(
                 prompt_id=native_id,
                 first_line=_first_line(records),
+                search_text=_prompt_text(records),
                 start_sequence=chapter.start_sequence,
                 end_sequence=chapter.end_sequence,
                 changed_files=paths,
@@ -155,6 +164,7 @@ def build_history_prompt_index(
         session_id=session_id,
         source_file_sha256=source_digest,
         prompts=prompts,
+        search_ready=True,
     )
 
 
@@ -192,7 +202,7 @@ def list_history_prompts(
         cached = store.get_history_prompt_index(digest)
         if cached is not None:
             parsed = HistoryPromptIndex.model_validate_json(cached)
-            if parsed.session_id == session_id:
+            if parsed.session_id == session_id and parsed.search_ready:
                 return parsed.model_copy(update={"cached": True})
 
         exported = import_history_session(
