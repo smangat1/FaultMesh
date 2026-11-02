@@ -77,7 +77,9 @@ class UnderstandingBackend:
         del max_output_tokens
         self.prompts.append(prompt)
         properties = json_schema.get("properties", {})
-        if "title" in properties:
+        if "claims" in properties:
+            value: object = {"schema_version": "replay-claims-1.0", "claims": []}
+        elif "title" in properties:
             value: object = {"title": "Model chapter"}
         elif "sentences" in properties and "prompts" in properties:
             facts = json.loads(prompt.split("Facts:\n", 1)[1])

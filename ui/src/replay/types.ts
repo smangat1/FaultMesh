@@ -509,6 +509,22 @@ export interface PromptUnderstanding {
   truncated: boolean;
 }
 
+export interface PromptRiskFlag {
+  prompt_id: string;
+  kind: 'files_deleted' | 'secret_or_config_touched' | 'test_files_changed' | 'wide_blast_radius';
+  label: string;
+  files: string[];
+  source: 'deterministic rule';
+}
+
+export interface PromptClaimCheck {
+  prompt_id: string;
+  start_sequence: number;
+  end_sequence: number;
+  claims: ClaimRunRecord;
+  label: 'Model interpretation + symbolic check';
+}
+
 export interface SelectionSummary {
   schema_version: 'replay-selection-summary-1.0';
   start_sequence: number;
@@ -530,6 +546,8 @@ export type ReplayExportV2 = Omit<ReplayExportV1, 'schema_version'> & {
   chapter_run: ChapterRunRecord;
   summary?: SessionSummary | null;
   prompt_understanding?: PromptUnderstanding | null;
+  prompt_risk_flags?: PromptRiskFlag[];
+  prompt_claim_checks?: PromptClaimCheck[];
 };
 
 export type AnyReplayExport = ReplayExportV1 | ReplayExportV2;

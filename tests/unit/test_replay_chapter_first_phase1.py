@@ -165,13 +165,16 @@ def test_chapter_titles_run_newest_first_with_tight_caps(tmp_path: Path) -> None
         int(prompt.split('"start_sequence":', 1)[1].split(",", 1)[0])
         for prompt in title_prompts
     ] == [3, 2, 1]
-    assert backend.limits == [1800, 60, 60, 60]
+    assert backend.limits == [1800, 900, 900, 900, 60, 60, 60]
     assert stages == [
         ("baseline", 0, 3),
         ("prompt", 1, 3),
         ("prompt", 2, 3),
         ("prompt", 3, 3),
         ("summary", 3, 3),
+        ("prompt-check", 1, 3),
+        ("prompt-check", 2, 3),
+        ("prompt-check", 3, 3),
         ("chapter", 1, 3),
         ("chapter", 2, 3),
         ("chapter", 3, 3),
@@ -212,7 +215,7 @@ def test_cancel_mid_titling_returns_valid_partial_state(tmp_path: Path) -> None:
             ) >= 1,
             cache=cache,
         )
-    assert len(backend.prompts) == 2
+    assert len(backend.prompts) == 5
     assert [chapter.title_status for chapter in result.chapters] == [
         "deterministic template",
         "deterministic template",

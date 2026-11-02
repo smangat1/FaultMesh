@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 from dataclasses import dataclass
@@ -14,6 +15,46 @@ _PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
 )
+
+SECRET_LIKE_PATH_PATTERNS = (
+    ".env*",
+    "*.key",
+    "*.p12",
+    "*.pem",
+    "*credentials*",
+    "*secret*",
+    "*token*",
+    "id_ed25519*",
+    "id_rsa*",
+)
+
+CONFIG_LIKE_PATH_PATTERNS = (
+    "*config*",
+    "*.ini",
+    "*.toml",
+    "*.yaml",
+    "*.yml",
+)
+
+
+def is_secret_like_path(path: str) -> bool:
+    """Match the same secret-like path names excluded by bounded capture."""
+    lowered = path.lower()
+    return any(
+        fnmatch.fnmatchcase(part, pattern)
+        for part in lowered.replace("\\", "/").split("/")
+        for pattern in SECRET_LIKE_PATH_PATTERNS
+    )
+
+
+def is_config_like_path(path: str) -> bool:
+    """Identify configuration-shaped paths for quiet replay risk context."""
+    lowered = path.lower()
+    return any(
+        fnmatch.fnmatchcase(part, pattern)
+        for part in lowered.replace("\\", "/").split("/")
+        for pattern in CONFIG_LIKE_PATH_PATTERNS
+    )
 
 
 @dataclass(frozen=True)

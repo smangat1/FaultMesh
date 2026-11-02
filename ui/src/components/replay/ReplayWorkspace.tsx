@@ -14,7 +14,12 @@ import { isScreenTipSeen } from '../../utils/firstUseTipsStorage';
 import { WatchProjectPrompt } from '../WatchProjectPrompt';
 import { ReplayModelSetup } from './ReplayModelSetup';
 import type { ProjectChoice } from '../../spectate/types';
-import type { SelectionSummary, StepNarration } from '../../replay/types';
+import type {
+  SelectionSummary,
+  StepNarration,
+  StructuredTestEvidence,
+  TypedClaim,
+} from '../../replay/types';
 import {
   dismissSessionWatchPrompt,
   isSessionProjectLinked,
@@ -42,6 +47,30 @@ const PROMPT_PLAYBACK_DELAY_MS = 2400;
 const FILE_STEP_PLAYBACK_DELAY_MS = 1200;
 
 type PlaybackSpeed = 1 | 2 | 4;
+
+function promptClaimLabel(claim: TypedClaim): string {
+  const assertion = claim.assertion;
+  if (assertion.predicate === 'file_changed') return `Changed ${assertion.path}`;
+  if (assertion.predicate === 'python_function_added') {
+    return `Added ${assertion.qualified_name} in ${assertion.path}`;
+  }
+  if (assertion.predicate === 'python_function_removed') {
+    return `Removed ${assertion.qualified_name} from ${assertion.path}`;
+  }
+  if (assertion.predicate === 'command_exit') {
+    return `Command exited with code ${assertion.exit_code}`;
+  }
+  return `Tests: ${assertion.passed} passed, ${assertion.failed} failed, ${assertion.errors} errors`;
+}
+
+function promptTestAssociationLabel(tests: StructuredTestEvidence[]): string {
+  if (tests.length === 0) return 'not observed';
+  const associations = new Set(tests.map((test) => test.association));
+  if (associations.has('nearby_in_time_state_unverified')) return 'nearby, state unverified';
+  if (associations.has('none')) return 'association unknown';
+  if (associations.has('controlled_no_write')) return 'controlled no-write';
+  return 'content identity';
+}
 
 function usePrefersReducedMotion(): boolean {
   const query = '(prefers-reduced-motion: reduce)';
@@ -74,7 +103,11 @@ export interface ReplayWorkspaceProps {
   onWatchProject?: () => Promise<ProjectChoice | null>;
   onLinkSessionProject?: (sessionId: string, projectHandle: string) => Promise<void>;
   narrationRevision?: number;
-  narrationProgress?: { done: number; total: number } | null;
+  narrationProgress?: {
+    done: number;
+    total: number;
+    stage?: 'summarizing' | 'checking';
+  } | null;
   narrationError?: string | null;
   modelSetupOpen?: boolean;
   modelSetupMessage?: string;
@@ -241,6 +274,26 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     if (isBaselineMode || !activePrompt) return null;
     return adapter.getPromptInterpretation(activePrompt.id);
   }, [activePrompt, adapter, isBaselineMode, narrationRevision]);
+
+  const promptRiskFlags = useMemo(() => (
+    activePrompt ? adapter.getPromptRiskFlags(activePrompt.id) : []
+  ), [activePrompt, adapter, narrationRevision]);
+
+  const promptClaimCheck = useMemo(() => {
+    if (isBaselineMode || !activePrompt) return null;
+    return adapter.getPromptClaimCheck(activePrompt.id);
+  }, [activePrompt, adapter, isBaselineMode, narrationRevision]);
+
+  const checkedPromptClaims = useMemo(() => {
+    if (!promptClaimCheck) return [];
+    const finalClaims = Array.isArray(promptClaimCheck.claims.final_claims)
+      ? promptClaimCheck.claims.final_claims
+      : promptClaimCheck.claims.final_claims.claims;
+    const verdicts = new Map(
+      promptClaimCheck.claims.verdicts.map((verdict) => [verdict.claim_id, verdict])
+    );
+    return finalClaims.map((claim) => ({ claim, verdict: verdicts.get(claim.id) || null }));
+  }, [promptClaimCheck]);
 
   const testsForCurrentSeq = useMemo(() => {
     return adapter.getTestsForSequence(currentSeq);
@@ -666,7 +719,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </span>
           {narrationProgress && (
             <span className="replay-progress-label" data-testid="replay-narration-progress">
-              Summarizing prompts {narrationProgress.done}/{narrationProgress.total}
+              {narrationProgress.stage === 'checking' ? 'Checking prompts' : 'Summarizing prompts'}{' '}
+              {narrationProgress.done}/{narrationProgress.total}
             </span>
           )}
           {plainMode && !narrationProgress && (
@@ -943,6 +997,9 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                     : activePrompt.testEvidence.some((test) => test.state === 'pass')
                     ? 'Tests passed'
                     : 'Tests not observed'}
+                  {activePrompt.testEvidence.length > 0
+                    ? ` · ${promptTestAssociationLabel(activePrompt.testEvidence)}`
+                    : ''}
                 </span>
               </div>
               {activePrompt.promptText && activePrompt.promptText.includes('\n') && (
@@ -955,6 +1012,46 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                 <div className="replay-prompt-interpretation" data-testid="replay-prompt-interpretation">
                   <span>Model interpretation</span>
                   <p>{promptInterpretation.text}</p>
+                </div>
+              )}
+              <div className="replay-prompt-risks" data-testid="replay-prompt-risks">
+                {promptRiskFlags.length > 0 ? promptRiskFlags.map((flag) => (
+                  <span
+                    key={`${flag.kind}:${flag.files.join('|')}`}
+                    className="replay-risk-chip"
+                    title={`${flag.source}: ${flag.files.join(', ')}`}
+                    data-risk-kind={flag.kind}
+                  >
+                    {flag.label}: {flag.files.slice(0, 2).join(', ')}
+                    {flag.files.length > 2 ? ` +${flag.files.length - 2}` : ''}
+                  </span>
+                )) : (
+                  <span className="replay-risk-clean">No rule-based risk flags</span>
+                )}
+              </div>
+              {promptClaimCheck && (
+                <div className="replay-prompt-claims" data-testid="replay-prompt-claims">
+                  <div className="replay-prompt-claims-label">{promptClaimCheck.label}</div>
+                  {checkedPromptClaims.length > 0 ? checkedPromptClaims.map(({ claim, verdict }) => (
+                    <div className="replay-checked-claim" key={claim.id}>
+                      <span
+                        className="replay-verdict-chip"
+                        data-verdict={verdict?.verdict || 'unsupported_or_unknown'}
+                      >
+                        {verdict?.verdict === 'supported'
+                          ? 'Supported'
+                          : verdict?.verdict === 'contradicted'
+                          ? 'Contradicted'
+                          : 'Unknown'}
+                      </span>
+                      <span>{promptClaimLabel(claim)}</span>
+                      <code title={verdict?.reason || 'No checker reason recorded'}>
+                        {(verdict?.evidence_refs || claim.evidence_refs).join(', ')}
+                      </code>
+                    </div>
+                  )) : (
+                    <span className="replay-risk-clean">No checkable atomic claims were returned.</span>
+                  )}
                 </div>
               )}
               <div className="replay-prompt-card-meta">

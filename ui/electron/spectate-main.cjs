@@ -991,6 +991,19 @@ function attachSpectateBridge({
               prompt_understanding: parsed.prompt_understanding,
             });
           } else if (
+            parsed.event === 'prompt-check'
+            && Number.isSafeInteger(parsed.done)
+            && Number.isSafeInteger(parsed.total)
+            && isPlainObject(parsed.prompt_check)
+          ) {
+            sendNarrationEvent({
+              scope: 'narration',
+              event: 'prompt-check',
+              done: parsed.done,
+              total: parsed.total,
+              prompt_check: parsed.prompt_check,
+            });
+          } else if (
             parsed.event === 'chapter'
             && Number.isSafeInteger(parsed.done)
             && Number.isSafeInteger(parsed.total)

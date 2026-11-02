@@ -189,6 +189,13 @@ export type NarrationEvent =
       prompt: unknown;
       prompt_understanding: unknown;
     }
+  | {
+      scope: 'narration';
+      event: 'prompt-check';
+      done: number;
+      total: number;
+      prompt_check: unknown;
+    }
   | { scope: 'narration'; event: 'summary'; done: number; total: number; summary: unknown }
   | { scope: 'narration'; event: 'done'; export: unknown };
 

@@ -508,6 +508,13 @@ test('startNarration and rerunNarration use fixed argv and reject unsafe input',
     prompt_understanding: {},
   })}\n`));
   assert.equal(value.sent.at(-1)[1].event, 'prompt');
+  first.stdout.emit('data', Buffer.from(`${JSON.stringify({
+    event: 'prompt-check',
+    done: 1,
+    total: 2,
+    prompt_check: {},
+  })}\n`));
+  assert.equal(value.sent.at(-1)[1].event, 'prompt-check');
   first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'chapter', done: 1, total: 2, chapter: {}, chapter_run: {} })}\n`));
   assert.equal(value.sent.at(-1)[0], CHANNELS.narrationEvent);
   assert.equal(value.sent.at(-1)[1].event, 'chapter');

@@ -20,6 +20,8 @@ import type {
   StepNarration,
   SessionSummary,
   PromptInterpretation,
+  PromptClaimCheck,
+  PromptRiskFlag,
   PromptUnderstanding,
   StructuredTestEvidence,
   AttributionStatus,
@@ -96,6 +98,15 @@ export class ReplayAdapter implements FaultMeshAdapter {
       prompt_understanding: understanding,
       summary: understanding.summary,
     };
+  }
+
+  public applyPromptClaimCheck(check: PromptClaimCheck): void {
+    if (!isReplayExportV2(this.exported)) return;
+    const promptClaimChecks = (this.exported.prompt_claim_checks || []).filter(
+      (item) => item.prompt_id !== check.prompt_id
+    );
+    promptClaimChecks.push(check);
+    this.exported = { ...this.exported, prompt_claim_checks: promptClaimChecks };
   }
 
   public replaceNarratedExport(exported: AnyReplayExport): void {
@@ -246,6 +257,20 @@ export class ReplayAdapter implements FaultMeshAdapter {
   public getPromptInterpretation(promptId: string): PromptInterpretation | null {
     if (!isReplayExportV2(this.exported)) return null;
     return this.exported.prompt_understanding?.prompts.find(
+      (item) => item.prompt_id === promptId
+    ) || null;
+  }
+
+  public getPromptRiskFlags(promptId: string): PromptRiskFlag[] {
+    if (!isReplayExportV2(this.exported)) return [];
+    return (this.exported.prompt_risk_flags || []).filter(
+      (item) => item.prompt_id === promptId
+    );
+  }
+
+  public getPromptClaimCheck(promptId: string): PromptClaimCheck | null {
+    if (!isReplayExportV2(this.exported)) return null;
+    return (this.exported.prompt_claim_checks || []).find(
       (item) => item.prompt_id === promptId
     ) || null;
   }

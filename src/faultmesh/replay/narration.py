@@ -250,6 +250,29 @@ class PromptUnderstanding(StrictModel):
     truncated: bool = False
 
 
+class PromptRiskFlag(StrictModel):
+    prompt_id: str
+    kind: Literal[
+        "files_deleted",
+        "secret_or_config_touched",
+        "test_files_changed",
+        "wide_blast_radius",
+    ]
+    label: str = Field(min_length=1, max_length=120)
+    files: list[str] = Field(min_length=1, max_length=100)
+    source: Literal["deterministic rule"] = "deterministic rule"
+
+
+class PromptClaimCheck(StrictModel):
+    prompt_id: str
+    start_sequence: int = Field(ge=1)
+    end_sequence: int = Field(ge=1)
+    claims: ClaimRunRecord
+    label: Literal["Model interpretation + symbolic check"] = (
+        "Model interpretation + symbolic check"
+    )
+
+
 class ReplayNarrationExport(StrictModel):
     schema_version: Literal["replay-export-2.0"] = "replay-export-2.0"
     exported_at: datetime
@@ -267,6 +290,8 @@ class ReplayNarrationExport(StrictModel):
     chapter_run: ChapterRunRecord
     summary: SessionSummary | None = None
     prompt_understanding: PromptUnderstanding | None = None
+    prompt_risk_flags: list[PromptRiskFlag] = Field(default_factory=list)
+    prompt_claim_checks: list[PromptClaimCheck] = Field(default_factory=list)
 
 
 class SelectionSummary(StrictModel):
@@ -355,6 +380,8 @@ def build_narration_export(
     chapter_run: ChapterRunRecord,
     summary: SessionSummary | None = None,
     prompt_understanding: PromptUnderstanding | None = None,
+    prompt_risk_flags: list[PromptRiskFlag] | None = None,
+    prompt_claim_checks: list[PromptClaimCheck] | None = None,
 ) -> ReplayNarrationExport:
     return ReplayNarrationExport(
         exported_at=exported.exported_at,
@@ -378,6 +405,8 @@ def build_narration_export(
         chapter_run=chapter_run,
         summary=summary,
         prompt_understanding=prompt_understanding,
+        prompt_risk_flags=prompt_risk_flags or [],
+        prompt_claim_checks=prompt_claim_checks or [],
     )
 
 

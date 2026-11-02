@@ -1039,6 +1039,17 @@ def replay_narrate_session(
                         "prompt": understanding.prompts[-1].model_dump(mode="json"),
                         "prompt_understanding": understanding.model_dump(mode="json"),
                     }
+                elif stage == "prompt-check":
+                    if not partial.prompt_claim_checks:
+                        return
+                    payload = {
+                        "event": "prompt-check",
+                        "done": done,
+                        "total": total,
+                        "prompt_check": partial.prompt_claim_checks[-1].model_dump(
+                            mode="json"
+                        ),
+                    }
                 elif stage == "chapter":
                     chapter = partial.chapters[-done]
                     payload = {

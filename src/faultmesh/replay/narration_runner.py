@@ -27,6 +27,7 @@ from faultmesh.replay.claims import (
     ClaimNarrator,
     ClaimVerdictName,
     build_evidence_packet,
+    build_prompt_evidence_packet,
     claim_cache_key,
 )
 from faultmesh.replay.models import ReplayExport, ReplayRecord
@@ -35,7 +36,9 @@ from faultmesh.replay.narration import (
     REASON_PROMPT_VERSION,
     LocalModelPreset,
     ModelExplanation,
+    PromptClaimCheck,
     PromptInterpretation,
+    PromptRiskFlag,
     PromptUnderstanding,
     ReplayNarrationExport,
     SelectionSummary,
@@ -45,7 +48,11 @@ from faultmesh.replay.narration import (
     fallback_session_summary,
     suggest_likely_reason,
 )
-from faultmesh.replay.privacy import redact_history_text
+from faultmesh.replay.privacy import (
+    is_config_like_path,
+    is_secret_like_path,
+    redact_history_text,
+)
 
 RUNNER_CACHE_VERSION = "replay-narration-cache-2.0"
 SUMMARY_PROMPT_VERSION = "replay-summary-prompt-1.0"
@@ -57,6 +64,7 @@ PROMPT_UNDERSTANDING_VERSION = "replay-prompt-understanding-1.0"
 PROMPT_UNDERSTANDING_MAX_GROUPS = 64
 PROMPT_UNDERSTANDING_MAX_TEXT_CHARS = 1_200
 PROMPT_UNDERSTANDING_MAX_PACKET_BYTES = 96 * 1024
+PROMPT_CHECK_VERSION = "replay-prompt-check-1.0"
 
 
 class PromptGroupPacket(TypedDict):
@@ -320,6 +328,71 @@ def _record_groups(exported: ReplayExport) -> list[tuple[str, list[ReplayRecord]
     return groups
 
 
+def _is_test_path(path: str) -> bool:
+    lowered = path.lower().replace("\\", "/")
+    name = lowered.rsplit("/", 1)[-1]
+    return (
+        "/tests/" in f"/{lowered}"
+        or "/test/" in f"/{lowered}"
+        or "/spec/" in f"/{lowered}"
+        or name.startswith("test_")
+        or ".test." in name
+        or ".spec." in name
+        or name.endswith("_test.py")
+    )
+
+
+def build_prompt_risk_flags(exported: ReplayExport) -> list[PromptRiskFlag]:
+    """Derive quiet, file-cited prompt risks without model work."""
+    entries = {entry.sequence: entry for entry in exported.timeline}
+    flags: list[PromptRiskFlag] = []
+    source_roots = {"src", "app", "lib", "packages", "frontend", "backend", "ui"}
+    for prompt_id, records in _record_groups(exported):
+        changes = [
+            changed
+            for record in records
+            for entry in [entries.get(record.sequence)]
+            if entry is not None
+            for changed in entry.changed_files
+        ]
+        deleted = sorted({item.path for item in changes if item.change == "deleted"})
+        sensitive = sorted(
+            {
+                item.path
+                for item in changes
+                if is_secret_like_path(item.path) or is_config_like_path(item.path)
+            }
+        )
+        tests = sorted({item.path for item in changes if _is_test_path(item.path)})
+        changed_paths = sorted({item.path for item in changes})
+        outside = [
+            path
+            for path in changed_paths
+            if path.replace("\\", "/").split("/", 1)[0].lower() not in source_roots
+        ]
+        candidates = (
+            ("files_deleted", "Files deleted", deleted),
+            ("secret_or_config_touched", "Sensitive or config files touched", sensitive),
+            ("test_files_changed", "Test files changed", tests),
+            (
+                "wide_blast_radius",
+                "Wide file spread",
+                outside if len(changed_paths) >= 8 and len(outside) >= 5 else [],
+            ),
+        )
+        for kind, label, paths in candidates:
+            if paths:
+                flags.append(
+                    PromptRiskFlag(
+                        prompt_id=prompt_id,
+                        kind=cast(Any, kind),
+                        label=label,
+                        files=paths[:100],
+                    )
+                )
+    return flags
+
+
 def build_prompt_understanding_packet(exported: ReplayExport) -> PromptUnderstandingPacket:
     """Build one bounded, redacted whole-session packet, newest prompts first."""
     timeline_by_sequence = {entry.sequence: entry for entry in exported.timeline}
@@ -553,6 +626,7 @@ def build_staged_baseline(exported: ReplayExport) -> ReplayNarrationExport:
         steps=[],
         chapter_run=ChapterRunRecord(chapters=chapters, fallback_used=True),
         summary=fallback_session_summary(exported, chapter_count=len(chapters)),
+        prompt_risk_flags=build_prompt_risk_flags(exported),
     ).model_copy(
         update={
             "limitations": [
@@ -665,6 +739,57 @@ def _title_chapter(
 StagedProgress = Callable[[str, int, int, ReplayNarrationExport], None]
 
 
+def _check_prompt(
+    exported: ReplayExport,
+    prompt_id: str,
+    records: list[ReplayRecord],
+    backend: InferenceBackend | None,
+    *,
+    model_config_id: str,
+    content_hash: str,
+    cache: PersistentNarrationCache,
+) -> PromptClaimCheck | None:
+    if backend is None:
+        return None
+    start_sequence = records[0].sequence
+    end_sequence = records[-1].sequence
+    prompt_text = next((record.prompt_text for record in records if record.prompt_text), None)
+    packet = build_prompt_evidence_packet(
+        exported,
+        start_sequence,
+        end_sequence,
+        prompt_text=prompt_text,
+    )
+    cache_key = _cache_identity(
+        {
+            "version": RUNNER_CACHE_VERSION,
+            "kind": "prompt-claim-check",
+            "prompt": PROMPT_CHECK_VERSION,
+            "model_config": model_config_id,
+            "prompt_id": prompt_id,
+            "evidence_hash": packet.evidence_hash,
+            "prompt_text": prompt_text,
+        }
+    )
+    cached = cache.get(content_hash, f"prompt-claim-check:{cache_key}", PromptClaimCheck)
+    if isinstance(cached, PromptClaimCheck):
+        return cached
+    claims = ClaimNarrator(
+        _CappedBackend(backend, 900),
+        model_config_id=model_config_id,
+    ).run(packet, request_text=prompt_text)
+    if claims.final_source == "deterministic_fallback":
+        return None
+    checked = PromptClaimCheck(
+        prompt_id=prompt_id,
+        start_sequence=start_sequence,
+        end_sequence=end_sequence,
+        claims=claims,
+    )
+    cache.put(content_hash, f"prompt-claim-check:{cache_key}", checked)
+    return checked
+
+
 def run_staged_narration(
     exported: ReplayExport,
     backend: InferenceBackend | None,
@@ -739,6 +864,8 @@ def run_staged_narration(
                 chapter_run=current.chapter_run,
                 summary=understanding.summary,
                 prompt_understanding=partial_understanding,
+                prompt_risk_flags=current.prompt_risk_flags,
+                prompt_claim_checks=current.prompt_claim_checks,
             )
             if on_stage is not None:
                 on_stage("prompt", done, prompt_total, current)
@@ -748,9 +875,43 @@ def run_staged_narration(
             chapter_run=current.chapter_run,
             summary=understanding.summary,
             prompt_understanding=understanding,
+            prompt_risk_flags=current.prompt_risk_flags,
+            prompt_claim_checks=current.prompt_claim_checks,
         )
         if on_stage is not None:
             on_stage("summary", len(understanding.prompts), prompt_total, current)
+        prompt_groups = list(reversed(_record_groups(exported)))[
+            :PROMPT_UNDERSTANDING_MAX_GROUPS
+        ]
+        checks: list[PromptClaimCheck] = []
+        for done, (prompt_id, records) in enumerate(prompt_groups, start=1):
+            if should_cancel is not None and should_cancel():
+                if on_stage is not None:
+                    on_stage("cancelled", done - 1, len(prompt_groups), current)
+                return current
+            checked = _check_prompt(
+                exported,
+                prompt_id,
+                records,
+                safe_backend,
+                model_config_id=model_config_id,
+                content_hash=content_hash,
+                cache=active_cache,
+            )
+            if checked is None:
+                continue
+            checks.append(checked)
+            current = build_narration_export(
+                exported,
+                steps=[],
+                chapter_run=current.chapter_run,
+                summary=current.summary,
+                prompt_understanding=current.prompt_understanding,
+                prompt_risk_flags=current.prompt_risk_flags,
+                prompt_claim_checks=checks.copy(),
+            )
+            if on_stage is not None:
+                on_stage("prompt-check", done, len(prompt_groups), current)
         for done, chapter in enumerate(reversed(current.baseline_chapters), start=1):
             if should_cancel is not None and should_cancel():
                 if on_stage is not None:
@@ -782,6 +943,8 @@ def run_staged_narration(
                 chapter_run=chapter_run,
                 summary=current.summary,
                 prompt_understanding=current.prompt_understanding,
+                prompt_risk_flags=current.prompt_risk_flags,
+                prompt_claim_checks=current.prompt_claim_checks,
             )
             if on_stage is not None:
                 on_stage("chapter", done, chapter_total, current)

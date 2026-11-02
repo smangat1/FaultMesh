@@ -219,6 +219,38 @@ export function validateReplayExport(
         });
       }
     }
+    if (
+      rawJson.prompt_risk_flags !== undefined
+      && (
+        !Array.isArray(rawJson.prompt_risk_flags)
+        || rawJson.prompt_risk_flags.some((flag) => (
+          !isPlainObject(flag)
+          || typeof flag.prompt_id !== 'string'
+          || typeof flag.kind !== 'string'
+          || typeof flag.label !== 'string'
+          || !Array.isArray(flag.files)
+          || flag.files.some((path) => typeof path !== 'string')
+          || flag.source !== 'deterministic rule'
+        ))
+      )
+    ) {
+      errors.push({ path: 'prompt_risk_flags', message: 'Prompt risk flags are malformed' });
+    }
+    if (
+      rawJson.prompt_claim_checks !== undefined
+      && (
+        !Array.isArray(rawJson.prompt_claim_checks)
+        || rawJson.prompt_claim_checks.some((check) => (
+          !isPlainObject(check)
+          || typeof check.prompt_id !== 'string'
+          || check.label !== 'Model interpretation + symbolic check'
+          || !isPlainObject(check.claims)
+          || !Array.isArray(check.claims.verdicts)
+        ))
+      )
+    ) {
+      errors.push({ path: 'prompt_claim_checks', message: 'Prompt claim checks are malformed' });
+    }
     if (Array.isArray(rawJson.narration)) {
       rawJson.narration.forEach((step, stepIndex) => {
         if (!isPlainObject(step)) return;

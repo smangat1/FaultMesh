@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import fnmatch
 import hashlib
 import json
 import os
@@ -19,6 +18,7 @@ from faultmesh.replay.models import (
     SkipReason,
     SnapshotManifest,
 )
+from faultmesh.replay.privacy import is_secret_like_path
 from faultmesh.structure.index import index_python_bytes
 
 IGNORED_DIRECTORIES = {
@@ -40,17 +40,6 @@ IGNORED_DIRECTORIES = {
     "target",
     "vendor",
 }
-SECRET_PATTERNS = (
-    ".env*",
-    "*.key",
-    "*.p12",
-    "*.pem",
-    "*credentials*",
-    "*secret*",
-    "*token*",
-    "id_ed25519*",
-    "id_rsa*",
-)
 SOURCE_EXTENSIONS = {
     ".c",
     ".cc",
@@ -76,11 +65,6 @@ class CapturedSnapshot:
 
 def root_identity(root: Path) -> str:
     return hashlib.sha256(os.fsencode(root.resolve(strict=True))).hexdigest()
-
-
-def _secret_like(name: str) -> bool:
-    lowered = name.lower()
-    return any(fnmatch.fnmatchcase(lowered, pattern) for pattern in SECRET_PATTERNS)
 
 
 def _read_stable(path: Path, max_bytes: int) -> tuple[bytes, int] | str:
@@ -159,7 +143,7 @@ def capture_snapshot(root: Path | str, limits: CaptureLimits | None = None) -> C
             if path.is_symlink():
                 skipped.append(SkippedPath(path=relative, reason=SkipReason.SYMLINK))
                 continue
-            if _secret_like(name):
+            if is_secret_like_path(name):
                 skipped.append(SkippedPath(path=relative, reason=SkipReason.SECRET_LIKE_NAME))
                 continue
             if path.suffix.lower() in SOURCE_EXTENSIONS:

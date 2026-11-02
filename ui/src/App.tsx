@@ -4,6 +4,7 @@ import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter, Rep
 import { validateReplayExport } from './replay/validators';
 import type {
   ChapterRunRecord,
+  PromptClaimCheck,
   PromptUnderstanding,
   ReplayChapter,
   SelectionSummary,
@@ -146,7 +147,11 @@ export const App: React.FC<AppProps> = ({
   const importedHistorySessionIdRef = useRef<string | null>(null);
   const selectedHistoryToolRef = useRef<string | null>(null);
   const [narrationRevision, setNarrationRevision] = useState(0);
-  const [narrationProgress, setNarrationProgress] = useState<{ done: number; total: number } | null>(null);
+  const [narrationProgress, setNarrationProgress] = useState<{
+    done: number;
+    total: number;
+    stage?: 'summarizing' | 'checking';
+  } | null>(null);
   const [narrationError, setNarrationError] = useState<string | null>(null);
   const [modelSetupOpen, setModelSetupOpen] = useState(false);
   const [modelSetupMessage, setModelSetupMessage] = useState('Choose a local model to upgrade the template narration.');
@@ -586,6 +591,7 @@ export const App: React.FC<AppProps> = ({
             setNarrationProgress({
               done: 0,
               total: current instanceof ReplayAdapter ? current.getPromptGroups().length : 0,
+              stage: 'summarizing',
             });
           } catch (error) {
             setNarrationError(error instanceof Error ? error.message : 'Local narration could not start.');
@@ -616,6 +622,7 @@ export const App: React.FC<AppProps> = ({
     setNarrationProgress({
       done: 0,
       total: current instanceof ReplayAdapter ? current.getPromptGroups().length : 0,
+      stage: 'summarizing',
     });
     try {
       if (rerun) await bridge.rerunNarration?.(sessionId, tool);
@@ -676,7 +683,7 @@ export const App: React.FC<AppProps> = ({
           replayAdapter.replaceNarratedExport(validation.data!);
           setNarrationRevision((value) => value + 1);
           const total = replayAdapter.getPromptGroups().length;
-          setNarrationProgress({ done: 0, total });
+          setNarrationProgress({ done: 0, total, stage: 'summarizing' });
         }
         return;
       }
@@ -699,7 +706,16 @@ export const App: React.FC<AppProps> = ({
           );
           setNarrationRevision((value) => value + 1);
         }
-        setNarrationProgress({ done: event.done, total: event.total });
+        setNarrationProgress({ done: event.done, total: event.total, stage: 'summarizing' });
+        return;
+      }
+      if (event.event === 'prompt-check') {
+        const replayAdapter = activeAdapterRef.current;
+        if (replayAdapter instanceof ReplayAdapter && event.prompt_check) {
+          replayAdapter.applyPromptClaimCheck(event.prompt_check as PromptClaimCheck);
+          setNarrationRevision((value) => value + 1);
+        }
+        setNarrationProgress({ done: event.done, total: event.total, stage: 'checking' });
         return;
       }
       if (event.event === 'summary') {
