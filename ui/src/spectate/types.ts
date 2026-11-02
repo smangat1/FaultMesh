@@ -181,6 +181,14 @@ export type NarrationEvent =
       chapter: unknown;
       chapter_run: unknown;
     }
+  | {
+      scope: 'narration';
+      event: 'prompt';
+      done: number;
+      total: number;
+      prompt: unknown;
+      prompt_understanding: unknown;
+    }
   | { scope: 'narration'; event: 'summary'; done: number; total: number; summary: unknown }
   | { scope: 'narration'; event: 'done'; export: unknown };
 

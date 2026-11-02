@@ -500,6 +500,14 @@ test('startNarration and rerunNarration use fixed argv and reject unsafe input',
   assert.deepEqual(value.spawns.at(-1)[1], ['replay-narrate-session', 'session-1', '--tool', 'codex']);
   const first = value.children.at(-1);
   first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'baseline', export: {} })}\n`));
+  first.stdout.emit('data', Buffer.from(`${JSON.stringify({
+    event: 'prompt',
+    done: 1,
+    total: 2,
+    prompt: {},
+    prompt_understanding: {},
+  })}\n`));
+  assert.equal(value.sent.at(-1)[1].event, 'prompt');
   first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'chapter', done: 1, total: 2, chapter: {}, chapter_run: {} })}\n`));
   assert.equal(value.sent.at(-1)[0], CHANNELS.narrationEvent);
   assert.equal(value.sent.at(-1)[1].event, 'chapter');

@@ -493,6 +493,22 @@ export interface SessionSummary {
   fallback_used: boolean;
 }
 
+export interface PromptInterpretation {
+  prompt_id: string;
+  start_sequence: number;
+  end_sequence: number;
+  text: string;
+  label: 'model interpretation';
+}
+
+export interface PromptUnderstanding {
+  summary: SessionSummary;
+  prompts: PromptInterpretation[];
+  total_prompts: number;
+  included_prompts: number;
+  truncated: boolean;
+}
+
 export interface SelectionSummary {
   schema_version: 'replay-selection-summary-1.0';
   start_sequence: number;
@@ -513,6 +529,7 @@ export type ReplayExportV2 = Omit<ReplayExportV1, 'schema_version'> & {
   chapters: ReplayChapter[];
   chapter_run: ChapterRunRecord;
   summary?: SessionSummary | null;
+  prompt_understanding?: PromptUnderstanding | null;
 };
 
 export type AnyReplayExport = ReplayExportV1 | ReplayExportV2;

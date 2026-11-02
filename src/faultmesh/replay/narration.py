@@ -234,6 +234,22 @@ class SessionSummary(StrictModel):
     fallback_used: bool
 
 
+class PromptInterpretation(StrictModel):
+    prompt_id: str
+    start_sequence: int = Field(ge=1)
+    end_sequence: int = Field(ge=1)
+    text: str = Field(min_length=1, max_length=500)
+    label: Literal["model interpretation"] = "model interpretation"
+
+
+class PromptUnderstanding(StrictModel):
+    summary: SessionSummary
+    prompts: list[PromptInterpretation] = Field(default_factory=list)
+    total_prompts: int = Field(ge=0)
+    included_prompts: int = Field(ge=0)
+    truncated: bool = False
+
+
 class ReplayNarrationExport(StrictModel):
     schema_version: Literal["replay-export-2.0"] = "replay-export-2.0"
     exported_at: datetime
@@ -250,6 +266,7 @@ class ReplayNarrationExport(StrictModel):
     chapters: list[ReplayChapter]
     chapter_run: ChapterRunRecord
     summary: SessionSummary | None = None
+    prompt_understanding: PromptUnderstanding | None = None
 
 
 class SelectionSummary(StrictModel):
@@ -337,6 +354,7 @@ def build_narration_export(
     steps: list[StepNarration],
     chapter_run: ChapterRunRecord,
     summary: SessionSummary | None = None,
+    prompt_understanding: PromptUnderstanding | None = None,
 ) -> ReplayNarrationExport:
     return ReplayNarrationExport(
         exported_at=exported.exported_at,
@@ -359,6 +377,7 @@ def build_narration_export(
         chapters=chapter_run.chapters,
         chapter_run=chapter_run,
         summary=summary,
+        prompt_understanding=prompt_understanding,
     )
 
 

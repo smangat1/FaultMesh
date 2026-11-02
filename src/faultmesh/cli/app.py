@@ -58,6 +58,7 @@ from faultmesh.replay.model_manager import (
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
     MODEL_PRESETS,
+    LocalNarrationWorker,
     ReplayNarrationExport,
     inventory_local_models,
     load_replay_document,
@@ -1027,9 +1028,20 @@ def replay_narrate_session(
             ) -> None:
                 if stage == "baseline":
                     return
-                if stage == "chapter":
+                if stage == "prompt":
+                    understanding = partial.prompt_understanding
+                    if understanding is None or not understanding.prompts:
+                        return
+                    payload = {
+                        "event": "prompt",
+                        "done": done,
+                        "total": total,
+                        "prompt": understanding.prompts[-1].model_dump(mode="json"),
+                        "prompt_understanding": understanding.model_dump(mode="json"),
+                    }
+                elif stage == "chapter":
                     chapter = partial.chapters[-done]
-                    payload: dict[str, object] = {
+                    payload = {
                         "event": "chapter",
                         "done": done,
                         "total": total,
@@ -1051,13 +1063,16 @@ def replay_narrate_session(
                     payload = {"event": stage, "done": done, "total": total}
                 typer.echo(json.dumps(payload, sort_keys=True))
 
-            narrated = run_staged_narration(
-                exported,
-                inference_backend,
-                preset,
-                on_stage=report,
-                cache=cache,
-            )
+            with LocalNarrationWorker[ReplayNarrationExport]() as worker:
+                narrated = worker.submit(
+                    lambda: run_staged_narration(
+                        exported,
+                        inference_backend,
+                        preset,
+                        on_stage=report,
+                        cache=cache,
+                    )
+                ).result()
             typer.echo(
                 json.dumps(
                     {"event": "done", "export": narrated.model_dump(mode="json")},

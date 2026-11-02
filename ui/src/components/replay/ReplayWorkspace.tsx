@@ -237,6 +237,11 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     return adapter.getNarration(currentSeq);
   }, [adapter, currentSeq, narrationRevision]);
 
+  const promptInterpretation = useMemo(() => {
+    if (isBaselineMode || !activePrompt) return null;
+    return adapter.getPromptInterpretation(activePrompt.id);
+  }, [activePrompt, adapter, isBaselineMode, narrationRevision]);
+
   const testsForCurrentSeq = useMemo(() => {
     return adapter.getTestsForSequence(currentSeq);
   }, [adapter, currentSeq]);
@@ -661,7 +666,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           </span>
           {narrationProgress && (
             <span className="replay-progress-label" data-testid="replay-narration-progress">
-              Titling chapters {narrationProgress.done}/{narrationProgress.total}
+              Summarizing prompts {narrationProgress.done}/{narrationProgress.total}
             </span>
           )}
           {plainMode && !narrationProgress && (
@@ -744,12 +749,12 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             <button
               type="button"
               className="replay-toolbar-icon"
-              title="Stop chapter titling"
-              aria-label="Stop chapter titling"
+              title="Stop prompt summaries"
+              aria-label="Stop prompt summaries"
               onClick={onCancelNarration}
             >
               <CircleStop size={16} />
-              <span className="sr-only">Stop titling</span>
+              <span className="sr-only">Stop summaries</span>
             </button>
           ) : importedSessionId && !modelSetupOpen && !plainMode ? (
             <button
@@ -945,6 +950,12 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
                   <summary>Full prompt</summary>
                   <pre>{activePrompt.promptText}</pre>
                 </details>
+              )}
+              {promptInterpretation && (
+                <div className="replay-prompt-interpretation" data-testid="replay-prompt-interpretation">
+                  <span>Model interpretation</span>
+                  <p>{promptInterpretation.text}</p>
+                </div>
               )}
               <div className="replay-prompt-card-meta">
                 <span>{activePrompt.changedFiles.length} {activePrompt.changedFiles.length === 1 ? 'file' : 'files'} changed</span>

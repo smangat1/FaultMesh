@@ -196,6 +196,29 @@ export function validateReplayExport(
         errors.push({ path: 'summary', message: 'Optional narration summary must contain 3 to 5 sentences' });
       }
     }
+    if (rawJson.prompt_understanding !== undefined && rawJson.prompt_understanding !== null) {
+      const understanding = rawJson.prompt_understanding;
+      if (
+        !isPlainObject(understanding)
+        || !Array.isArray(understanding.prompts)
+        || !Number.isSafeInteger(understanding.total_prompts)
+        || !Number.isSafeInteger(understanding.included_prompts)
+        || typeof understanding.truncated !== 'boolean'
+        || understanding.prompts.some((prompt) => (
+          !isPlainObject(prompt)
+          || typeof prompt.prompt_id !== 'string'
+          || typeof prompt.text !== 'string'
+          || prompt.label !== 'model interpretation'
+          || !Number.isSafeInteger(prompt.start_sequence)
+          || !Number.isSafeInteger(prompt.end_sequence)
+        ))
+      ) {
+        errors.push({
+          path: 'prompt_understanding',
+          message: 'Optional prompt understanding must contain labeled, bounded prompt lines',
+        });
+      }
+    }
     if (Array.isArray(rawJson.narration)) {
       rawJson.narration.forEach((step, stepIndex) => {
         if (!isPlainObject(step)) return;

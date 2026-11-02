@@ -976,6 +976,21 @@ function attachSpectateBridge({
           ) {
             sendNarrationEvent({ scope: 'narration', event: 'baseline', export: parsed.export });
           } else if (
+            parsed.event === 'prompt'
+            && Number.isSafeInteger(parsed.done)
+            && Number.isSafeInteger(parsed.total)
+            && isPlainObject(parsed.prompt)
+            && isPlainObject(parsed.prompt_understanding)
+          ) {
+            sendNarrationEvent({
+              scope: 'narration',
+              event: 'prompt',
+              done: parsed.done,
+              total: parsed.total,
+              prompt: parsed.prompt,
+              prompt_understanding: parsed.prompt_understanding,
+            });
+          } else if (
             parsed.event === 'chapter'
             && Number.isSafeInteger(parsed.done)
             && Number.isSafeInteger(parsed.total)

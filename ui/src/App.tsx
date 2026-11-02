@@ -4,6 +4,7 @@ import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter, Rep
 import { validateReplayExport } from './replay/validators';
 import type {
   ChapterRunRecord,
+  PromptUnderstanding,
   ReplayChapter,
   SelectionSummary,
   SessionSummary,
@@ -584,7 +585,7 @@ export const App: React.FC<AppProps> = ({
             const current = activeAdapterRef.current;
             setNarrationProgress({
               done: 0,
-              total: current instanceof ReplayAdapter ? current.getChapters().length : 0,
+              total: current instanceof ReplayAdapter ? current.getPromptGroups().length : 0,
             });
           } catch (error) {
             setNarrationError(error instanceof Error ? error.message : 'Local narration could not start.');
@@ -614,7 +615,7 @@ export const App: React.FC<AppProps> = ({
     const current = activeAdapterRef.current;
     setNarrationProgress({
       done: 0,
-      total: current instanceof ReplayAdapter ? current.getChapters().length : 0,
+      total: current instanceof ReplayAdapter ? current.getPromptGroups().length : 0,
     });
     try {
       if (rerun) await bridge.rerunNarration?.(sessionId, tool);
@@ -674,7 +675,7 @@ export const App: React.FC<AppProps> = ({
         if (validation.success && replayAdapter instanceof ReplayAdapter) {
           replayAdapter.replaceNarratedExport(validation.data!);
           setNarrationRevision((value) => value + 1);
-          const total = replayAdapter.getChapters().length;
+          const total = replayAdapter.getPromptGroups().length;
           setNarrationProgress({ done: 0, total });
         }
         return;
@@ -685,6 +686,16 @@ export const App: React.FC<AppProps> = ({
           replayAdapter.applyChapterUpdate(
             event.chapter as ReplayChapter,
             event.chapter_run as ChapterRunRecord,
+          );
+          setNarrationRevision((value) => value + 1);
+        }
+        return;
+      }
+      if (event.event === 'prompt') {
+        const replayAdapter = activeAdapterRef.current;
+        if (replayAdapter instanceof ReplayAdapter && event.prompt_understanding) {
+          replayAdapter.applyPromptUnderstanding(
+            event.prompt_understanding as PromptUnderstanding,
           );
           setNarrationRevision((value) => value + 1);
         }

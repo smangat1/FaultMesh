@@ -754,6 +754,28 @@
   border-radius: var(--radius-sm);
 }
 
+.replay-prompt-interpretation {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--replay-border-subtle);
+}
+
+.replay-prompt-interpretation span {
+  color: var(--replay-accent);
+  font-size: var(--type-xs);
+  font-weight: 600;
+}
+
+.replay-prompt-interpretation p {
+  margin: 0;
+  color: var(--replay-text-secondary);
+  font-size: var(--type-sm);
+  line-height: 1.45;
+}
+
 .replay-prompt-no-files {
   display: flex;
   flex: 1;

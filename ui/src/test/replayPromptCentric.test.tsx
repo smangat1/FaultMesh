@@ -18,6 +18,23 @@ function promptExport(): ReplayExportV2 {
   secondPrompt.prompt_text = 'Run the test suite';
   exported.records.find((record) => record.sequence === 6)!.prompt_id = 'prompt-two';
   exported.records.find((record) => record.sequence === 7)!.prompt_id = 'prompt-two';
+  exported.prompt_understanding = {
+    summary: {
+      sentences: ['Recorded prompts were reviewed.', 'Recorded changes remain evidence.', 'Unknowns remain unknown.'],
+      source: 'model',
+      fallback_used: false,
+    },
+    prompts: [{
+      prompt_id: 'prompt-one',
+      start_sequence: 2,
+      end_sequence: 4,
+      text: 'The recorded prompt asked for a calculator update while preserving its API.',
+      label: 'model interpretation',
+    }],
+    total_prompts: 2,
+    included_prompts: 2,
+    truncated: false,
+  };
   return exported;
 }
 
@@ -59,5 +76,24 @@ describe('prompt-centric replay navigation', () => {
       'No recorded file changes for this prompt'
     );
     expect(screen.queryByText('No files changed in this step')).toBeNull();
+  });
+
+  it('streams labeled model lines onto prompt cards and keeps baseline facts underneath', () => {
+    const adapter = new ReplayAdapter(promptExport(), 'synthetic_fixture');
+    render(<ReplayWorkspace adapter={adapter} defaultChaptersOpen={true} />);
+
+    fireEvent.click(screen.getByTestId('replay-next-btn'));
+    const interpretation = screen.getByTestId('replay-prompt-interpretation');
+    expect(interpretation.textContent).toContain('Model interpretation');
+    expect(interpretation.textContent).toContain('preserving its API');
+    expect(screen.getByTestId('replay-prompt-card').textContent).toContain(
+      'Grouped from recorded prompt evidence'
+    );
+
+    fireEvent.click(screen.getByTestId('replay-baseline-toggle'));
+    expect(screen.queryByTestId('replay-prompt-interpretation')).toBeNull();
+    expect(screen.getByTestId('replay-prompt-card').textContent).toContain(
+      'Grouped from recorded prompt evidence'
+    );
   });
 });

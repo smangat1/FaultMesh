@@ -19,6 +19,8 @@ import type {
   ChapterRunRecord,
   StepNarration,
   SessionSummary,
+  PromptInterpretation,
+  PromptUnderstanding,
   StructuredTestEvidence,
   AttributionStatus,
   Completeness,
@@ -42,12 +44,14 @@ export interface ReplayPromptGroup {
 export class ReplayAdapter implements FaultMeshAdapter {
   private exported: AnyReplayExport;
   private readonly origin: ReplayOrigin;
+  private baselineSummary: SessionSummary | null;
   private currentSequence: number;
   private useBaselineChapters: boolean = false;
 
   constructor(exported: AnyReplayExport, origin: ReplayOrigin = 'real_recording') {
     this.exported = exported;
     this.origin = origin;
+    this.baselineSummary = isReplayExportV2(exported) ? exported.summary || null : null;
     // Default current sequence to the first timeline entry if available
     this.currentSequence = exported.timeline.length > 0 ? exported.timeline[0].sequence : 1;
   }
@@ -85,8 +89,23 @@ export class ReplayAdapter implements FaultMeshAdapter {
     this.exported = { ...this.exported, summary };
   }
 
+  public applyPromptUnderstanding(understanding: PromptUnderstanding): void {
+    if (!isReplayExportV2(this.exported)) return;
+    this.exported = {
+      ...this.exported,
+      prompt_understanding: understanding,
+      summary: understanding.summary,
+    };
+  }
+
   public replaceNarratedExport(exported: AnyReplayExport): void {
     this.exported = exported;
+    if (
+      isReplayExportV2(exported)
+      && exported.summary?.source === 'deterministic_facts'
+    ) {
+      this.baselineSummary = exported.summary;
+    }
   }
 
   public getOrigin(): ReplayOrigin {
@@ -220,7 +239,15 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public getSessionSummary(): SessionSummary | null {
     if (!isReplayExportV2(this.exported)) return null;
+    if (this.useBaselineChapters) return this.baselineSummary;
     return this.exported.summary || null;
+  }
+
+  public getPromptInterpretation(promptId: string): PromptInterpretation | null {
+    if (!isReplayExportV2(this.exported)) return null;
+    return this.exported.prompt_understanding?.prompts.find(
+      (item) => item.prompt_id === promptId
+    ) || null;
   }
 
   public getStoredContent(sha256: string | null | undefined): string | null {
