@@ -34,7 +34,7 @@ from faultmesh.replay.models import (
 from faultmesh.replay.privacy import redact_value
 from faultmesh.structure.index import index_python_bytes
 
-STORE_SCHEMA_VERSION = 2
+STORE_SCHEMA_VERSION = 3
 
 
 class ReplayStoreError(RuntimeError):
@@ -108,25 +108,46 @@ class ReplayStore:
             "structures",
             "test_evidence",
             "ingestion_cursors",
+            "history_prompt_indexes",
         }
         if not tables:
             self._create_schema()
             return
         version_row = self.connection.execute("SELECT version FROM schema_metadata").fetchone()
-        old_expected = expected - {"test_evidence"}
-        if tables == old_expected and version_row is not None and int(version_row["version"]) == 1:
-            self._migrate_v1_to_v2()
+        version = int(version_row["version"]) if version_row is not None else None
+        phase_one_expected = expected - {"test_evidence", "history_prompt_indexes"}
+        phase_two_expected = expected - {"history_prompt_indexes"}
+        phase_one_layouts = {
+            frozenset(phase_one_expected),
+            frozenset(expected - {"test_evidence"}),
+        }
+        if frozenset(tables) in phase_one_layouts and version == 1:
+            self._migrate_v1_to_v3()
+            return
+        if tables == phase_two_expected and version == 2:
+            self._migrate_v2_to_v3()
             return
         if tables != expected:
             raise ReplayStoreError("replay store schema is unsupported; choose a fresh store root")
         if version_row is None or int(version_row["version"]) != STORE_SCHEMA_VERSION:
             raise ReplayStoreError("replay store version is unsupported; choose a fresh store root")
 
-    def _migrate_v1_to_v2(self) -> None:
+    def _migrate_v1_to_v3(self) -> None:
         try:
             self.connection.execute("BEGIN IMMEDIATE")
             self._create_test_evidence_table()
-            self.connection.execute("UPDATE schema_metadata SET version = 2")
+            self._create_history_prompt_indexes_table()
+            self.connection.execute("UPDATE schema_metadata SET version = 3")
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def _migrate_v2_to_v3(self) -> None:
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            self._create_history_prompt_indexes_table()
+            self.connection.execute("UPDATE schema_metadata SET version = 3")
             self.connection.commit()
         except Exception:
             self.connection.rollback()
@@ -138,6 +159,13 @@ class ReplayStore:
             "id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) "
             "ON DELETE CASCADE, observed_at TEXT NOT NULL, associated_manifest_id TEXT "
             "REFERENCES manifests(id), record_json TEXT NOT NULL)"
+        )
+
+    def _create_history_prompt_indexes_table(self) -> None:
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS history_prompt_indexes ("
+            "source_file_sha256 TEXT PRIMARY KEY, session_id TEXT NOT NULL, "
+            "cached_at TEXT NOT NULL, payload_json TEXT NOT NULL)"
         )
 
     def _create_schema(self) -> None:
@@ -191,6 +219,7 @@ class ReplayStore:
                 "PRIMARY KEY (session_id, source_name))"
             )
             self._create_test_evidence_table()
+            self._create_history_prompt_indexes_table()
             self.connection.execute(
                 "INSERT INTO schema_metadata VALUES (?)", (STORE_SCHEMA_VERSION,)
             )
@@ -219,6 +248,28 @@ class ReplayStore:
             "SELECT record_json FROM sessions ORDER BY created_at, id"
         ).fetchall()
         return [ReplaySession.model_validate_json(row["record_json"]) for row in rows]
+
+    def get_history_prompt_index(self, source_file_sha256: str) -> str | None:
+        row = self.connection.execute(
+            "SELECT payload_json FROM history_prompt_indexes WHERE source_file_sha256 = ?",
+            (source_file_sha256,),
+        ).fetchone()
+        return str(row["payload_json"]) if row is not None else None
+
+    def cache_history_prompt_index(
+        self,
+        source_file_sha256: str,
+        session_id: str,
+        payload_json: str,
+    ) -> None:
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO history_prompt_indexes VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(source_file_sha256) DO UPDATE SET "
+                "session_id = excluded.session_id, cached_at = excluded.cached_at, "
+                "payload_json = excluded.payload_json",
+                (source_file_sha256, session_id, _now().isoformat(), payload_json),
+            )
 
     def create_session(
         self,

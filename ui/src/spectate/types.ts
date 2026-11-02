@@ -124,6 +124,60 @@ export interface HistorySession {
   parent_dir?: string | null;
 }
 
+export interface HistoryPromptSummary {
+  prompt_id: string;
+  first_line: string | null;
+  start_sequence: number;
+  end_sequence: number;
+  changed_files: string[];
+  changed_file_count: number;
+  started_at: string;
+  ended_at: string;
+  test_observation: 'passed' | 'failed' | 'not_observed';
+  grouping: 'prompt_turn' | 'recorded_events';
+}
+
+export interface HistoryPromptIndex {
+  schema_version: 'history-prompt-index-1.0';
+  session_id: string;
+  source_file_sha256: string;
+  prompts: HistoryPromptSummary[];
+  cached: boolean;
+}
+
+export type HistorySearchField = 'session_title' | 'prompt_text' | 'changed_file';
+
+export interface HistorySearchPrompt {
+  prompt_id: string;
+  first_line: string | null;
+  start_sequence: number;
+  end_sequence: number;
+  changed_files: string[];
+  changed_file_count: number;
+  started_at: string;
+  ended_at: string;
+  matched_in: HistorySearchField[];
+}
+
+export interface HistorySearchSession {
+  session_id: string;
+  tool: 'codex' | 'claude_code';
+  source: 'history' | 'replay_store';
+  title: string;
+  project_display_name: string;
+  started_at: string;
+  ended_at: string;
+  prompts: HistorySearchPrompt[];
+}
+
+export interface HistorySearchResult {
+  schema_version: 'history-search-1.0';
+  query: string;
+  sessions: HistorySearchSession[];
+  match_count: number;
+  indexed_session_count: number;
+}
+
 export interface HistoryListPayload {
   roots: HistoryRoot[];
   sessions: HistorySession[];
@@ -133,6 +187,30 @@ export interface HistoryImportPayload {
   name: string;
   text: string;
   size: number;
+}
+
+export interface RevertPlanAction {
+  sequence: number;
+  path: string;
+  action: 'delete_file' | 'restore_file' | 'apply_reverse_diff' | 'manual_review';
+  instruction: string;
+  provenance:
+    | 'recorded_patch'
+    | 'reconstructed_from_current_checkout_unverified'
+    | 'unknown';
+  provenance_label: string;
+  reverse_diff: string | null;
+  restore_text: string | null;
+}
+
+export interface RevertPlan {
+  schema_version: 'replay-revert-plan-1.0';
+  session_id: string;
+  start_sequence: number;
+  end_sequence: number;
+  actions: RevertPlanAction[];
+  truncated: boolean;
+  text: string;
 }
 
 export interface ReplayModelStatus {
@@ -160,6 +238,21 @@ export type NarrationEvent =
       chapter: unknown;
       chapter_run: unknown;
     }
+  | {
+      scope: 'narration';
+      event: 'prompt';
+      done: number;
+      total: number;
+      prompt: unknown;
+      prompt_understanding: unknown;
+    }
+  | {
+      scope: 'narration';
+      event: 'prompt-check';
+      done: number;
+      total: number;
+      prompt_check: unknown;
+    }
   | { scope: 'narration'; event: 'summary'; done: number; total: number; summary: unknown }
   | { scope: 'narration'; event: 'done'; export: unknown };
 
@@ -170,8 +263,25 @@ export interface SpectateBridge {
   onSpectateEvent(callback: (event: SpectateEvent) => void): () => void;
   openRecording?(): Promise<HistoryImportPayload | null>;
   listHistory?(): Promise<HistoryListPayload>;
-  importSession?(sessionId: string, tool: string): Promise<HistoryImportPayload>;
+  listPrompts?(sessionId: string, tool: string): Promise<HistoryPromptIndex>;
+  searchHistory?(query: string): Promise<HistorySearchResult>;
+  importSession?(
+    sessionId: string,
+    tool: string,
+    source?: 'history' | 'replay_store',
+  ): Promise<HistoryImportPayload>;
   linkSessionProject?(sessionId: string, projectHandle: string): Promise<{ linked: true; displayName: string }>;
+  openSessionFile?(
+    sessionId: string,
+    relativePath: string,
+  ): Promise<{ opened: true; method: 'code' | 'finder' }>;
+  revertPlan?(
+    sessionId: string,
+    tool: string,
+    start: number,
+    end: number,
+    source?: 'history' | 'replay_store',
+  ): Promise<RevertPlan>;
   modelStatus?(): Promise<ReplayModelStatus>;
   downloadModel?(modelId: string): Promise<{ started: boolean; reason?: string }>;
   chooseModel?(): Promise<{ selected: true; modelFilename: string } | null>;

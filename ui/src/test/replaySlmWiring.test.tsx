@@ -92,11 +92,17 @@ describe('replay local narration wiring', () => {
       JSON.stringify({ home: true, entrance: true, replay: true, replayHistory: true })
     );
     const adapter = historyAdapter();
+    const cancel = vi.fn();
     const view = render(
-      <ReplayWorkspace adapter={adapter} narrationProgress={{ done: 3, total: 8 }} />
+      <ReplayWorkspace
+        adapter={adapter}
+        narrationProgress={{ done: 3, total: 8 }}
+        onCancelNarration={cancel}
+      />
     );
-    expect(screen.getByTestId('replay-narration-progress').textContent).toBe('Titling chapters 3/8');
-    expect(screen.getByText('Stop titling')).toBeDefined();
+    expect(screen.getByTestId('replay-narration-progress').textContent).toBe('Summarizing prompts 3/8');
+    fireEvent.click(screen.getByLabelText('Stop prompt summaries'));
+    expect(cancel).toHaveBeenCalledTimes(1);
     view.rerender(<ReplayWorkspace adapter={adapter} narrationProgress={null} />);
     expect(screen.queryByTestId('replay-narration-progress')).toBeNull();
   });
@@ -168,6 +174,7 @@ describe('replay local narration wiring', () => {
         onExplainStep={explain}
       />
     );
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
     fireEvent.click(screen.getByTestId(`replay-checkpoint-row-${source.timeline[0].sequence}`));
     expect(screen.getByTestId('replay-step-deterministic-note').textContent).toContain('No recorded changes');
     expect(explain).not.toHaveBeenCalled();
@@ -200,6 +207,7 @@ describe('replay local narration wiring', () => {
       />
     );
 
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
     fireEvent.click(screen.getByTestId('replay-checkpoint-row-3'));
     fireEvent.click(screen.getByTestId('replay-checkpoint-row-6'));
     expect(explain).toHaveBeenCalledTimes(1);

@@ -135,7 +135,7 @@ function fakeChild() {
   return child;
 }
 
-function harness() {
+function harness(options = {}) {
   const ipcMain = new FakeIpcMain();
   const sent = [];
   const webContents = {
@@ -166,6 +166,8 @@ function harness() {
     },
     terminationGraceMs: 10,
     projectLinksPath: path.join(root, 'replay-project-links.json'),
+    findExecutable: options.findExecutable || (() => '/fixed/code'),
+    platform: options.platform || 'darwin',
   });
   return { ipcMain, sent, root, window, event, children, spawns, bridge };
 }
@@ -187,8 +189,12 @@ test('IPC keeps paths in main and spawns fixed command arguments', async (contex
       CHANNELS.stop,
       CHANNELS.openRecording,
       CHANNELS.listHistory,
+      CHANNELS.listPrompts,
+      CHANNELS.searchHistory,
       CHANNELS.importSession,
       CHANNELS.linkSessionProject,
+      CHANNELS.openSessionFile,
+      CHANNELS.revertPlan,
       CHANNELS.modelStatus,
       CHANNELS.downloadModel,
       CHANNELS.chooseModel,
@@ -229,6 +235,103 @@ test('session project links persist in main without returning a local path', asy
 
   const stored = JSON.parse(fs.readFileSync(path.join(value.root, 'replay-project-links.json'), 'utf8'));
   assert.equal(stored['session-1'].root, fs.realpathSync(value.root));
+});
+
+test('openSessionFile resolves a linked relative file and launches a fixed editor command', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const choose = value.ipcMain.handlers.get(CHANNELS.choose);
+  const link = value.ipcMain.handlers.get(CHANNELS.linkSessionProject);
+  const openFile = value.ipcMain.handlers.get(CHANNELS.openSessionFile);
+  const selected = await choose(value.event);
+  await link(value.event, 'session-1', selected.handle);
+  const sourceDir = path.join(value.root, 'src');
+  const sourcePath = path.join(sourceDir, 'app.py');
+  fs.mkdirSync(sourceDir);
+  fs.writeFileSync(sourcePath, 'print("synthetic")\n');
+
+  await assert.rejects(
+    () => openFile(value.event, 'session-1', '../outside.py'),
+    /file path leaves the linked project folder/,
+  );
+  await assert.rejects(
+    () => openFile(value.event, 'unlinked-session', 'src/app.py'),
+    /does not have a linked project folder/,
+  );
+
+  const pending = openFile(value.event, 'session-1', 'src/app.py');
+  const child = value.children.at(-1);
+  assert.equal(value.spawns.at(-1)[0], '/fixed/code');
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    '--reuse-window',
+    '--goto',
+    fs.realpathSync(sourcePath),
+  ]);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  child.emit('spawn');
+  assert.deepEqual(await pending, { opened: true, method: 'code' });
+});
+
+test('revertPlan uses fixed argv, linked project context, and returns bounded typed text', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const choose = value.ipcMain.handlers.get(CHANNELS.choose);
+  const link = value.ipcMain.handlers.get(CHANNELS.linkSessionProject);
+  const revertPlan = value.ipcMain.handlers.get(CHANNELS.revertPlan);
+  const selected = await choose(value.event);
+  await link(value.event, 'session-1', selected.handle);
+
+  await assert.rejects(
+    () => revertPlan(value.event, 'session-1', 'codex', 5, 2, 'history'),
+    /invalid revert-plan sequence range/,
+  );
+
+  const pending = revertPlan(value.event, 'session-1', 'codex', 2, 5, 'history');
+  assert.deepEqual(value.spawns.at(-1)[1], [
+    'replay-revert-plan',
+    'session-1',
+    '--tool',
+    'codex',
+    '--start',
+    '2',
+    '--end',
+    '5',
+    '--source',
+    'history',
+    '--project-root',
+    fs.realpathSync(value.root),
+  ]);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  const child = value.children.at(-1);
+  child.stdout.emit('data', Buffer.from(JSON.stringify({
+    schema_version: 'replay-revert-plan-1.0',
+    session_id: 'session-1',
+    start_sequence: 2,
+    end_sequence: 5,
+    actions: [{
+      sequence: 5,
+      path: 'src/app.py',
+      action: 'apply_reverse_diff',
+      instruction: 'Review and apply the reverse diff.',
+      provenance: 'recorded_patch',
+      provenance_label: 'recorded patch',
+      reverse_diff: 'synthetic diff',
+      restore_text: null,
+    }],
+    truncated: false,
+    text: 'Read-only synthetic plan.\n',
+  })));
+  child.emit('close', 0, null);
+  const result = await pending;
+  assert.equal(result.text, 'Read-only synthetic plan.\n');
+  assert.equal(result.actions[0].provenance, 'recorded_patch');
+  assert.equal('project_root' in result, false);
 });
 
 test('IPC rejects renderer paths, wrong frames, and unknown channels', async (context) => {
@@ -343,6 +446,105 @@ test('listHistory spawns replay-history-list with fixed argv, no paths, and boun
   assert.equal(result.sessions[0].first_prompt_preview, 'Fix [redacted: secret] bug');
   assert.equal('source_file' in result.sessions[0], false);
   assert.equal('root_path' in result.roots[0], false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(value.spawns.at(-1)[1], ['replay-history-search-refresh']);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+});
+
+test('listPrompts validates input and lazily spawns the fixed aggregate command', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const listPrompts = value.ipcMain.handlers.get(CHANNELS.listPrompts);
+  assert.ok(listPrompts);
+  await assert.rejects(() => listPrompts(value.event, '../unsafe', 'codex'), /invalid or unsafe/);
+
+  const promise = listPrompts(value.event, 'session-one', 'codex');
+  assert.deepEqual(
+    value.spawns.at(-1)[1],
+    ['replay-history-prompts', 'session-one', '--tool', 'codex'],
+  );
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  const child = value.children.at(-1);
+  child.stdout.emit('data', Buffer.from(JSON.stringify({
+    schema_version: 'history-prompt-index-1.0',
+    session_id: 'session-one',
+    source_file_sha256: 'a'.repeat(64),
+    cached: false,
+    prompts: [{
+      prompt_id: 'prompt-one',
+      first_line: 'Change [redacted: token]',
+      start_sequence: 2,
+      end_sequence: 4,
+      changed_files: ['src/app.py'],
+      changed_file_count: 1,
+      started_at: '2026-11-01T10:00:00Z',
+      ended_at: '2026-11-01T10:01:00Z',
+      test_observation: 'passed',
+      grouping: 'prompt_turn',
+    }],
+  })));
+  child.emit('close', 0, null);
+
+  const result = await promise;
+  assert.equal(result.prompts.length, 1);
+  assert.equal(result.prompts[0].first_line, 'Change [redacted: token]');
+  assert.deepEqual(result.prompts[0].changed_files, ['src/app.py']);
+});
+
+test('searchHistory validates input and returns bounded grouped prompt matches', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  const searchHistory = value.ipcMain.handlers.get(CHANNELS.searchHistory);
+  assert.ok(searchHistory);
+  await assert.rejects(() => searchHistory(value.event, ''), /invalid history search query/);
+  await assert.rejects(() => searchHistory(value.event, 'a', 'b'), /exactly one/);
+
+  const promise = searchHistory(value.event, 'auth');
+  assert.deepEqual(value.spawns.at(-1)[1], ['replay-history-search', 'auth']);
+  assert.equal(value.spawns.at(-1)[2].shell, false);
+  const child = value.children.at(-1);
+  child.stdout.emit('data', Buffer.from(JSON.stringify({
+    schema_version: 'history-search-1.0',
+    query: 'auth',
+    match_count: 1,
+    indexed_session_count: 4,
+    sessions: [{
+      session_id: 'session-one',
+      tool: 'codex',
+      source: 'history',
+      title: 'Authentication repair',
+      project_display_name: 'web-app',
+      started_at: '2026-11-01T10:00:00Z',
+      ended_at: '2026-11-01T10:05:00Z',
+      prompts: [{
+        prompt_id: 'prompt-one',
+        first_line: 'Repair auth middleware',
+        start_sequence: 2,
+        end_sequence: 5,
+        changed_files: ['src/auth.ts'],
+        changed_file_count: 1,
+        started_at: '2026-11-01T10:00:00Z',
+        ended_at: '2026-11-01T10:05:00Z',
+        matched_in: ['session_title', 'prompt_text', 'changed_file', 'unsafe'],
+      }],
+    }],
+  })));
+  child.emit('close', 0, null);
+
+  const result = await promise;
+  assert.equal(result.match_count, 1);
+  assert.equal(result.sessions[0].title, 'Authentication repair');
+  assert.deepEqual(result.sessions[0].prompts[0].matched_in, [
+    'session_title',
+    'prompt_text',
+    'changed_file',
+  ]);
 });
 
 test('importSession validates inputs, spawns fixed argv, cleans up temp file, and returns export text without paths', async (context) => {
@@ -355,10 +557,14 @@ test('importSession validates inputs, spawns fixed argv, cleans up temp file, an
   assert.ok(importSession);
 
   // Input validation tests: bad tools, path traversal, bad frame
-  await assert.rejects(() => importSession(value.event), /requires exactly/);
+  await assert.rejects(() => importSession(value.event), /requires \(sessionId, tool/);
   await assert.rejects(() => importSession(value.event, 'sess-1', 'unsupported_tool'), /unsupported or invalid tool/);
   await assert.rejects(() => importSession(value.event, '../traversal', 'codex'), /invalid or unsafe sessionId/);
   await assert.rejects(() => importSession(value.event, '/absolute/path', 'codex'), /invalid or unsafe sessionId/);
+  await assert.rejects(
+    () => importSession(value.event, 'sess-1', 'codex', 'unknown'),
+    /unsupported import source/,
+  );
 
   // Successful import test
   let tempOutFile = null;
@@ -396,6 +602,16 @@ test('importSession validates inputs, spawns fixed argv, cleans up temp file, an
 
   // Verify temp file was cleaned up
   assert.equal(fs.existsSync(tempOutFile), false);
+
+  const storedPromise = importSession(value.event, 'stored-session', 'codex', 'replay_store');
+  const storedSpawn = value.spawns.at(-1);
+  assert.deepEqual(storedSpawn[1].slice(0, 3), ['replay-export', 'stored-session', '--out']);
+  const storedOut = storedSpawn[1][3];
+  fs.writeFileSync(storedOut, JSON.stringify(mockExport), 'utf8');
+  value.children.at(-1).emit('close', 0, null);
+  const stored = await storedPromise;
+  assert.equal(stored.name, 'stored-session.json');
+  assert.equal(fs.existsSync(storedOut), false);
 });
 
 test('modelStatus uses fixed argv and rejects renderer arguments', async (context) => {
@@ -456,6 +672,21 @@ test('startNarration and rerunNarration use fixed argv and reject unsafe input',
   assert.deepEqual(value.spawns.at(-1)[1], ['replay-narrate-session', 'session-1', '--tool', 'codex']);
   const first = value.children.at(-1);
   first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'baseline', export: {} })}\n`));
+  first.stdout.emit('data', Buffer.from(`${JSON.stringify({
+    event: 'prompt',
+    done: 1,
+    total: 2,
+    prompt: {},
+    prompt_understanding: {},
+  })}\n`));
+  assert.equal(value.sent.at(-1)[1].event, 'prompt');
+  first.stdout.emit('data', Buffer.from(`${JSON.stringify({
+    event: 'prompt-check',
+    done: 1,
+    total: 2,
+    prompt_check: {},
+  })}\n`));
+  assert.equal(value.sent.at(-1)[1].event, 'prompt-check');
   first.stdout.emit('data', Buffer.from(`${JSON.stringify({ event: 'chapter', done: 1, total: 2, chapter: {}, chapter_run: {} })}\n`));
   assert.equal(value.sent.at(-1)[0], CHANNELS.narrationEvent);
   assert.equal(value.sent.at(-1)[1].event, 'chapter');

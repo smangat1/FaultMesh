@@ -15,6 +15,27 @@ function installHistoryBridge(customPayload?: Partial<HistoryListPayload>) {
   };
 
   const listHistory = vi.fn().mockResolvedValue(payload);
+  const listPrompts = vi.fn().mockImplementation((sessionId: string) => {
+    const session = payload.sessions.find((item) => item.session_id === sessionId);
+    return Promise.resolve({
+      schema_version: 'history-prompt-index-1.0' as const,
+      session_id: sessionId,
+      source_file_sha256: session?.source_file_sha256 || 'a'.repeat(64),
+      cached: false,
+      prompts: [{
+        prompt_id: `prompt:${sessionId}:1`,
+        first_line: session?.first_prompt_preview,
+        start_sequence: 2,
+        end_sequence: 3,
+        changed_files: ['src/example.py'],
+        changed_file_count: 1,
+        started_at: session?.started_at || '',
+        ended_at: session?.ended_at || '',
+        test_observation: 'not_observed' as const,
+        grouping: 'prompt_turn' as const,
+      }],
+    });
+  });
   const importSession = vi.fn().mockImplementation((sessionId: string, tool: string) => {
     return Promise.resolve({
       name: `${sessionId}.json`,
@@ -30,11 +51,18 @@ function installHistoryBridge(customPayload?: Partial<HistoryListPayload>) {
     onSpectateEvent: vi.fn(() => () => {}),
     openRecording: vi.fn(),
     listHistory,
+    listPrompts,
     importSession,
   };
 
   window.faultmeshSpectate = bridge;
-  return { bridge, listHistory, importSession, payload };
+  return { bridge, listHistory, listPrompts, importSession, payload };
+}
+
+async function openFirstPrompt(sessionId: string) {
+  fireEvent.click(screen.getByTestId(`session-row-${sessionId}`));
+  const prompt = await screen.findByTestId(`prompt-row-${sessionId}-0`);
+  fireEvent.click(prompt);
 }
 
 async function openTool(tool: 'codex' | 'claude_code' = 'codex') {
@@ -306,6 +334,28 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     expect(screen.queryByTestId('folder-sessions-codex:group-auth')).toBeNull();
   });
 
+  it('groups sessions into local date folders and lazily loads prompts on expansion', async () => {
+    const harness = installHistoryBridge();
+    render(<App />);
+
+    await openTool('codex');
+    expect(harness.listPrompts).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId(/date-folder-codex:group-auth-/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
+    await waitFor(() => {
+      expect(harness.listPrompts).toHaveBeenCalledWith('codex-sess-1', 'codex');
+      expect(screen.getByTestId('prompt-row-codex-sess-1-0')).toBeDefined();
+    });
+    const prompt = screen.getByTestId('prompt-row-codex-sess-1-0');
+    expect(prompt.textContent).toContain('Fix token expiration bug [redacted: jwt secret]');
+    expect(prompt.textContent).toContain('1 file changed');
+
+    fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
+    fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
+    expect(harness.listPrompts).toHaveBeenCalledTimes(1);
+  });
+
   it('imports session on click, opens replay workspace, and preserves home state when navigating back', async () => {
     const harness = installHistoryBridge();
     render(<App />);
@@ -317,7 +367,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     });
 
     // Click session to import
-    fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
+    await openFirstPrompt('codex-sess-1');
 
     await waitFor(() => {
       expect(harness.importSession).toHaveBeenCalledWith('codex-sess-1', 'codex');
@@ -345,7 +395,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     render(<App />);
 
     await openTool('codex');
-    fireEvent.click(await screen.findByTestId('session-row-codex-sess-1'));
+    await openFirstPrompt('codex-sess-1');
 
     await waitFor(() => {
       expect(screen.getByTestId('replay-workspace')).toBeDefined();
@@ -370,7 +420,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
       expect(screen.getByTestId('session-row-codex-sess-1')).toBeDefined();
     });
 
-    fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
+    await openFirstPrompt('codex-sess-1');
 
     await waitFor(() => {
       expect(screen.getByTestId('session-import-error-codex-sess-1')).toBeDefined();
@@ -584,7 +634,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
       expect(title?.textContent).toBe('Archived catalog thread without rollout file');
 
       // Row is selectable/clickable
-      fireEvent.click(missingRow);
+      await openFirstPrompt('codex-sess-missing-rollout');
       await waitFor(() => {
         expect(harness.importSession).toHaveBeenCalledWith('codex-sess-missing-rollout', 'codex');
       });

@@ -217,7 +217,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
           >
             <strong style={{ display: 'block', marginBottom: '4px' }}>Selection summary</strong>
             {selectionLoading && 'Checking the selected steps…'}
-            {selectionError && <span style={{ color: 'var(--replay-status-warning, #946c32)' }}>{selectionError}</span>}
+            {selectionError && <span style={{ color: 'var(--replay-accent)' }}>{selectionError}</span>}
             {selectionSummary && (
               <>
                 <div>{selectionSummary.text}</div>
@@ -332,7 +332,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                                         isValidQuote
                                           ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))'
                                           : 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
-                                      color: isValidQuote ? 'var(--replay-status-complete, #4a7bb0)' : 'var(--replay-status-warning, #946c32)',
+                                      color: isValidQuote ? 'var(--replay-status-complete, #4a7bb0)' : 'var(--replay-accent)',
                                       border:
                                         isValidQuote
                                           ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))'
@@ -461,7 +461,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                             ? 'var(--replay-status-complete, #4a7bb0)'
                             : isContradicted
                             ? 'var(--replay-status-danger, #9c4444)'
-                            : 'var(--replay-status-warning, #946c32)',
+                            : 'var(--replay-accent)',
                         }}
                         data-testid={`replay-claim-verdict-${verdict?.verdict || 'unknown'}`}
                       >
@@ -625,7 +625,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                           padding: '1px 6px',
                           borderRadius: 'var(--replay-radius-control, 7px)',
                           backgroundColor: isMatched ? 'var(--replay-status-complete-bg, rgba(74, 123, 176, 0.12))' : 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
-                          color: isMatched ? 'var(--replay-status-complete, #4a7bb0)' : 'var(--replay-status-warning, #946c32)',
+                          color: isMatched ? 'var(--replay-status-complete, #4a7bb0)' : 'var(--replay-accent)',
                           border: isMatched ? '1px solid var(--replay-status-complete-border, rgba(74, 123, 176, 0.30))' : '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                         }}
                         data-testid="replay-state-match-badge"
@@ -651,7 +651,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                       >
                         <span style={{ color: 'var(--replay-status-complete, #4a7bb0)' }}>passed: {testItem.counts.passed ?? 0}</span>
                         <span style={{ color: 'var(--replay-status-danger, #9c4444)' }}>failed: {testItem.counts.failed ?? 0}</span>
-                        <span style={{ color: 'var(--replay-status-warning, #946c32)' }}>errors: {testItem.counts.errors ?? 0}</span>
+                        <span style={{ color: 'var(--replay-accent)' }}>errors: {testItem.counts.errors ?? 0}</span>
                         <span style={{ color: 'var(--replay-text-faint, #4d576a)' }}>skipped: {testItem.counts.skipped ?? 0}</span>
                       </div>
                     )}
@@ -828,7 +828,7 @@ export const ReplayEvidenceInspector: React.FC<ReplayEvidenceInspectorProps> = (
                   backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
                   border: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                   fontSize: '11px',
-                  color: 'var(--replay-status-warning, #946c32)',
+                  color: 'var(--replay-accent)',
                 }}
                 data-testid="replay-eval-status-box"
               >

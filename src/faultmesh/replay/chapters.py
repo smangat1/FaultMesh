@@ -76,20 +76,21 @@ def baseline_chapters(
     ChapterSource = Literal["deterministic_prompt_turn", "deterministic_fixed_group"]
     groups: list[tuple[list[ReplayRecord], ChapterSource]] = []
     current: list[ReplayRecord] = []
-    current_turn: str | None = None
+    current_prompt: str | None = None
     current_source: Literal["deterministic_prompt_turn", "deterministic_fixed_group"] = (
         "deterministic_fixed_group"
     )
     for record in records:
         source: Literal["deterministic_prompt_turn", "deterministic_fixed_group"] = (
             "deterministic_prompt_turn"
-            if record.turn_id is not None
+            if record.prompt_id is not None or record.turn_id is not None
             else "deterministic_fixed_group"
         )
+        prompt_key = record.prompt_id or record.turn_id
         same_turn = (
             source == "deterministic_prompt_turn"
             and current_source == source
-            and current_turn == record.turn_id
+            and current_prompt == prompt_key
         )
         same_fixed_chunk = (
             source == "deterministic_fixed_group"
@@ -100,7 +101,7 @@ def baseline_chapters(
             groups.append((current, current_source))
             current = []
         if not current:
-            current_turn = record.turn_id
+            current_prompt = prompt_key
             current_source = source
         current.append(record)
     if current:
@@ -110,7 +111,7 @@ def baseline_chapters(
         start = group[0].sequence
         end = group[-1].sequence
         title = (
-            f"Prompt turn {group[0].turn_id}"
+            f"Prompt turn {group[0].prompt_id or group[0].turn_id}"
             if source == "deterministic_prompt_turn"
             else f"Recorded events {start}-{end}"
         )

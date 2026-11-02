@@ -94,12 +94,20 @@ class ChapterBackend:
             sequence = prompt.split(marker, 1)[1].split(",", 1)[0]
             value = {"title": f"Model chapter {sequence}"}
         elif "sentences" in properties:
+            prompt_ids = [
+                part.split('"', 1)[0]
+                for part in prompt.split('"prompt_id":"')[1:]
+            ]
             value = {
                 "sentences": [
                     "Recorded work is grouped into chapters.",
                     "Checked verdict counts are reported separately.",
                     "Unknown evidence remains unknown.",
-                ]
+                ],
+                "prompts": [
+                    {"prompt_id": prompt_id, "text": f"Recorded work for {prompt_id}."}
+                    for prompt_id in prompt_ids
+                ],
             }
         elif "text" in properties:
             value = {"text": "The recorded facts describe this requested scope."}
@@ -157,13 +165,19 @@ def test_chapter_titles_run_newest_first_with_tight_caps(tmp_path: Path) -> None
         int(prompt.split('"start_sequence":', 1)[1].split(",", 1)[0])
         for prompt in title_prompts
     ] == [3, 2, 1]
-    assert backend.limits == [60, 60, 60, 400]
+    assert backend.limits == [1800, 900, 900, 900, 60, 60, 60]
     assert stages == [
         ("baseline", 0, 3),
+        ("prompt", 1, 3),
+        ("prompt", 2, 3),
+        ("prompt", 3, 3),
+        ("summary", 3, 3),
+        ("prompt-check", 1, 3),
+        ("prompt-check", 2, 3),
+        ("prompt-check", 3, 3),
         ("chapter", 1, 3),
         ("chapter", 2, 3),
         ("chapter", 3, 3),
-        ("summary", 3, 3),
     ]
     assert all(chapter.title_status == "model interpretation" for chapter in result.chapters)
 
@@ -195,16 +209,19 @@ def test_cancel_mid_titling_returns_valid_partial_state(tmp_path: Path) -> None:
         result = run_staged_narration(
             exported,
             backend,
-            should_cancel=lambda: bool(backend.prompts),
+            should_cancel=lambda: sum(
+                prompt.startswith("Write one concise chapter title")
+                for prompt in backend.prompts
+            ) >= 1,
             cache=cache,
         )
-    assert len(backend.prompts) == 1
+    assert len(backend.prompts) == 5
     assert [chapter.title_status for chapter in result.chapters] == [
         "deterministic template",
         "deterministic template",
         "model interpretation",
     ]
-    assert result.summary is not None and result.summary.source == "deterministic_facts"
+    assert result.summary is not None and result.summary.source == "model"
 
 
 def test_step_explanation_is_redacted_cached_and_trivial_steps_skip_model(

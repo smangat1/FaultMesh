@@ -196,6 +196,61 @@ export function validateReplayExport(
         errors.push({ path: 'summary', message: 'Optional narration summary must contain 3 to 5 sentences' });
       }
     }
+    if (rawJson.prompt_understanding !== undefined && rawJson.prompt_understanding !== null) {
+      const understanding = rawJson.prompt_understanding;
+      if (
+        !isPlainObject(understanding)
+        || !Array.isArray(understanding.prompts)
+        || !Number.isSafeInteger(understanding.total_prompts)
+        || !Number.isSafeInteger(understanding.included_prompts)
+        || typeof understanding.truncated !== 'boolean'
+        || understanding.prompts.some((prompt) => (
+          !isPlainObject(prompt)
+          || typeof prompt.prompt_id !== 'string'
+          || typeof prompt.text !== 'string'
+          || prompt.label !== 'model interpretation'
+          || !Number.isSafeInteger(prompt.start_sequence)
+          || !Number.isSafeInteger(prompt.end_sequence)
+        ))
+      ) {
+        errors.push({
+          path: 'prompt_understanding',
+          message: 'Optional prompt understanding must contain labeled, bounded prompt lines',
+        });
+      }
+    }
+    if (
+      rawJson.prompt_risk_flags !== undefined
+      && (
+        !Array.isArray(rawJson.prompt_risk_flags)
+        || rawJson.prompt_risk_flags.some((flag) => (
+          !isPlainObject(flag)
+          || typeof flag.prompt_id !== 'string'
+          || typeof flag.kind !== 'string'
+          || typeof flag.label !== 'string'
+          || !Array.isArray(flag.files)
+          || flag.files.some((path) => typeof path !== 'string')
+          || flag.source !== 'deterministic rule'
+        ))
+      )
+    ) {
+      errors.push({ path: 'prompt_risk_flags', message: 'Prompt risk flags are malformed' });
+    }
+    if (
+      rawJson.prompt_claim_checks !== undefined
+      && (
+        !Array.isArray(rawJson.prompt_claim_checks)
+        || rawJson.prompt_claim_checks.some((check) => (
+          !isPlainObject(check)
+          || typeof check.prompt_id !== 'string'
+          || check.label !== 'Model interpretation + symbolic check'
+          || !isPlainObject(check.claims)
+          || !Array.isArray(check.claims.verdicts)
+        ))
+      )
+    ) {
+      errors.push({ path: 'prompt_claim_checks', message: 'Prompt claim checks are malformed' });
+    }
     if (Array.isArray(rawJson.narration)) {
       rawJson.narration.forEach((step, stepIndex) => {
         if (!isPlainObject(step)) return;

@@ -22,6 +22,7 @@ interface ReplayTimelineProps {
   onRangeSelect?: (sequence: number, extend: boolean) => void;
   onSummarizeSelection?: () => void;
   selectionLoading?: boolean;
+  promptMode?: boolean;
 }
 
 export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
@@ -40,6 +41,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
   onRangeSelect,
   onSummarizeSelection,
   selectionLoading = false,
+  promptMode = false,
 }) => {
   const activeChapter = chapters.find((c) => c.id === selectedChapterId) || null;
 
@@ -55,7 +57,8 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
         height: '100%',
         backgroundColor: 'var(--replay-bg-surface-1, #0d111a)',
         borderRight: '1px solid var(--replay-border-subtle, rgba(255, 255, 255, 0.06))',
-        width: '320px',
+        width: '100%',
+        minWidth: 0,
         flexShrink: 0,
         overflow: 'hidden',
         color: 'var(--replay-text-primary, #e6edf8)',
@@ -76,10 +79,17 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--replay-text-muted, #8b97ad)' }}>
-            Steps
+            {promptMode ? 'Prompt stops' : 'Steps'}
           </span>
           <span style={{ fontSize: '10px', color: 'var(--replay-text-faint, #4d576a)', fontFamily: 'var(--font-mono, monospace)' }}>
-            {timeline.length} step{timeline.length !== 1 ? 's' : ''}
+            {timeline.length}{' '}
+            {promptMode
+              ? timeline.length === 1
+                ? 'stop'
+                : 'stops'
+              : timeline.length === 1
+                ? 'step'
+                : 'steps'}
           </span>
         </div>
 
@@ -399,7 +409,7 @@ export const ReplayTimeline: React.FC<ReplayTimelineProps> = ({
                       padding: '0 4px',
                       borderRadius: 'var(--replay-radius-control, 7px)',
                       backgroundColor: 'var(--replay-status-warning-bg, rgba(148, 108, 50, 0.12))',
-                      color: 'var(--replay-status-warning, #946c32)',
+                      color: 'var(--replay-accent)',
                       border: '1px solid var(--replay-status-warning-border, rgba(148, 108, 50, 0.30))',
                     }}
                     title={entry.gap_reason || 'Incomplete recording data'}

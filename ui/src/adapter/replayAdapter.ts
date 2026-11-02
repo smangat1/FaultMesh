@@ -19,6 +19,10 @@ import type {
   ChapterRunRecord,
   StepNarration,
   SessionSummary,
+  PromptInterpretation,
+  PromptClaimCheck,
+  PromptRiskFlag,
+  PromptUnderstanding,
   StructuredTestEvidence,
   AttributionStatus,
   Completeness,
@@ -28,15 +32,28 @@ import type {
 import { isReplayExportV2 } from '../replay/types';
 import { decodeBase64ToUtf8 } from '../replay/utils';
 
+export interface ReplayPromptGroup {
+  id: string;
+  promptText: string | null;
+  startSequence: number;
+  endSequence: number;
+  grouping: 'prompt_turn' | 'recorded_events';
+  fileChangingSequences: number[];
+  changedFiles: string[];
+  testEvidence: StructuredTestEvidence[];
+}
+
 export class ReplayAdapter implements FaultMeshAdapter {
   private exported: AnyReplayExport;
   private readonly origin: ReplayOrigin;
+  private baselineSummary: SessionSummary | null;
   private currentSequence: number;
   private useBaselineChapters: boolean = false;
 
   constructor(exported: AnyReplayExport, origin: ReplayOrigin = 'real_recording') {
     this.exported = exported;
     this.origin = origin;
+    this.baselineSummary = isReplayExportV2(exported) ? exported.summary || null : null;
     // Default current sequence to the first timeline entry if available
     this.currentSequence = exported.timeline.length > 0 ? exported.timeline[0].sequence : 1;
   }
@@ -74,8 +91,135 @@ export class ReplayAdapter implements FaultMeshAdapter {
     this.exported = { ...this.exported, summary };
   }
 
+  public applyPromptUnderstanding(understanding: PromptUnderstanding): void {
+    if (!isReplayExportV2(this.exported)) return;
+    this.exported = {
+      ...this.exported,
+      prompt_understanding: understanding,
+      summary: understanding.summary,
+    };
+  }
+
+  public applyPromptClaimCheck(check: PromptClaimCheck): void {
+    if (!isReplayExportV2(this.exported)) return;
+    const promptClaimChecks = (this.exported.prompt_claim_checks || []).filter(
+      (item) => item.prompt_id !== check.prompt_id
+    );
+    promptClaimChecks.push(check);
+    this.exported = { ...this.exported, prompt_claim_checks: promptClaimChecks };
+  }
+
   public replaceNarratedExport(exported: AnyReplayExport): void {
+    const currentMax = Math.max(0, ...this.exported.timeline.map((entry) => entry.sequence));
+    const incomingMax = Math.max(0, ...exported.timeline.map((entry) => entry.sequence));
+    if (
+      incomingMax < currentMax
+      && isReplayExportV2(this.exported)
+      && isReplayExportV2(exported)
+    ) {
+      const chapters = this.mergeChapterTitles(this.exported.chapters, exported.chapters);
+      this.exported = {
+        ...this.exported,
+        narration: exported.narration,
+        chapters,
+        chapter_run: { ...exported.chapter_run, chapters },
+        prompt_understanding: this.mergePromptUnderstanding(
+          this.exported,
+          exported.prompt_understanding,
+        ),
+        prompt_claim_checks: this.mergePromptClaimChecks(
+          this.exported.prompt_claim_checks || [],
+          exported.prompt_claim_checks || [],
+        ),
+      };
+      return;
+    }
     this.exported = exported;
+    if (
+      isReplayExportV2(exported)
+      && exported.summary?.source === 'deterministic_facts'
+    ) {
+      this.baselineSummary = exported.summary;
+    }
+  }
+
+  public withHistoryUpdate(exported: AnyReplayExport): ReplayAdapter {
+    let merged = exported;
+    if (isReplayExportV2(this.exported) && isReplayExportV2(exported)) {
+      const narration = new Map(exported.narration.map((item) => [item.sequence, item]));
+      for (const item of this.exported.narration) narration.set(item.sequence, item);
+      const chapters = this.mergeChapterTitles(exported.chapters, this.exported.chapters);
+      merged = {
+        ...exported,
+        narration: [...narration.values()].sort((left, right) => left.sequence - right.sequence),
+        chapters,
+        chapter_run: { ...exported.chapter_run, chapters },
+        prompt_understanding: this.mergePromptUnderstanding(
+          exported,
+          this.exported.prompt_understanding,
+        ),
+        prompt_claim_checks: this.mergePromptClaimChecks(
+          exported.prompt_claim_checks || [],
+          this.exported.prompt_claim_checks || [],
+        ),
+      };
+    }
+    const next = new ReplayAdapter(merged, this.origin);
+    next.setCurrentSequence(this.currentSequence);
+    next.setUseBaselineChapters(this.useBaselineChapters);
+    return next;
+  }
+
+  private mergeChapterTitles(
+    core: ReplayChapter[],
+    titled: ReplayChapter[],
+  ): ReplayChapter[] {
+    const titles = new Map(titled.map((chapter) => [chapter.id, chapter]));
+    return core.map((chapter) => {
+      const existing = titles.get(chapter.id);
+      if (!existing || existing.title_status !== 'model interpretation') return chapter;
+      return {
+        ...chapter,
+        title: existing.title,
+        title_status: existing.title_status,
+        source: existing.source,
+      };
+    });
+  }
+
+  private mergePromptUnderstanding(
+    core: AnyReplayExport,
+    existing: PromptUnderstanding | null | undefined,
+  ): PromptUnderstanding | null | undefined {
+    if (!existing) {
+      return isReplayExportV2(core) ? core.prompt_understanding : undefined;
+    }
+    const promptIds = new Set(
+      core.records
+        .map((record) => record.prompt_id)
+        .filter((promptId): promptId is string => Boolean(promptId))
+    );
+    const groupedIds = new Set(
+      core.records
+        .map((record) => record.prompt_id || record.turn_id)
+        .filter((groupId): groupId is string => Boolean(groupId))
+    );
+    const prompts = existing.prompts.filter((prompt) => promptIds.has(prompt.prompt_id));
+    return {
+      ...existing,
+      prompts,
+      total_prompts: Math.max(existing.total_prompts, groupedIds.size),
+      included_prompts: prompts.length,
+    };
+  }
+
+  private mergePromptClaimChecks(
+    core: PromptClaimCheck[],
+    existing: PromptClaimCheck[],
+  ): PromptClaimCheck[] {
+    const checks = new Map(core.map((check) => [check.prompt_id, check]));
+    for (const check of existing) checks.set(check.prompt_id, check);
+    return [...checks.values()].sort((left, right) => left.start_sequence - right.start_sequence);
   }
 
   public getOrigin(): ReplayOrigin {
@@ -103,6 +247,54 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public getTimeline(): TimelineEntry[] {
     return this.exported.timeline;
+  }
+
+  public getPromptGroups(fixedGroupSize: number = 20): ReplayPromptGroup[] {
+    const records = [...this.exported.records].sort((left, right) => left.sequence - right.sequence);
+    if (records.length === 0) return [];
+    const recordGroups: Array<{ records: ReplayRecord[]; grouping: ReplayPromptGroup['grouping'] }> = [];
+    let current: ReplayRecord[] = [];
+    let currentKey: string | null = null;
+    let currentGrouping: ReplayPromptGroup['grouping'] = 'recorded_events';
+    for (const record of records) {
+      const key = record.prompt_id || record.turn_id || null;
+      const grouping: ReplayPromptGroup['grouping'] = key ? 'prompt_turn' : 'recorded_events';
+      const samePrompt = grouping === 'prompt_turn' && currentGrouping === grouping && currentKey === key;
+      const sameFallback = grouping === 'recorded_events'
+        && currentGrouping === grouping
+        && current.length < fixedGroupSize;
+      if (current.length > 0 && !samePrompt && !sameFallback) {
+        recordGroups.push({ records: current, grouping: currentGrouping });
+        current = [];
+      }
+      if (current.length === 0) {
+        currentKey = key;
+        currentGrouping = grouping;
+      }
+      current.push(record);
+    }
+    if (current.length > 0) recordGroups.push({ records: current, grouping: currentGrouping });
+
+    return recordGroups.map(({ records: groupRecords, grouping }, index) => {
+      const startSequence = groupRecords[0].sequence;
+      const endSequence = groupRecords[groupRecords.length - 1].sequence;
+      const entries = this.exported.timeline.filter(
+        (entry) => entry.sequence >= startSequence && entry.sequence <= endSequence
+      );
+      const nativeId = groupRecords.find((record) => record.prompt_id || record.turn_id);
+      return {
+        id: nativeId?.prompt_id || nativeId?.turn_id || `recorded-events-${index + 1}`,
+        promptText: groupRecords.find((record) => record.prompt_text)?.prompt_text || null,
+        startSequence,
+        endSequence,
+        grouping,
+        fileChangingSequences: entries
+          .filter((entry) => entry.changed_files.length > 0)
+          .map((entry) => entry.sequence),
+        changedFiles: Array.from(new Set(entries.flatMap((entry) => entry.changed_files.map((file) => file.path)))).sort(),
+        testEvidence: entries.flatMap((entry) => entry.test_evidence),
+      };
+    });
   }
 
   public getManifests(): SnapshotManifest[] {
@@ -161,7 +353,29 @@ export class ReplayAdapter implements FaultMeshAdapter {
 
   public getSessionSummary(): SessionSummary | null {
     if (!isReplayExportV2(this.exported)) return null;
+    if (this.useBaselineChapters) return this.baselineSummary;
     return this.exported.summary || null;
+  }
+
+  public getPromptInterpretation(promptId: string): PromptInterpretation | null {
+    if (!isReplayExportV2(this.exported)) return null;
+    return this.exported.prompt_understanding?.prompts.find(
+      (item) => item.prompt_id === promptId
+    ) || null;
+  }
+
+  public getPromptRiskFlags(promptId: string): PromptRiskFlag[] {
+    if (!isReplayExportV2(this.exported)) return [];
+    return (this.exported.prompt_risk_flags || []).filter(
+      (item) => item.prompt_id === promptId
+    );
+  }
+
+  public getPromptClaimCheck(promptId: string): PromptClaimCheck | null {
+    if (!isReplayExportV2(this.exported)) return null;
+    return (this.exported.prompt_claim_checks || []).find(
+      (item) => item.prompt_id === promptId
+    ) || null;
   }
 
   public getStoredContent(sha256: string | null | undefined): string | null {

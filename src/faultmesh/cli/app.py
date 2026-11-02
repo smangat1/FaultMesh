@@ -44,6 +44,8 @@ from faultmesh.replay.history_discovery import (
     discover_history,
 )
 from faultmesh.replay.history_import import import_history_session
+from faultmesh.replay.history_prompts import list_history_prompts
+from faultmesh.replay.history_search import refresh_history_search_index, search_history
 from faultmesh.replay.ingest import ingest_jsonl
 from faultmesh.replay.llama_server import LlamaServer
 from faultmesh.replay.model_manager import (
@@ -57,6 +59,7 @@ from faultmesh.replay.model_manager import (
 from faultmesh.replay.models import CaptureEnvelope, ReplayExport
 from faultmesh.replay.narration import (
     MODEL_PRESETS,
+    LocalNarrationWorker,
     ReplayNarrationExport,
     inventory_local_models,
     load_replay_document,
@@ -70,6 +73,7 @@ from faultmesh.replay.narration_runner import (
     session_content_hash,
     summarize_selection_on_demand,
 )
+from faultmesh.replay.revert_plan import build_revert_plan
 from faultmesh.replay.store import ReplayStore, default_replay_root
 from faultmesh.replay.thread_history_import import thread_history_smoke_summary
 from faultmesh.replay.views import (
@@ -523,6 +527,104 @@ def replay_history_list(
         )
     except Exception as exc:
         typer.secho(f"FaultMesh history discovery failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("replay-history-prompts")
+def replay_history_prompts(
+    session_id: Annotated[str, typer.Argument(help="Session id returned by replay-history-list.")],
+    tool: Annotated[
+        str | None, typer.Option(help="Optional codex or claude_code disambiguator.")
+    ] = None,
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """List redacted prompt aggregates for one session without reconstruction or model work."""
+    if tool not in {None, "codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    try:
+        result = list_history_prompts(
+            session_id,
+            tool=cast(HistoryTool, tool) if tool is not None else None,
+            store_root=store,
+        )
+    except Exception as exc:
+        typer.secho(f"FaultMesh prompt listing failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(
+        result.model_dump_json(
+            indent=2,
+            exclude={"prompts": {"__all__": {"search_text"}}},
+        )
+    )
+
+
+@app.command("replay-history-search")
+def replay_history_search(
+    query: Annotated[str, typer.Argument(help="Local prompt, title, or changed-file query.")],
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Search redacted cached history metadata without reconstruction or model work."""
+    try:
+        result = search_history(query, store_root=store)
+    except Exception as exc:
+        typer.secho(f"FaultMesh history search failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("replay-history-search-refresh")
+def replay_history_search_refresh(
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+) -> None:
+    """Refresh the local prompt search cache after history discovery."""
+    try:
+        result = refresh_history_search_index(store_root=store)
+    except Exception as exc:
+        typer.secho(
+            f"FaultMesh history search refresh failed: {exc}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+    typer.echo(result.model_dump_json(indent=2))
+
+
+@app.command("replay-revert-plan")
+def replay_revert_plan(
+    session_id: Annotated[str, typer.Argument(help="Recorded or stored replay session id.")],
+    start: Annotated[int, typer.Option(min=1, help="First recorded step in the prompt.")],
+    end: Annotated[int, typer.Option(min=1, help="Last recorded step in the prompt.")],
+    tool: Annotated[str, typer.Option(help="codex or claude_code.")] = "codex",
+    source: Annotated[str, typer.Option(help="history or replay_store.")] = "history",
+    store: Annotated[Path | None, typer.Option(help="Local replay store root.")] = None,
+    project_root: Annotated[
+        Path | None,
+        typer.Option(
+            file_okay=False,
+            resolve_path=True,
+            help="Optional linked checkout used read-only for unverified reconstruction.",
+        ),
+    ] = None,
+) -> None:
+    """Generate a text-only reverse plan; never write files or run commands."""
+    if tool not in {"codex", "claude_code"}:
+        raise typer.BadParameter("tool must be codex or claude_code")
+    if source not in {"history", "replay_store"}:
+        raise typer.BadParameter("source must be history or replay_store")
+    try:
+        if source == "replay_store":
+            with ReplayStore(_replay_store_path(store)) as replay_store:
+                exported = export_session(replay_store, session_id)
+        else:
+            exported = import_history_session(
+                session_id,
+                tool=cast(HistoryTool, tool),
+                project_root=project_root,
+            )
+        result = build_revert_plan(exported, start, end)
+    except Exception as exc:
+        typer.secho(f"FaultMesh revert plan failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(result.model_dump_json(indent=2))
 
@@ -1003,9 +1105,31 @@ def replay_narrate_session(
             ) -> None:
                 if stage == "baseline":
                     return
-                if stage == "chapter":
+                if stage == "prompt":
+                    understanding = partial.prompt_understanding
+                    if understanding is None or not understanding.prompts:
+                        return
+                    payload = {
+                        "event": "prompt",
+                        "done": done,
+                        "total": total,
+                        "prompt": understanding.prompts[-1].model_dump(mode="json"),
+                        "prompt_understanding": understanding.model_dump(mode="json"),
+                    }
+                elif stage == "prompt-check":
+                    if not partial.prompt_claim_checks:
+                        return
+                    payload = {
+                        "event": "prompt-check",
+                        "done": done,
+                        "total": total,
+                        "prompt_check": partial.prompt_claim_checks[-1].model_dump(
+                            mode="json"
+                        ),
+                    }
+                elif stage == "chapter":
                     chapter = partial.chapters[-done]
-                    payload: dict[str, object] = {
+                    payload = {
                         "event": "chapter",
                         "done": done,
                         "total": total,
@@ -1027,13 +1151,16 @@ def replay_narrate_session(
                     payload = {"event": stage, "done": done, "total": total}
                 typer.echo(json.dumps(payload, sort_keys=True))
 
-            narrated = run_staged_narration(
-                exported,
-                inference_backend,
-                preset,
-                on_stage=report,
-                cache=cache,
-            )
+            with LocalNarrationWorker[ReplayNarrationExport]() as worker:
+                narrated = worker.submit(
+                    lambda: run_staged_narration(
+                        exported,
+                        inference_backend,
+                        preset,
+                        on_stage=report,
+                        cache=cache,
+                    )
+                ).result()
             typer.echo(
                 json.dumps(
                     {"event": "done", "export": narrated.model_dump(mode="json")},

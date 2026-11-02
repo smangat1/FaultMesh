@@ -15,8 +15,15 @@ import {
   FileText,
   Layers,
   Info,
+  Search,
+  X,
 } from 'lucide-react';
-import type { HistoryRoot, HistorySession } from '../spectate/types';
+import type {
+  HistoryPromptSummary,
+  HistoryRoot,
+  HistorySearchResult,
+  HistorySession,
+} from '../spectate/types';
 import type { RunSummary } from '../types';
 import { FirstUseTipOverlay, SCREEN_DEFAULT_STEPS } from './FirstUseTipOverlay';
 import { isScreenTipSeen } from '../utils/firstUseTipsStorage';
@@ -35,7 +42,12 @@ export interface AutodetectHomeScreenProps {
   activeRun?: RunSummary | null;
   onReturnToWorkspace?: () => void;
   onOpenRecording?: () => void;
-  onImportSession?: (sessionId: string, tool: string) => Promise<void>;
+  onImportSession?: (
+    sessionId: string,
+    tool: string,
+    focusSequence?: number,
+    source?: 'history' | 'replay_store',
+  ) => Promise<void>;
   cachedRoots?: HistoryRoot[] | null;
   cachedSessions?: HistorySession[] | null;
   onCacheHistory?: (roots: HistoryRoot[], sessions: HistorySession[]) => void;
@@ -71,6 +83,40 @@ export function formatToolDisplayName(tool: string): string {
   if (tool === 'codex') return 'Codex';
   if (tool === 'claude_code') return 'Claude Code';
   return tool.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export interface DatedHistorySessions {
+  key: string;
+  label: string;
+  sessions: HistorySession[];
+}
+
+export function groupSessionsByLocalDate(
+  sessions: HistorySession[],
+  now: Date = new Date(),
+): DatedHistorySessions[] {
+  const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  const todayKey = dayKey(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const yesterdayKey = dayKey(yesterday);
+  const groups = new Map<string, DatedHistorySessions>();
+  for (const session of sessions) {
+    const parsed = new Date(session.started_at || session.ended_at);
+    const valid = !Number.isNaN(parsed.getTime());
+    const key = valid ? dayKey(parsed) : 'unknown-date';
+    const label = !valid
+      ? 'Date unavailable'
+      : key === todayKey
+      ? 'Today'
+      : key === yesterdayKey
+      ? 'Yesterday'
+      : parsed.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const group = groups.get(key) || { key, label, sessions: [] };
+    group.sessions.push(session);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values());
 }
 
 export function sanitizeParentDirectory(parent?: string | null): string | null {
@@ -180,8 +226,18 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
   const [copied, setCopied] = useState<boolean>(false);
   const [showHiddenByTool, setShowHiddenByTool] = useState<Record<string, boolean>>({});
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
+  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(() => new Set());
+  const [promptsBySession, setPromptsBySession] = useState<Record<string, HistoryPromptSummary[]>>({});
+  const [promptLoadingIds, setPromptLoadingIds] = useState<Set<string>>(() => new Set());
+  const [promptErrors, setPromptErrors] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<HistorySearchResult | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchRequestRef = useRef(0);
 
   const isMacDesktop =
     typeof navigator !== 'undefined' &&
@@ -235,12 +291,66 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
     }
   }, [cachedRoots, hasHistoryBridge, fetchHistory]);
 
-  const handleSessionClick = async (sessionId: string, tool: string) => {
+  useEffect(() => {
+    const onSearchShortcut = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof Element
+        && target.matches('input, textarea, [contenteditable="true"]')
+      ) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener('keydown', onSearchShortcut);
+    return () => window.removeEventListener('keydown', onSearchShortcut);
+  }, []);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+    if (!query) {
+      setSearchResult(null);
+      setSearchError(null);
+      setSearchLoading(false);
+      return undefined;
+    }
+    const bridge = window.faultmeshSpectate;
+    if (!bridge?.searchHistory) {
+      setSearchResult(null);
+      setSearchLoading(false);
+      setSearchError('Local history search is available in the desktop app.');
+      return undefined;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
+    const timer = window.setTimeout(() => {
+      void bridge.searchHistory!(query).then((result) => {
+        if (searchRequestRef.current !== requestId) return;
+        setSearchResult(result);
+        setSearchLoading(false);
+      }).catch((error: unknown) => {
+        if (searchRequestRef.current !== requestId) return;
+        setSearchResult(null);
+        setSearchError(error instanceof Error ? error.message : String(error));
+        setSearchLoading(false);
+      });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handlePromptClick = async (
+    sessionId: string,
+    tool: string,
+    focusSequence?: number,
+    source: 'history' | 'replay_store' = 'history',
+  ) => {
     if (importingSessionId || !onImportSession) return;
     setImportingSessionId(sessionId);
     setImportError(null);
     try {
-      await onImportSession(sessionId, tool);
+      await onImportSession(sessionId, tool, focusSequence, source);
     } catch (err) {
       setImportError({
         sessionId,
@@ -248,6 +358,57 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
       });
     } finally {
       setImportingSessionId(null);
+    }
+  };
+
+  const toggleSession = async (session: HistorySession) => {
+    const isExpanded = expandedSessionIds.has(session.session_id);
+    setExpandedSessionIds((current) => {
+      const next = new Set(current);
+      if (isExpanded) next.delete(session.session_id);
+      else next.add(session.session_id);
+      return next;
+    });
+    if (isExpanded || promptsBySession[session.session_id]) return;
+    const bridge = window.faultmeshSpectate;
+    if (!bridge?.listPrompts) {
+      setPromptsBySession((current) => ({
+        ...current,
+        [session.session_id]: [{
+          prompt_id: `fallback:${session.session_id}`,
+          first_line: session.first_prompt_preview,
+          start_sequence: 1,
+          end_sequence: 1,
+          changed_files: [],
+          changed_file_count: 0,
+          started_at: session.started_at,
+          ended_at: session.ended_at,
+          test_observation: 'not_observed',
+          grouping: 'recorded_events',
+        }],
+      }));
+      return;
+    }
+    setPromptLoadingIds((current) => new Set(current).add(session.session_id));
+    setPromptErrors((current) => {
+      const next = { ...current };
+      delete next[session.session_id];
+      return next;
+    });
+    try {
+      const result = await bridge.listPrompts(session.session_id, session.tool);
+      setPromptsBySession((current) => ({ ...current, [session.session_id]: result.prompts }));
+    } catch (error) {
+      setPromptErrors((current) => ({
+        ...current,
+        [session.session_id]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setPromptLoadingIds((current) => {
+        const next = new Set(current);
+        next.delete(session.session_id);
+        return next;
+      });
     }
   };
 
@@ -479,6 +640,38 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
           </div>
         </div>
 
+        <div className="history-search-shell" data-testid="history-search-shell">
+          <Search size={16} aria-hidden="true" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            inputMode="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search prompts, session titles, and changed files"
+            aria-label="Search recorded sessions"
+            data-testid="history-search-input"
+            maxLength={200}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchLoading && <RefreshCw size={14} className="animate-spin" aria-label="Searching" />}
+          {searchQuery && !searchLoading && (
+            <button
+              type="button"
+              className="history-search-clear"
+              aria-label="Clear history search"
+              onClick={() => {
+                setSearchQuery('');
+                searchInputRef.current?.focus();
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+          <kbd aria-hidden="true">/</kbd>
+        </div>
+
         {/* Discovery Error */}
         {discoveryError && (
           <div
@@ -514,7 +707,95 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
         )}
 
         {/* Body Content */}
-        {!hasHistoryBridge ? (
+        {searchQuery.trim() ? (
+          <section className="history-search-results" data-testid="history-search-results">
+            <header>
+              <div>
+                <h2>Search results</h2>
+                <p>
+                  {searchLoading
+                    ? 'Searching the local prompt index…'
+                    : `${searchResult?.match_count ?? 0} matching ${(searchResult?.match_count ?? 0) === 1 ? 'prompt' : 'prompts'}`}
+                </p>
+              </div>
+              {searchResult && (
+                <span>{searchResult.indexed_session_count} indexed sessions</span>
+              )}
+            </header>
+            {searchError && (
+              <div className="history-search-state is-error" role="alert">
+                Search unavailable: {searchError}
+              </div>
+            )}
+            {searchLoading && !searchResult && (
+              <div className="history-search-state" role="status">
+                <RefreshCw size={16} className="animate-spin" />
+                Searching recorded sessions…
+              </div>
+            )}
+            {!searchLoading && !searchError && searchResult?.sessions.length === 0 && (
+              <div className="history-search-empty" data-testid="history-search-empty">
+                <Search size={22} aria-hidden="true" />
+                <strong>No matching prompts</strong>
+                <span>
+                  Try a session title, a file name, or a phrase from a prompt. Newly discovered
+                  sessions are indexed quietly in the background.
+                </span>
+              </div>
+            )}
+            {!searchError && searchResult?.sessions.map((session) => (
+              <article
+                key={`${session.tool}:${session.session_id}`}
+                className="history-search-session"
+                data-testid={`history-search-session-${session.session_id}`}
+              >
+                <div className="history-search-session-heading">
+                  <div>
+                    <strong>{session.title}</strong>
+                    <span>{formatToolDisplayName(session.tool)} · {session.project_display_name}</span>
+                  </div>
+                  <time dateTime={session.ended_at}>{formatRelativeTime(session.ended_at)}</time>
+                </div>
+                <div className="history-search-prompts">
+                  {session.prompts.map((prompt) => {
+                    const matchedPaths = prompt.matched_in.includes('changed_file')
+                      ? prompt.changed_files.filter((path) => (
+                        path.toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase())
+                      ))
+                      : prompt.changed_files;
+                    return (
+                      <button
+                        type="button"
+                        key={`${prompt.prompt_id}:${prompt.start_sequence}`}
+                        className="history-search-prompt"
+                        data-testid={`history-search-prompt-${session.session_id}-${prompt.start_sequence}`}
+                        disabled={importingSessionId !== null}
+                        onClick={() => void handlePromptClick(
+                          session.session_id,
+                          session.tool,
+                          prompt.start_sequence,
+                          session.source,
+                        )}
+                      >
+                        <span className="history-search-prompt-copy">
+                          <strong>{prompt.first_line || 'Prompt preview unavailable'}</strong>
+                          <span>
+                            {matchedPaths.length > 0
+                              ? matchedPaths.slice(0, 3).join(' · ')
+                              : prompt.changed_file_count === 0
+                              ? 'No recorded file changes'
+                              : `${prompt.changed_file_count} ${prompt.changed_file_count === 1 ? 'file' : 'files'} changed`}
+                          </span>
+                        </span>
+                        <ArrowRight size={15} aria-hidden="true" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            ))}
+          </section>
+        ) : !hasHistoryBridge ? (
           /* Empty State: No Desktop Bridge */
           <div
             data-testid="autodetect-no-bridge-empty-state"
@@ -688,7 +969,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                         fontSize: '11.5px',
                         fontWeight: 600,
                         backgroundColor: '#202738',
-                        color: '#38bdf8',
+                        color: 'var(--accent)',
                         padding: '2px 8px',
                         borderRadius: '10px',
                       }}
@@ -783,9 +1064,9 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                   <ChevronRight size={14} color="#94a3b8" />
                                 )}
                                 {isExpanded ? (
-                                  <FolderOpen size={15} color="#38bdf8" />
+                                  <FolderOpen size={15} color="var(--accent)" />
                                 ) : (
-                                  <Folder size={15} color="#38bdf8" />
+                                  <Folder size={15} color="var(--accent)" />
                                 )}
                                 <span
                                   data-testid="project-folder-name"
@@ -843,217 +1124,131 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                   gap: '4px',
                                 }}
                               >
-                                {proj.sessions.map((sess) => {
-                                  const isImporting = importingSessionId === sess.session_id;
-                                  const hasError = importError?.sessionId === sess.session_id;
-                                  const hasSourceTitle = Boolean(sess.source_title && sess.source_title.trim());
-                                  const primaryTitle = hasSourceTitle ? sess.source_title! : (sess.first_prompt_preview || 'Untitled session');
-
-                                  return (
-                                    <div
-                                      key={sess.session_id}
-                                      style={{ display: 'flex', flexDirection: 'column' }}
-                                    >
-                                      <div
-                                        data-testid={`session-row-${sess.session_id}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => handleSessionClick(sess.session_id, sess.tool)}
-                                        onMouseEnter={() => setHoveredSessionId(sess.session_id)}
-                                        onMouseLeave={() => setHoveredSessionId(null)}
-                                        onFocus={() => setHoveredSessionId(sess.session_id)}
-                                        onBlur={() => setHoveredSessionId(null)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleSessionClick(sess.session_id, sess.tool);
-                                          }
-                                        }}
-                                        style={{
-                                          display: 'flex',
-                                          flexDirection: 'column',
-                                          gap: '4px',
-                                          padding: '8px 10px',
-                                          borderRadius: '4px',
-                                          backgroundColor: isImporting
-                                            ? '#1e2838'
-                                            : hoveredSessionId === sess.session_id
-                                            ? '#1a2233'
-                                            : '#141822',
-                                          border: hoveredSessionId === sess.session_id
-                                            ? '1px solid #2d3b55'
-                                            : '1px solid #1f2736',
-                                          cursor: isImporting ? 'wait' : 'pointer',
-                                          transition: 'background-color 0.15s ease, border-color 0.15s ease',
-                                        }}
-                                      >
-                                        {/* Session Title */}
-                                        <div
-                                          style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            gap: '8px',
-                                          }}
-                                        >
-                                          <span
-                                            data-testid="session-title"
-                                            style={{
-                                              fontSize: '12.5px',
-                                              fontWeight: 500,
-                                              color: '#f8fafc',
-                                              overflow: 'hidden',
-                                              textOverflow: 'ellipsis',
-                                              whiteSpace: 'nowrap',
-                                            }}
-                                            title={primaryTitle}
-                                          >
-                                            {primaryTitle}
-                                          </span>
-
-                                          {isImporting && (
-                                            <span
-                                              style={{
-                                                fontSize: '11px',
-                                                color: '#38bdf8',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px',
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              <RefreshCw size={11} className="animate-spin" />
-                                              Importing…
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {/* Secondary Preview Line when source_title is present */}
-                                        {hasSourceTitle && sess.first_prompt_preview && (
-                                          <div
-                                            data-testid="session-preview-secondary"
-                                            style={{
-                                              fontSize: '11px',
-                                              color: 'var(--text-secondary)',
-                                              overflow: 'hidden',
-                                              textOverflow: 'ellipsis',
-                                              whiteSpace: 'nowrap',
-                                              lineHeight: '1.3',
-                                            }}
-                                            title={sess.first_prompt_preview}
-                                          >
-                                            {sess.first_prompt_preview}
-                                          </div>
-                                        )}
-
-                                        {/* Metadata Row */}
-                                        <div
-                                          style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            fontSize: '11px',
-                                            color: 'var(--text-muted)',
-                                            flexWrap: 'wrap',
-                                          }}
-                                        >
-                                          {/* Prompts Count (Honesty: Prompts, not steps!) */}
-                                          <span data-testid="session-prompt-count">
-                                            {sess.prompt_count} {sess.prompt_count === 1 ? 'prompt' : 'prompts'}
-                                          </span>
-
-                                          <span>•</span>
-
-                                          {/* Time with hover exact timestamp */}
-                                          <span
-                                            data-testid="session-time"
-                                            title={sess.started_at || sess.ended_at}
-                                          >
-                                            {formatRelativeTime(sess.started_at || sess.ended_at)}
-                                          </span>
-
-                                          {/* Archived badge */}
-                                          {sess.history_state === 'archived' && (
-                                            <span
-                                              data-testid="session-history-state-archived"
-                                              style={{
-                                                fontSize: '9.5px',
-                                                fontWeight: 600,
-                                                padding: '1px 5px',
-                                                borderRadius: '3px',
-                                                backgroundColor: '#1f2430',
-                                                color: '#94a3b8',
-                                                border: '1px solid #2d3748',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.04em',
-                                              }}
-                                            >
-                                              archived
-                                            </span>
-                                          )}
-
-                                          {/* Parse Status Badge */}
-                                          {sess.parse_status !== 'ok' && (
-                                            <span
-                                              data-testid={`session-parse-status-${sess.parse_status}`}
-                                              title={sess.unsupported_reason || 'Incomplete or unsupported structure'}
-                                              style={{
-                                                fontSize: '9.5px',
-                                                fontWeight: 600,
-                                                padding: '1px 5px',
-                                                borderRadius: '3px',
-                                                backgroundColor: 'var(--accent-muted)',
-                                                color: 'var(--accent)',
-                                                border: '1px solid var(--border-focus)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.04em',
-                                              }}
-                                            >
-                                              {sess.parse_status}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Inline Import Error */}
-                                      {hasError && (
-                                        <div
-                                          data-testid={`session-import-error-${sess.session_id}`}
-                                          style={{
-                                            margin: '4px 0',
-                                            padding: '6px 10px',
-                                            backgroundColor: 'var(--accent-muted)',
-                                            border: '1px solid var(--border-focus)',
-                                            borderRadius: '4px',
-                                            fontSize: '11px',
-                                            color: 'var(--text-primary)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            gap: '8px',
-                                          }}
-                                        >
-                                          <span>Import failed: {importError.message}</span>
-                                          <button
-                                            onClick={() => handleSessionClick(sess.session_id, sess.tool)}
-                                            style={{
-                                              background: 'none',
-                                              border: 'none',
-                                              color: '#ffffff',
-                                              textDecoration: 'underline',
-                                              cursor: 'pointer',
-                                              fontSize: '11px',
-                                              padding: 0,
-                                              flexShrink: 0,
-                                            }}
-                                          >
-                                            Retry
-                                          </button>
-                                        </div>
-                                      )}
+                                {groupSessionsByLocalDate(proj.sessions).map((dateGroup) => (
+                                  <section
+                                    key={dateGroup.key}
+                                    data-testid={`date-folder-${folderKey}-${dateGroup.key}`}
+                                    className="history-date-folder"
+                                  >
+                                    <div className="history-date-folder-label">
+                                      <Folder size={12} aria-hidden="true" />
+                                      <span>{dateGroup.label}</span>
                                     </div>
-                                  );
-                                })}
+                                    {dateGroup.sessions.map((sess) => {
+                                      const isImporting = importingSessionId === sess.session_id;
+                                      const hasError = importError?.sessionId === sess.session_id;
+                                      const isSessionExpanded = expandedSessionIds.has(sess.session_id);
+                                      const hasSourceTitle = Boolean(sess.source_title?.trim());
+                                      const primaryTitle = hasSourceTitle
+                                        ? sess.source_title!
+                                        : (sess.first_prompt_preview || 'Untitled session');
+                                      const promptRows = promptsBySession[sess.session_id] || [];
+                                      return (
+                                        <div key={sess.session_id} className="history-session-branch">
+                                          <button
+                                            type="button"
+                                            data-testid={`session-row-${sess.session_id}`}
+                                            aria-expanded={isSessionExpanded}
+                                            onClick={() => void toggleSession(sess)}
+                                            onMouseEnter={() => setHoveredSessionId(sess.session_id)}
+                                            onMouseLeave={() => setHoveredSessionId(null)}
+                                            className={`history-session-row ${hoveredSessionId === sess.session_id ? 'is-hovered' : ''}`}
+                                          >
+                                            <span className="history-tree-chevron">
+                                              {isSessionExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                            </span>
+                                            <span className="history-session-copy">
+                                              <span data-testid="session-title" title={primaryTitle}>{primaryTitle}</span>
+                                              {hasSourceTitle && sess.first_prompt_preview && (
+                                                <span data-testid="session-preview-secondary">{sess.first_prompt_preview}</span>
+                                              )}
+                                              <span className="history-session-meta">
+                                                <span data-testid="session-prompt-count">
+                                                  {sess.prompt_count} {sess.prompt_count === 1 ? 'prompt' : 'prompts'}
+                                                </span>
+                                                <span data-testid="session-time" title={sess.started_at || sess.ended_at}>
+                                                  {formatRelativeTime(sess.started_at || sess.ended_at)}
+                                                </span>
+                                                {sess.history_state === 'archived' && (
+                                                  <span data-testid="session-history-state-archived">archived</span>
+                                                )}
+                                                {sess.parse_status !== 'ok' && (
+                                                  <span
+                                                    data-testid={`session-parse-status-${sess.parse_status}`}
+                                                    title={sess.unsupported_reason || 'Incomplete or unsupported structure'}
+                                                  >
+                                                    {sess.parse_status}
+                                                  </span>
+                                                )}
+                                              </span>
+                                            </span>
+                                            {isImporting && (
+                                              <span className="history-session-busy">
+                                                <RefreshCw size={11} className="animate-spin" /> Importing…
+                                              </span>
+                                            )}
+                                          </button>
+                                          {isSessionExpanded && (
+                                            <div className="history-prompt-list" data-testid={`session-prompts-${sess.session_id}`}>
+                                              {promptLoadingIds.has(sess.session_id) && (
+                                                <div className="history-prompt-state" role="status">Loading prompts…</div>
+                                              )}
+                                              {promptErrors[sess.session_id] && (
+                                                <div className="history-prompt-state" role="alert">
+                                                  Prompt list unavailable: {promptErrors[sess.session_id]}
+                                                </div>
+                                              )}
+                                              {!promptLoadingIds.has(sess.session_id)
+                                                && !promptErrors[sess.session_id]
+                                                && promptRows.length === 0 && (
+                                                <div className="history-prompt-state">No recorded prompts are available.</div>
+                                              )}
+                                              {promptRows.map((prompt, promptIndex) => (
+                                                <button
+                                                  type="button"
+                                                  key={`${prompt.prompt_id}:${prompt.start_sequence}`}
+                                                  className="history-prompt-row"
+                                                  data-testid={`prompt-row-${sess.session_id}-${promptIndex}`}
+                                                  onClick={() => void handlePromptClick(
+                                                    sess.session_id,
+                                                    sess.tool,
+                                                    prompt.start_sequence,
+                                                  )}
+                                                >
+                                                  <span className="history-prompt-index">{promptIndex + 1}</span>
+                                                  <span className="history-prompt-copy">
+                                                    <span>{prompt.first_line || 'Prompt preview unavailable'}</span>
+                                                    <span>
+                                                      {prompt.changed_file_count === 0
+                                                        ? 'No recorded file changes'
+                                                        : `${prompt.changed_file_count} ${prompt.changed_file_count === 1 ? 'file' : 'files'} changed`}
+                                                      {prompt.grouping === 'recorded_events' ? ' · grouped from recorded events' : ''}
+                                                    </span>
+                                                  </span>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+                                          {hasError && (
+                                            <div data-testid={`session-import-error-${sess.session_id}`} className="history-prompt-state" role="alert">
+                                              <span>Import failed: {importError.message}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => void handlePromptClick(
+                                                  sess.session_id,
+                                                  sess.tool,
+                                                  promptRows[0]?.start_sequence,
+                                                )}
+                                              >
+                                                Retry
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </section>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -1153,7 +1348,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                     outline: 'none',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#3b82f6';
+                    e.currentTarget.style.borderColor = 'var(--accent)';
                     e.currentTarget.style.backgroundColor = '#181e2b';
                   }}
                   onMouseLeave={(e) => {
@@ -1173,7 +1368,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: '#38bdf8',
+                            color: 'var(--accent)',
                           }}
                         >
                           {root.tool === 'codex' ? <Terminal size={20} /> : <Layers size={20} />}
@@ -1212,7 +1407,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                         style={{
                           fontSize: '12px',
                           fontWeight: 600,
-                          color: '#38bdf8',
+                          color: 'var(--accent)',
                         }}
                       >
                         {totalSessions} {totalSessions === 1 ? 'session' : 'sessions'}
@@ -1228,7 +1423,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                       marginTop: '20px',
                       paddingTop: '12px',
                       borderTop: '1px solid #1e2533',
-                      color: '#60a5fa',
+                      color: 'var(--accent-strong)',
                       fontSize: '13px',
                       fontWeight: 500,
                     }}
@@ -1255,8 +1450,8 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AlertCircle size={16} color="#f87171" />
-                  <span style={{ fontSize: '15px', fontWeight: 600, color: '#f87171' }}>
+                  <AlertCircle size={16} color="var(--semantic-danger)" />
+                  <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--semantic-danger)' }}>
                     {formatToolDisplayName(root.tool)} (Unreadable)
                   </span>
                 </div>
@@ -1423,7 +1618,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                 padding: '4px 8px',
               }}
             >
-              <Terminal size={13} color="#38bdf8" />
+              <Terminal size={13} color="var(--accent)" />
               <span>{playgroundExpanded ? 'Hide playground instructions' : 'Python playground example'}</span>
             </button>
           </div>
@@ -1464,7 +1659,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                   color: '#f8fafc',
                 }}
               >
-                <Terminal size={14} color="#38bdf8" />
+                <Terminal size={14} color="var(--accent)" />
                 <span>No project yet? Try the included example</span>
               </div>
               <p
@@ -1509,7 +1704,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                       padding: '6px 10px',
                       fontFamily: 'var(--font-mono)',
                       fontSize: '9.5px',
-                      color: '#38bdf8',
+                      color: 'var(--accent)',
                       marginTop: '4px',
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -1524,7 +1719,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                       style={{
                         padding: '2px 5px',
                         fontSize: '10px',
-                        color: copied ? '#34d399' : 'var(--text-muted)',
+                        color: copied ? 'var(--semantic-success)' : 'var(--text-muted)',
                         flexShrink: 0,
                         cursor: 'pointer',
                       }}

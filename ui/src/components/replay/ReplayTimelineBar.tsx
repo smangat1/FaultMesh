@@ -16,10 +16,12 @@ export interface ReplayTimelineBarProps {
   timeline: TimelineEntry[];
   currentSequence: number;
   onSelectSequence: (sequence: number) => void;
+  onInteractionStart?: () => void;
   chapters?: ReplayChapter[];
   tests?: StructuredTestEvidence[];
   options?: TimeModelOptions;
   stepLabels?: ReadonlyMap<number, string>;
+  foldedSequences?: number[];
   className?: string;
   style?: React.CSSProperties;
 }
@@ -33,10 +35,12 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
   timeline,
   currentSequence,
   onSelectSequence,
+  onInteractionStart,
   chapters = [],
   tests = [],
   options,
   stepLabels,
+  foldedSequences = [],
   className = '',
   style,
 }) => {
@@ -115,6 +119,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
       // Primary button only (allow undefined for test synthetics)
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
+      onInteractionStart?.();
 
       const ratio = getRatioFromClientX(e.clientX);
       isDraggingRef.current = true;
@@ -130,7 +135,7 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
         // Fallback for jsdom / tests
       }
     },
-    [getRatioFromClientX, geometry]
+    [getRatioFromClientX, geometry, onInteractionStart]
   );
 
   const handlePointerMove = useCallback(
@@ -553,6 +558,24 @@ export const ReplayTimelineBar: React.FC<ReplayTimelineBarProps> = ({
       >
         {/* Track Rail Line */}
         <div className="replay-timeline-track-rail">
+          {foldedSequences.map((sequence) => {
+            const nearestStop = geometry.steps.reduce<StepPosition | null>((nearest, step) => {
+              if (nearest === null) return step;
+              return Math.abs(step.sequence - sequence) < Math.abs(nearest.sequence - sequence)
+                ? step
+                : nearest;
+            }, null);
+            if (nearestStop === null) return null;
+            return (
+              <span
+                key={`folded-${sequence}`}
+                className="replay-timeline-folded-tick"
+                style={{ left: `${nearestStop.positionRatio * 100}%` }}
+                data-testid="timeline-folded-step"
+                title="Recorded evidence folded into the nearest file change"
+              />
+            );
+          })}
           {/* Axis Breaks (Idle Stretches) */}
           {geometry.axisBreaks.map((breakItem) => {
             const leftPct = breakItem.startRatio * 100;

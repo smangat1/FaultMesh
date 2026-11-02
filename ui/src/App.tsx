@@ -4,6 +4,8 @@ import { FixtureAdapter, ImportedAdapter, LiveSpectateAdapter, EmptyAdapter, Rep
 import { validateReplayExport } from './replay/validators';
 import type {
   ChapterRunRecord,
+  PromptClaimCheck,
+  PromptUnderstanding,
   ReplayChapter,
   SelectionSummary,
   SessionSummary,
@@ -53,11 +55,35 @@ export interface AppProps {
 }
 
 type OnDemandValue = StepNarration | SelectionSummary | null;
+const HISTORY_PROMPT_POLL_MS = 5000;
 
 interface OnDemandTask {
   run: () => Promise<OnDemandValue>;
   resolve: (value: OnDemandValue) => void;
   reject: (reason: unknown) => void;
+}
+
+function replayAdapterFromImport(
+  result: { name: string; text: string; size: number },
+  focusSequence?: number,
+): ReplayAdapter {
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(result.text);
+  } catch (err) {
+    throw new Error(
+      `Malformed JSON in "${result.name}": ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  const validation = validateReplayExport(json, result.size, result.name);
+  if (!validation.success) {
+    throw new Error(
+      `Replay validation failed for "${result.name}": ${validation.errors?.map((error) => error.message).join('; ')}`
+    );
+  }
+  const replayAdapter = new ReplayAdapter(validation.data!, validation.origin);
+  if (focusSequence !== undefined) replayAdapter.setCurrentSequence(focusSequence);
+  return replayAdapter;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -142,10 +168,18 @@ export const App: React.FC<AppProps> = ({
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<Set<string>>(() => new Set());
   const [selectedHistoryTool, setSelectedHistoryTool] = useState<string | null>(null);
   const [importedHistorySessionId, setImportedHistorySessionId] = useState<string | null>(null);
+  const [importedHistorySource, setImportedHistorySource] = useState<'history' | 'replay_store'>('history');
+  const [historyPromptPolling, setHistoryPromptPolling] = useState(false);
+  const [historyPromptRefreshRevision, setHistoryPromptRefreshRevision] = useState(0);
   const importedHistorySessionIdRef = useRef<string | null>(null);
   const selectedHistoryToolRef = useRef<string | null>(null);
+  const historyPromptRefreshInFlightRef = useRef(false);
   const [narrationRevision, setNarrationRevision] = useState(0);
-  const [narrationProgress, setNarrationProgress] = useState<{ done: number; total: number } | null>(null);
+  const [narrationProgress, setNarrationProgress] = useState<{
+    done: number;
+    total: number;
+    stage?: 'summarizing' | 'checking';
+  } | null>(null);
   const [narrationError, setNarrationError] = useState<string | null>(null);
   const [modelSetupOpen, setModelSetupOpen] = useState(false);
   const [modelSetupMessage, setModelSetupMessage] = useState('Choose a local model to upgrade the template narration.');
@@ -382,6 +416,7 @@ export const App: React.FC<AppProps> = ({
   const handleImportFiles = async (files: FileList | File[]) => {
     setImportError(null);
     setImportedHistorySessionId(null);
+    setImportedHistorySource('history');
     try {
       const fileList = Array.from(files);
       if (fileList.length === 0) return;
@@ -496,18 +531,11 @@ export const App: React.FC<AppProps> = ({
   };
 
   const loadValidatedRecording = useCallback(
-    async (result: { name: string; text: string; size: number }): Promise<ReplayAdapter> => {
-      let json: Record<string, unknown>;
-      try {
-        json = JSON.parse(result.text);
-      } catch (err) {
-        throw new Error(`Malformed JSON in "${result.name}": ${err instanceof Error ? err.message : String(err)}`);
-      }
-      const val = validateReplayExport(json, result.size, result.name);
-      if (!val.success) {
-        throw new Error(`Replay validation failed for "${result.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
-      }
-      const replayAdapter = new ReplayAdapter(val.data!, val.origin);
+    async (
+      result: { name: string; text: string; size: number },
+      focusSequence?: number,
+    ): Promise<ReplayAdapter> => {
+      const replayAdapter = replayAdapterFromImport(result, focusSequence);
       activeAdapterRef.current = replayAdapter;
       liveAdapterRef.current = null;
       setLiveChangedNodeIds([]);
@@ -538,6 +566,7 @@ export const App: React.FC<AppProps> = ({
         const result = await bridge.openRecording();
         if (!result) return;
         setImportedHistorySessionId(null);
+        setImportedHistorySource('history');
         await loadValidatedRecording(result);
       } else {
         recordingFileInputRef.current?.click();
@@ -548,7 +577,12 @@ export const App: React.FC<AppProps> = ({
   };
 
   const handleImportSession = useCallback(
-    async (sessionId: string, tool: string) => {
+    async (
+      sessionId: string,
+      tool: string,
+      focusSequence?: number,
+      source: 'history' | 'replay_store' = 'history',
+    ) => {
       setSelectedHistoryTool(tool);
       onDemandModelReadyRef.current = false;
       setOnDemandModelReady(false);
@@ -556,14 +590,22 @@ export const App: React.FC<AppProps> = ({
       if (!bridge?.importSession) {
         throw new Error('Desktop bridge is not available for session import');
       }
-      const result = await bridge.importSession(sessionId, tool);
-      await loadValidatedRecording(result);
+      const result = source === 'history'
+        ? await bridge.importSession(sessionId, tool)
+        : await bridge.importSession(sessionId, tool, source);
+      await loadValidatedRecording(result, focusSequence);
       importedHistorySessionIdRef.current = sessionId;
       selectedHistoryToolRef.current = tool;
       setImportedHistorySessionId(sessionId);
+      setImportedHistorySource(source);
+      setHistoryPromptRefreshRevision(0);
       setNarrationError(null);
       setNarrationProgress(null);
       setPlainMode(false);
+      if (source === 'replay_store') {
+        setPlainMode(true);
+        return;
+      }
       if (!bridge.modelStatus) {
         setPlainMode(true);
         return;
@@ -578,7 +620,8 @@ export const App: React.FC<AppProps> = ({
             const current = activeAdapterRef.current;
             setNarrationProgress({
               done: 0,
-              total: current instanceof ReplayAdapter ? current.getChapters().length : 0,
+              total: current instanceof ReplayAdapter ? current.getPromptGroups().length : 0,
+              stage: 'summarizing',
             });
           } catch (error) {
             setNarrationError(error instanceof Error ? error.message : 'Local narration could not start.');
@@ -597,6 +640,72 @@ export const App: React.FC<AppProps> = ({
     [loadValidatedRecording]
   );
 
+  useEffect(() => {
+    const bridge = window.faultmeshSpectate;
+    const enabled = Boolean(
+      importedHistorySessionId
+      && selectedHistoryTool
+      && importedHistorySource === 'history'
+      && currentScreen === 'workspace'
+      && activeView === 'replay'
+      && bridge?.listPrompts
+      && bridge.importSession
+    );
+    if (!enabled || !bridge?.listPrompts || !bridge.importSession) {
+      setHistoryPromptPolling(false);
+      return undefined;
+    }
+
+    const sessionId = importedHistorySessionId!;
+    const tool = selectedHistoryTool!;
+    let cancelled = false;
+    setHistoryPromptPolling(true);
+
+    const poll = async () => {
+      if (historyPromptRefreshInFlightRef.current) return;
+      const current = activeAdapterRef.current;
+      if (!(current instanceof ReplayAdapter)) return;
+      historyPromptRefreshInFlightRef.current = true;
+      try {
+        const currentMax = Math.max(0, ...current.getTimeline().map((entry) => entry.sequence));
+        const promptIndex = await bridge.listPrompts!(sessionId, tool);
+        const promptMax = Math.max(
+          0,
+          ...promptIndex.prompts.map((prompt) => prompt.end_sequence),
+        );
+        if (cancelled || promptMax <= currentMax) return;
+
+        const imported = await bridge.importSession!(sessionId, tool);
+        const fresh = replayAdapterFromImport(imported);
+        const freshMax = Math.max(0, ...fresh.getTimeline().map((entry) => entry.sequence));
+        if (cancelled || freshMax <= currentMax) return;
+
+        const updated = current.withHistoryUpdate(fresh.getExport());
+        activeAdapterRef.current = updated;
+        setActiveAdapter(updated);
+        setHistoryPromptRefreshRevision((revision) => revision + 1);
+      } catch {
+        // A transient projection or import failure should not interrupt the open replay.
+      } finally {
+        historyPromptRefreshInFlightRef.current = false;
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, HISTORY_PROMPT_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      setHistoryPromptPolling(false);
+    };
+  }, [
+    activeView,
+    currentScreen,
+    importedHistorySessionId,
+    importedHistorySource,
+    selectedHistoryTool,
+  ]);
+
   const startNarrationForImportedSession = useCallback(async (rerun: boolean) => {
     const sessionId = importedHistorySessionIdRef.current;
     const tool = selectedHistoryToolRef.current;
@@ -608,7 +717,8 @@ export const App: React.FC<AppProps> = ({
     const current = activeAdapterRef.current;
     setNarrationProgress({
       done: 0,
-      total: current instanceof ReplayAdapter ? current.getChapters().length : 0,
+      total: current instanceof ReplayAdapter ? current.getPromptGroups().length : 0,
+      stage: 'summarizing',
     });
     try {
       if (rerun) await bridge.rerunNarration?.(sessionId, tool);
@@ -668,8 +778,8 @@ export const App: React.FC<AppProps> = ({
         if (validation.success && replayAdapter instanceof ReplayAdapter) {
           replayAdapter.replaceNarratedExport(validation.data!);
           setNarrationRevision((value) => value + 1);
-          const total = replayAdapter.getChapters().length;
-          setNarrationProgress({ done: 0, total });
+          const total = replayAdapter.getPromptGroups().length;
+          setNarrationProgress({ done: 0, total, stage: 'summarizing' });
         }
         return;
       }
@@ -682,7 +792,26 @@ export const App: React.FC<AppProps> = ({
           );
           setNarrationRevision((value) => value + 1);
         }
-        setNarrationProgress({ done: event.done, total: event.total });
+        return;
+      }
+      if (event.event === 'prompt') {
+        const replayAdapter = activeAdapterRef.current;
+        if (replayAdapter instanceof ReplayAdapter && event.prompt_understanding) {
+          replayAdapter.applyPromptUnderstanding(
+            event.prompt_understanding as PromptUnderstanding,
+          );
+          setNarrationRevision((value) => value + 1);
+        }
+        setNarrationProgress({ done: event.done, total: event.total, stage: 'summarizing' });
+        return;
+      }
+      if (event.event === 'prompt-check') {
+        const replayAdapter = activeAdapterRef.current;
+        if (replayAdapter instanceof ReplayAdapter && event.prompt_check) {
+          replayAdapter.applyPromptClaimCheck(event.prompt_check as PromptClaimCheck);
+          setNarrationRevision((value) => value + 1);
+        }
+        setNarrationProgress({ done: event.done, total: event.total, stage: 'checking' });
         return;
       }
       if (event.event === 'summary') {
@@ -823,6 +952,7 @@ export const App: React.FC<AppProps> = ({
     setPinnedSymbols([]);
     setIsAgentActive(false);
     setImportedHistorySessionId(null);
+    setImportedHistorySource('history');
     importedHistorySessionIdRef.current = null;
     selectedHistoryToolRef.current = null;
     setNarrationProgress(null);
@@ -1285,12 +1415,28 @@ export const App: React.FC<AppProps> = ({
                   adapter={activeAdapter}
                   graphData={graphData}
                   importedSessionId={importedHistorySessionId}
+                  importedSessionTool={selectedHistoryTool}
+                  importedSessionSource={importedHistorySource}
+                  historyPromptPolling={historyPromptPolling}
+                  historyPromptRefreshRevision={historyPromptRefreshRevision}
                   hasSpectateBridge={spectate.hasBridge}
                   watchProjectBusy={spectate.busy}
                   onWatchProject={spectate.startWatching}
                   onLinkSessionProject={async (sessionId, projectHandle) => {
                     if (!spectate.bridge?.linkSessionProject) return;
                     await spectate.bridge.linkSessionProject(sessionId, projectHandle);
+                  }}
+                  onOpenSessionFile={async (sessionId, relativePath) => {
+                    if (!spectate.bridge?.openSessionFile) {
+                      throw new Error('Open in editor is available in the desktop app.');
+                    }
+                    return spectate.bridge.openSessionFile(sessionId, relativePath);
+                  }}
+                  onRequestRevertPlan={async (sessionId, tool, start, end, source) => {
+                    if (!spectate.bridge?.revertPlan) {
+                      throw new Error('Revert plans are available in the desktop app.');
+                    }
+                    return spectate.bridge.revertPlan(sessionId, tool, start, end, source);
                   }}
                   narrationRevision={narrationRevision}
                   narrationProgress={narrationProgress}

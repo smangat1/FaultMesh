@@ -339,6 +339,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     const v1 = createTestV1();
     const adapter = new ReplayAdapter(v1, 'real_recording');
     render(<ReplayWorkspace adapter={adapter} />);
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
     // Recording origin remains visible; internal provenance stays collapsed.
     expect(screen.getByTestId('replay-header-origin').textContent).toContain('Recorded session');
@@ -360,6 +361,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     const v1 = createTestV1();
     const adapter = new ReplayAdapter(v1);
     render(<ReplayWorkspace adapter={adapter} />);
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
     const nextBtn = screen.getByTestId('replay-next-btn') as HTMLButtonElement;
     const prevBtn = screen.getByTestId('replay-prev-btn') as HTMLButtonElement;
@@ -384,6 +386,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     const v1 = createTestV1();
     const adapter = new ReplayAdapter(v1);
     render(<ReplayWorkspace adapter={adapter} />);
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
     expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Step 1 of 2');
 
@@ -466,6 +469,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
   it('renders imported prompt, tool, output, edit, and unknown file-state evidence', () => {
     const adapter = new ReplayAdapter(createHistoryImportV1());
     render(<ReplayWorkspace adapter={adapter} />);
+    fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
     expect(screen.getByTestId('replay-history-prompt').textContent).toContain(
       'Please inspect [redacted: api key] safely'

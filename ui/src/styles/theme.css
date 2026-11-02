@@ -66,8 +66,8 @@
   --radius-sm: 12px;
   --radius-md: 16px;
   --radius-lg: 20px;
-  --motion-duration: 160ms;
-  --motion-easing: ease;
+  --motion-duration: 200ms;
+  --motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --motion: var(--motion-duration) var(--motion-easing);
 
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -356,7 +356,7 @@ button:disabled {
 }
 
 .entrance-card:focus-visible {
-  outline: 2px solid #38bdf8;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -619,7 +619,7 @@ button:disabled {
 .first-use-spotlight-ring {
   position: fixed;
   pointer-events: none;
-  border: 2px solid var(--accent, #3b82f6);
+  border: 2px solid var(--accent);
   box-shadow: 0 0 14px rgba(59, 130, 246, 0.45);
   box-sizing: border-box;
   transition: all 180ms ease-out;
@@ -652,7 +652,7 @@ button:disabled {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--accent, #3b82f6);
+  color: var(--accent);
   background-color: var(--accent-muted, rgba(59, 130, 246, 0.15));
   padding: 2px 6px;
   border-radius: 3px;
@@ -711,12 +711,12 @@ button:disabled {
 }
 
 .first-use-tip-dot.active {
-  background-color: var(--accent, #3b82f6);
+  background-color: var(--accent);
   transform: scale(1.2);
 }
 
 .first-use-tip-next-btn {
-  background-color: var(--accent, #3b82f6);
+  background-color: var(--accent);
   border: 1px solid transparent;
   color: #ffffff;
   font-size: 11px;
@@ -751,7 +751,7 @@ button:disabled {
 
 .first-use-help-btn:hover {
   color: var(--text-primary, #f1f5f9);
-  border-color: var(--accent, #3b82f6);
+  border-color: var(--accent);
   background-color: var(--accent-muted, rgba(59, 130, 246, 0.15));
 }
 
