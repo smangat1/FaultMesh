@@ -55,11 +55,35 @@ export interface AppProps {
 }
 
 type OnDemandValue = StepNarration | SelectionSummary | null;
+const HISTORY_PROMPT_POLL_MS = 5000;
 
 interface OnDemandTask {
   run: () => Promise<OnDemandValue>;
   resolve: (value: OnDemandValue) => void;
   reject: (reason: unknown) => void;
+}
+
+function replayAdapterFromImport(
+  result: { name: string; text: string; size: number },
+  focusSequence?: number,
+): ReplayAdapter {
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(result.text);
+  } catch (err) {
+    throw new Error(
+      `Malformed JSON in "${result.name}": ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  const validation = validateReplayExport(json, result.size, result.name);
+  if (!validation.success) {
+    throw new Error(
+      `Replay validation failed for "${result.name}": ${validation.errors?.map((error) => error.message).join('; ')}`
+    );
+  }
+  const replayAdapter = new ReplayAdapter(validation.data!, validation.origin);
+  if (focusSequence !== undefined) replayAdapter.setCurrentSequence(focusSequence);
+  return replayAdapter;
 }
 
 export const App: React.FC<AppProps> = ({
@@ -145,8 +169,11 @@ export const App: React.FC<AppProps> = ({
   const [selectedHistoryTool, setSelectedHistoryTool] = useState<string | null>(null);
   const [importedHistorySessionId, setImportedHistorySessionId] = useState<string | null>(null);
   const [importedHistorySource, setImportedHistorySource] = useState<'history' | 'replay_store'>('history');
+  const [historyPromptPolling, setHistoryPromptPolling] = useState(false);
+  const [historyPromptRefreshRevision, setHistoryPromptRefreshRevision] = useState(0);
   const importedHistorySessionIdRef = useRef<string | null>(null);
   const selectedHistoryToolRef = useRef<string | null>(null);
+  const historyPromptRefreshInFlightRef = useRef(false);
   const [narrationRevision, setNarrationRevision] = useState(0);
   const [narrationProgress, setNarrationProgress] = useState<{
     done: number;
@@ -508,20 +535,7 @@ export const App: React.FC<AppProps> = ({
       result: { name: string; text: string; size: number },
       focusSequence?: number,
     ): Promise<ReplayAdapter> => {
-      let json: Record<string, unknown>;
-      try {
-        json = JSON.parse(result.text);
-      } catch (err) {
-        throw new Error(`Malformed JSON in "${result.name}": ${err instanceof Error ? err.message : String(err)}`);
-      }
-      const val = validateReplayExport(json, result.size, result.name);
-      if (!val.success) {
-        throw new Error(`Replay validation failed for "${result.name}": ${val.errors?.map((e) => e.message).join('; ')}`);
-      }
-      const replayAdapter = new ReplayAdapter(val.data!, val.origin);
-      if (focusSequence !== undefined) {
-        replayAdapter.setCurrentSequence(focusSequence);
-      }
+      const replayAdapter = replayAdapterFromImport(result, focusSequence);
       activeAdapterRef.current = replayAdapter;
       liveAdapterRef.current = null;
       setLiveChangedNodeIds([]);
@@ -584,6 +598,7 @@ export const App: React.FC<AppProps> = ({
       selectedHistoryToolRef.current = tool;
       setImportedHistorySessionId(sessionId);
       setImportedHistorySource(source);
+      setHistoryPromptRefreshRevision(0);
       setNarrationError(null);
       setNarrationProgress(null);
       setPlainMode(false);
@@ -624,6 +639,72 @@ export const App: React.FC<AppProps> = ({
     },
     [loadValidatedRecording]
   );
+
+  useEffect(() => {
+    const bridge = window.faultmeshSpectate;
+    const enabled = Boolean(
+      importedHistorySessionId
+      && selectedHistoryTool
+      && importedHistorySource === 'history'
+      && currentScreen === 'workspace'
+      && activeView === 'replay'
+      && bridge?.listPrompts
+      && bridge.importSession
+    );
+    if (!enabled || !bridge?.listPrompts || !bridge.importSession) {
+      setHistoryPromptPolling(false);
+      return undefined;
+    }
+
+    const sessionId = importedHistorySessionId!;
+    const tool = selectedHistoryTool!;
+    let cancelled = false;
+    setHistoryPromptPolling(true);
+
+    const poll = async () => {
+      if (historyPromptRefreshInFlightRef.current) return;
+      const current = activeAdapterRef.current;
+      if (!(current instanceof ReplayAdapter)) return;
+      historyPromptRefreshInFlightRef.current = true;
+      try {
+        const currentMax = Math.max(0, ...current.getTimeline().map((entry) => entry.sequence));
+        const promptIndex = await bridge.listPrompts!(sessionId, tool);
+        const promptMax = Math.max(
+          0,
+          ...promptIndex.prompts.map((prompt) => prompt.end_sequence),
+        );
+        if (cancelled || promptMax <= currentMax) return;
+
+        const imported = await bridge.importSession!(sessionId, tool);
+        const fresh = replayAdapterFromImport(imported);
+        const freshMax = Math.max(0, ...fresh.getTimeline().map((entry) => entry.sequence));
+        if (cancelled || freshMax <= currentMax) return;
+
+        const updated = current.withHistoryUpdate(fresh.getExport());
+        activeAdapterRef.current = updated;
+        setActiveAdapter(updated);
+        setHistoryPromptRefreshRevision((revision) => revision + 1);
+      } catch {
+        // A transient projection or import failure should not interrupt the open replay.
+      } finally {
+        historyPromptRefreshInFlightRef.current = false;
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, HISTORY_PROMPT_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      setHistoryPromptPolling(false);
+    };
+  }, [
+    activeView,
+    currentScreen,
+    importedHistorySessionId,
+    importedHistorySource,
+    selectedHistoryTool,
+  ]);
 
   const startNarrationForImportedSession = useCallback(async (rerun: boolean) => {
     const sessionId = importedHistorySessionIdRef.current;
@@ -1336,6 +1417,8 @@ export const App: React.FC<AppProps> = ({
                   importedSessionId={importedHistorySessionId}
                   importedSessionTool={selectedHistoryTool}
                   importedSessionSource={importedHistorySource}
+                  historyPromptPolling={historyPromptPolling}
+                  historyPromptRefreshRevision={historyPromptRefreshRevision}
                   hasSpectateBridge={spectate.hasBridge}
                   watchProjectBusy={spectate.busy}
                   onWatchProject={spectate.startWatching}

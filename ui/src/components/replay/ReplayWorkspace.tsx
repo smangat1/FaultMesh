@@ -104,6 +104,8 @@ export interface ReplayWorkspaceProps {
   importedSessionId?: string | null;
   importedSessionTool?: string | null;
   importedSessionSource?: 'history' | 'replay_store';
+  historyPromptPolling?: boolean;
+  historyPromptRefreshRevision?: number;
   hasSpectateBridge?: boolean;
   watchProjectBusy?: boolean;
   onWatchProject?: () => Promise<ProjectChoice | null>;
@@ -151,6 +153,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   importedSessionId = null,
   importedSessionTool = null,
   importedSessionSource = 'history',
+  historyPromptPolling = false,
+  historyPromptRefreshRevision = 0,
   hasSpectateBridge = false,
   watchProjectBusy = false,
   onWatchProject,
@@ -211,6 +215,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const [revertPlanOpen, setRevertPlanOpen] = useState(false);
   const [revertPlanLoading, setRevertPlanLoading] = useState(false);
   const [revertPlanError, setRevertPlanError] = useState<string | null>(null);
+  const [showNewPromptNotice, setShowNewPromptNotice] = useState(false);
   const actionNoticeTimerRef = useRef<number | null>(null);
 
   // On-demand panel visibility states (Rule 2 + Visual Direction: closed by default)
@@ -292,6 +297,16 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
       window.clearTimeout(actionNoticeTimerRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (historyPromptRefreshRevision <= 0) {
+      setShowNewPromptNotice(false);
+      return undefined;
+    }
+    setShowNewPromptNotice(true);
+    const timer = window.setTimeout(() => setShowNewPromptNotice(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [historyPromptRefreshRevision]);
 
   const stepLabels = useMemo(() => new Map(
     timeline.map((entry) => [
@@ -760,6 +775,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         color: 'var(--replay-text-primary, #e6edf8)',
         fontFamily: 'var(--font-sans, -apple-system, sans-serif)',
         overflow: 'hidden',
+        position: 'relative',
       }}
       data-testid="replay-workspace"
       data-motion={prefersReducedMotion ? 'reduced' : 'full'}
@@ -831,6 +847,16 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               ? 'Simulated sample'
               : 'Recorded session'}
           </span>
+          {historyPromptPolling && (
+            <span
+              className="replay-recording-indicator"
+              title="Watching this local session for newly recorded prompts"
+              data-testid="replay-recording-indicator"
+            >
+              <span aria-hidden="true" />
+              Recording
+            </span>
+          )}
           {narrationProgress && (
             <span className="replay-progress-label" data-testid="replay-narration-progress">
               {narrationProgress.stage === 'checking' ? 'Checking prompts' : 'Summarizing prompts'}{' '}
@@ -1374,6 +1400,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               </button>
             </footer>
           </section>
+        </div>
+      )}
+      {showNewPromptNotice && (
+        <div
+          className="replay-new-prompt-toast"
+          role="status"
+          aria-live="polite"
+          data-testid="replay-new-prompt-toast"
+        >
+          <span aria-hidden="true" />
+          New prompt recorded
         </div>
       )}
       <ReplayModelSetup

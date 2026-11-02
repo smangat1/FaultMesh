@@ -110,6 +110,30 @@ export class ReplayAdapter implements FaultMeshAdapter {
   }
 
   public replaceNarratedExport(exported: AnyReplayExport): void {
+    const currentMax = Math.max(0, ...this.exported.timeline.map((entry) => entry.sequence));
+    const incomingMax = Math.max(0, ...exported.timeline.map((entry) => entry.sequence));
+    if (
+      incomingMax < currentMax
+      && isReplayExportV2(this.exported)
+      && isReplayExportV2(exported)
+    ) {
+      const chapters = this.mergeChapterTitles(this.exported.chapters, exported.chapters);
+      this.exported = {
+        ...this.exported,
+        narration: exported.narration,
+        chapters,
+        chapter_run: { ...exported.chapter_run, chapters },
+        prompt_understanding: this.mergePromptUnderstanding(
+          this.exported,
+          exported.prompt_understanding,
+        ),
+        prompt_claim_checks: this.mergePromptClaimChecks(
+          this.exported.prompt_claim_checks || [],
+          exported.prompt_claim_checks || [],
+        ),
+      };
+      return;
+    }
     this.exported = exported;
     if (
       isReplayExportV2(exported)
@@ -117,6 +141,85 @@ export class ReplayAdapter implements FaultMeshAdapter {
     ) {
       this.baselineSummary = exported.summary;
     }
+  }
+
+  public withHistoryUpdate(exported: AnyReplayExport): ReplayAdapter {
+    let merged = exported;
+    if (isReplayExportV2(this.exported) && isReplayExportV2(exported)) {
+      const narration = new Map(exported.narration.map((item) => [item.sequence, item]));
+      for (const item of this.exported.narration) narration.set(item.sequence, item);
+      const chapters = this.mergeChapterTitles(exported.chapters, this.exported.chapters);
+      merged = {
+        ...exported,
+        narration: [...narration.values()].sort((left, right) => left.sequence - right.sequence),
+        chapters,
+        chapter_run: { ...exported.chapter_run, chapters },
+        prompt_understanding: this.mergePromptUnderstanding(
+          exported,
+          this.exported.prompt_understanding,
+        ),
+        prompt_claim_checks: this.mergePromptClaimChecks(
+          exported.prompt_claim_checks || [],
+          this.exported.prompt_claim_checks || [],
+        ),
+      };
+    }
+    const next = new ReplayAdapter(merged, this.origin);
+    next.setCurrentSequence(this.currentSequence);
+    next.setUseBaselineChapters(this.useBaselineChapters);
+    return next;
+  }
+
+  private mergeChapterTitles(
+    core: ReplayChapter[],
+    titled: ReplayChapter[],
+  ): ReplayChapter[] {
+    const titles = new Map(titled.map((chapter) => [chapter.id, chapter]));
+    return core.map((chapter) => {
+      const existing = titles.get(chapter.id);
+      if (!existing || existing.title_status !== 'model interpretation') return chapter;
+      return {
+        ...chapter,
+        title: existing.title,
+        title_status: existing.title_status,
+        source: existing.source,
+      };
+    });
+  }
+
+  private mergePromptUnderstanding(
+    core: AnyReplayExport,
+    existing: PromptUnderstanding | null | undefined,
+  ): PromptUnderstanding | null | undefined {
+    if (!existing) {
+      return isReplayExportV2(core) ? core.prompt_understanding : undefined;
+    }
+    const promptIds = new Set(
+      core.records
+        .map((record) => record.prompt_id)
+        .filter((promptId): promptId is string => Boolean(promptId))
+    );
+    const groupedIds = new Set(
+      core.records
+        .map((record) => record.prompt_id || record.turn_id)
+        .filter((groupId): groupId is string => Boolean(groupId))
+    );
+    const prompts = existing.prompts.filter((prompt) => promptIds.has(prompt.prompt_id));
+    return {
+      ...existing,
+      prompts,
+      total_prompts: Math.max(existing.total_prompts, groupedIds.size),
+      included_prompts: prompts.length,
+    };
+  }
+
+  private mergePromptClaimChecks(
+    core: PromptClaimCheck[],
+    existing: PromptClaimCheck[],
+  ): PromptClaimCheck[] {
+    const checks = new Map(core.map((check) => [check.prompt_id, check]));
+    for (const check of existing) checks.set(check.prompt_id, check);
+    return [...checks.values()].sort((left, right) => left.start_sequence - right.start_sequence);
   }
 
   public getOrigin(): ReplayOrigin {

@@ -1125,6 +1125,27 @@
   color: var(--replay-accent);
 }
 
+.replay-recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--replay-radius-control);
+  color: var(--replay-text-muted);
+  font-size: var(--type-xs);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.replay-recording-indicator > span,
+.replay-new-prompt-toast > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--replay-accent);
+  flex-shrink: 0;
+}
+
 .replay-shortcut-tag {
   display: none;
 }
@@ -1599,6 +1620,37 @@
   color: var(--replay-text-primary);
 }
 
+.replay-new-prompt-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-6);
+  z-index: 70;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 32px);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--replay-border-card);
+  border-radius: var(--replay-radius-control);
+  color: var(--replay-text-primary);
+  background: var(--replay-bg-surface-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-size: var(--type-xs);
+  transform: translateX(-50%);
+  animation: replay-toast-enter var(--motion) both;
+}
+
+@keyframes replay-toast-enter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 @media (max-width: 760px) {
   .replay-origin-label,
   .replay-muted-label {
@@ -1625,8 +1677,10 @@
 
   .replay-prompt-card,
   .replay-toolbar-icon,
-  .replay-speed-control button {
+  .replay-speed-control button,
+  .replay-new-prompt-toast {
     transition: none !important;
+    animation: none !important;
   }
 }
 
