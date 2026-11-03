@@ -104,7 +104,7 @@ const searchResult = {
 };
 
 const promptIndex = {
-  schema_version: 'history-prompt-index-1.0',
+  schema_version: 'history-prompt-index-1.1',
   session_id: sessionId,
   source_file_sha256: 'b'.repeat(64),
   cached: false,

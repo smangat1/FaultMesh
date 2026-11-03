@@ -18,7 +18,7 @@ function installHistoryBridge(customPayload?: Partial<HistoryListPayload>) {
   const listPrompts = vi.fn().mockImplementation((sessionId: string) => {
     const session = payload.sessions.find((item) => item.session_id === sessionId);
     return Promise.resolve({
-      schema_version: 'history-prompt-index-1.0' as const,
+      schema_version: 'history-prompt-index-1.1' as const,
       session_id: sessionId,
       source_file_sha256: session?.source_file_sha256 || 'a'.repeat(64),
       cached: false,
@@ -354,6 +354,56 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
     fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
     expect(harness.listPrompts).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplicates the grouped prompt index and derives the visible count from it', async () => {
+    const harness = installHistoryBridge();
+    const session = harness.payload.sessions.find((item) => item.session_id === 'codex-sess-1')!;
+    harness.listPrompts.mockResolvedValueOnce({
+      schema_version: 'history-prompt-index-1.1',
+      session_id: session.session_id,
+      source_file_sha256: session.source_file_sha256,
+      cached: false,
+      prompts: [
+        {
+          prompt_id: 'prompt:one',
+          first_line: 'Fix the duplicated prompt row',
+          start_sequence: 2,
+          end_sequence: 3,
+          changed_files: [],
+          changed_file_count: 0,
+          started_at: session.started_at,
+          ended_at: session.started_at,
+          test_observation: 'not_observed',
+          grouping: 'prompt_turn',
+        },
+        {
+          prompt_id: 'prompt:one',
+          first_line: null,
+          start_sequence: 2,
+          end_sequence: 5,
+          changed_files: ['src/example.py'],
+          changed_file_count: 1,
+          started_at: session.started_at,
+          ended_at: session.ended_at,
+          test_observation: 'passed',
+          grouping: 'prompt_turn',
+        },
+      ],
+    });
+    render(<App />);
+
+    await openTool('codex');
+    expect(screen.getByTestId('session-row-codex-sess-1').textContent).toContain('3 prompts');
+    fireEvent.click(screen.getByTestId('session-row-codex-sess-1'));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/prompt-row-codex-sess-1-/)).toHaveLength(1);
+      expect(screen.getByTestId('session-row-codex-sess-1').textContent).toContain('1 prompt');
+    });
+    expect(screen.getByTestId('prompt-row-codex-sess-1-0').textContent).toContain(
+      '1 file changed',
+    );
   });
 
   it('imports session on click, opens replay workspace, and preserves home state when navigating back', async () => {

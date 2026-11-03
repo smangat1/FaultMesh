@@ -102,8 +102,11 @@ describe('Phase 1 replay history UX', () => {
       />
     );
 
-    expect(screen.getByTestId('replay-step-plain-label').textContent).toContain(
+    expect(screen.getByTestId('replay-prompt-rail').textContent).toContain(
       'Investigate why the nightly invoice reconciliation reports duplicate rows.'
+    );
+    expect(screen.getByTestId('replay-step-plain-label').textContent).toBe(
+      'Edited src/reconciliation.py'
     );
     expect(screen.getByTestId('replay-step-details').hasAttribute('open')).toBe(false);
     expect(screen.getByTestId('timeline-step-indicator').textContent).not.toContain('tool:');
@@ -111,10 +114,7 @@ describe('Phase 1 replay history UX', () => {
       'Desktop app required to watch local projects'
     );
 
-    fireEvent.click(screen.getByTestId('replay-next-btn'));
-    expect(screen.getByTestId('replay-step-plain-label').textContent).toBe(
-      'Edited src/reconciliation.py'
-    );
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Action 1 of 1');
   });
 
   it('persists an imported session project link after the existing watch flow succeeds', async () => {

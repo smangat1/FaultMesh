@@ -10,6 +10,7 @@ const { pathToFileURL } = require('node:url');
 
 const {
   CHANNELS,
+  HISTORY_IMPORT_TIMEOUT_MS,
   SpectateStreamParser,
   attachSpectateBridge,
   validateSpectateRecord,
@@ -469,7 +470,7 @@ test('listPrompts validates input and lazily spawns the fixed aggregate command'
   assert.equal(value.spawns.at(-1)[2].shell, false);
   const child = value.children.at(-1);
   child.stdout.emit('data', Buffer.from(JSON.stringify({
-    schema_version: 'history-prompt-index-1.0',
+    schema_version: 'history-prompt-index-1.1',
     session_id: 'session-one',
     source_file_sha256: 'a'.repeat(64),
     cached: false,
@@ -612,6 +613,41 @@ test('importSession validates inputs, spawns fixed argv, cleans up temp file, an
   const stored = await storedPromise;
   assert.equal(stored.name, 'stored-session.json');
   assert.equal(fs.existsSync(storedOut), false);
+});
+
+test('importSession allows slow large histories and returns a synthetic 220-prompt export', async (context) => {
+  const value = harness();
+  context.after(() => {
+    value.bridge.dispose();
+    fs.rmSync(value.root, { recursive: true, force: true });
+  });
+  assert.equal(HISTORY_IMPORT_TIMEOUT_MS, 120000);
+  const importSession = value.ipcMain.handlers.get(CHANNELS.importSession);
+  const pending = importSession(value.event, 'many-prompts', 'codex');
+  const outputPath = value.spawns.at(-1)[1][5];
+  const records = Array.from({ length: 220 }, (_, index) => ({
+    schema_version: 'replay-store-1.0',
+    id: `record-${index + 1}`,
+    sequence: index + 1,
+    prompt_id: `prompt-${index + 1}`,
+    prompt_text: `Synthetic prompt ${index + 1}`,
+  }));
+  fs.writeFileSync(outputPath, JSON.stringify({
+    schema_version: 'replay-export-1.0',
+    session: { id: 'many-prompts', created_at: '2026-11-02T12:00:00Z' },
+    records,
+    timeline: records.map((record) => ({
+      sequence: record.sequence,
+      record_id: record.id,
+    })),
+  }), 'utf8');
+  value.children.at(-1).emit('close', 0, null);
+
+  const result = await pending;
+  const parsed = JSON.parse(result.text);
+  assert.equal(parsed.records.length, 220);
+  assert.equal(new Set(parsed.records.map((record) => record.prompt_id)).size, 220);
+  assert.equal(fs.existsSync(outputPath), false);
 });
 
 test('modelStatus uses fixed argv and rejects renderer arguments', async (context) => {

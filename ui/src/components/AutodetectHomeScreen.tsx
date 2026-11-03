@@ -91,6 +91,53 @@ export interface DatedHistorySessions {
   sessions: HistorySession[];
 }
 
+const TEST_OBSERVATION_RANK: Record<HistoryPromptSummary['test_observation'], number> = {
+  not_observed: 0,
+  passed: 1,
+  failed: 2,
+};
+
+export function groupHistoryPromptRows(
+  prompts: HistoryPromptSummary[],
+): HistoryPromptSummary[] {
+  const grouped = new Map<string, HistoryPromptSummary>();
+  for (const prompt of prompts) {
+    const key = prompt.prompt_id || `recorded-events:${prompt.start_sequence}:${prompt.end_sequence}`;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, {
+        ...prompt,
+        changed_files: Array.from(new Set(prompt.changed_files)).sort(),
+      });
+      continue;
+    }
+    const changedFiles = Array.from(new Set([
+      ...existing.changed_files,
+      ...prompt.changed_files,
+    ])).sort();
+    grouped.set(key, {
+      ...existing,
+      first_line: existing.first_line || prompt.first_line,
+      start_sequence: Math.min(existing.start_sequence, prompt.start_sequence),
+      end_sequence: Math.max(existing.end_sequence, prompt.end_sequence),
+      changed_files: changedFiles,
+      changed_file_count: changedFiles.length,
+      started_at: existing.started_at < prompt.started_at ? existing.started_at : prompt.started_at,
+      ended_at: existing.ended_at > prompt.ended_at ? existing.ended_at : prompt.ended_at,
+      test_observation: TEST_OBSERVATION_RANK[prompt.test_observation]
+        > TEST_OBSERVATION_RANK[existing.test_observation]
+        ? prompt.test_observation
+        : existing.test_observation,
+      grouping: existing.grouping === 'prompt_turn' || prompt.grouping === 'prompt_turn'
+        ? 'prompt_turn'
+        : 'recorded_events',
+    });
+  }
+  return Array.from(grouped.values()).sort(
+    (left, right) => left.start_sequence - right.start_sequence,
+  );
+}
+
 export function groupSessionsByLocalDate(
   sessions: HistorySession[],
   now: Date = new Date(),
@@ -778,7 +825,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                         )}
                       >
                         <span className="history-search-prompt-copy">
-                          <strong>{prompt.first_line || 'Prompt preview unavailable'}</strong>
+                          <strong>{prompt.first_line || `Prompt recorded at step ${prompt.start_sequence}`}</strong>
                           <span>
                             {matchedPaths.length > 0
                               ? matchedPaths.slice(0, 3).join(' · ')
@@ -1142,7 +1189,11 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                       const primaryTitle = hasSourceTitle
                                         ? sess.source_title!
                                         : (sess.first_prompt_preview || 'Untitled session');
-                                      const promptRows = promptsBySession[sess.session_id] || [];
+                                      const loadedPrompts = promptsBySession[sess.session_id];
+                                      const promptRows = groupHistoryPromptRows(loadedPrompts || []);
+                                      const promptCount = loadedPrompts
+                                        ? promptRows.length
+                                        : sess.prompt_count;
                                       return (
                                         <div key={sess.session_id} className="history-session-branch">
                                           <button
@@ -1164,7 +1215,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                               )}
                                               <span className="history-session-meta">
                                                 <span data-testid="session-prompt-count">
-                                                  {sess.prompt_count} {sess.prompt_count === 1 ? 'prompt' : 'prompts'}
+                                                  {promptCount} {promptCount === 1 ? 'prompt' : 'prompts'}
                                                 </span>
                                                 <span data-testid="session-time" title={sess.started_at || sess.ended_at}>
                                                   {formatRelativeTime(sess.started_at || sess.ended_at)}
@@ -1217,7 +1268,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                                 >
                                                   <span className="history-prompt-index">{promptIndex + 1}</span>
                                                   <span className="history-prompt-copy">
-                                                    <span>{prompt.first_line || 'Prompt preview unavailable'}</span>
+                                                    <span>{prompt.first_line || `Prompt recorded at step ${prompt.start_sequence}`}</span>
                                                     <span>
                                                       {prompt.changed_file_count === 0
                                                         ? 'No recorded file changes'

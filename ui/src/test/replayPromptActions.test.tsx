@@ -71,7 +71,7 @@ describe('prompt replay actions', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('replay-next-btn'));
+    fireEvent.click(screen.getByTestId('replay-prompt-nav-1'));
     expect(screen.getByTestId('replay-prompt-actions')).toBeDefined();
     fireEvent.click(screen.getByTestId('replay-copy-prompt-diff'));
     await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
@@ -101,7 +101,7 @@ describe('prompt replay actions', () => {
       />
     );
 
-    fireEvent.click(screen.getByTestId('replay-next-btn'));
+    fireEvent.click(screen.getByTestId('replay-prompt-nav-1'));
     fireEvent.click(screen.getByTestId('replay-generate-revert-plan'));
     expect(screen.getByRole('status').textContent).toContain('Building the plan');
     await waitFor(() => expect(requestPlan).toHaveBeenCalledWith(
@@ -125,7 +125,7 @@ describe('prompt replay actions', () => {
 
   it('hides the editor action in the browser while leaving read-only actions available', () => {
     render(<ReplayWorkspace adapter={promptAdapter()} hasSpectateBridge={false} />);
-    fireEvent.click(screen.getByTestId('replay-next-btn'));
+    fireEvent.click(screen.getByTestId('replay-prompt-nav-1'));
 
     expect(screen.getByTestId('replay-copy-prompt-diff')).toBeDefined();
     expect(screen.queryByTestId('replay-open-prompt-file')).toBeNull();

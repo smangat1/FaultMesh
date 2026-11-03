@@ -44,7 +44,7 @@ function createTestV1(): ReplayExportV1 {
         provenance: 'initial_snapshot',
         completeness: 'complete',
         attribution_status: 'not_applicable',
-        turn_id: null,
+        turn_id: 'turn-1',
         tool_use_id: null,
         tool_name: null,
         checkpoint_id: 'cp-01',
@@ -470,6 +470,7 @@ describe('ReplayWorkspace Component (Phase C2)', () => {
     const adapter = new ReplayAdapter(createHistoryImportV1());
     render(<ReplayWorkspace adapter={adapter} />);
     fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
+    fireEvent.click(screen.getByTestId('replay-prev-btn'));
 
     expect(screen.getByTestId('replay-history-prompt').textContent).toContain(
       'Please inspect [redacted: api key] safely'

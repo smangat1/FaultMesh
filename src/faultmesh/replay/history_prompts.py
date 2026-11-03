@@ -39,7 +39,7 @@ class HistoryPromptSummary(BaseModel):
 class HistoryPromptIndex(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["history-prompt-index-1.0"] = "history-prompt-index-1.0"
+    schema_version: Literal["history-prompt-index-1.1"] = "history-prompt-index-1.1"
     session_id: str
     source_file_sha256: str
     prompts: list[HistoryPromptSummary]
@@ -201,8 +201,15 @@ def list_history_prompts(
     with ReplayStore(store_root or default_replay_root()) as store:
         cached = store.get_history_prompt_index(digest)
         if cached is not None:
-            parsed = HistoryPromptIndex.model_validate_json(cached)
-            if parsed.session_id == session_id and parsed.search_ready:
+            try:
+                parsed = HistoryPromptIndex.model_validate_json(cached)
+            except ValueError:
+                parsed = None
+            if (
+                parsed is not None
+                and parsed.session_id == session_id
+                and parsed.search_ready
+            ):
                 return parsed.model_copy(update={"cached": True})
 
         exported = import_history_session(

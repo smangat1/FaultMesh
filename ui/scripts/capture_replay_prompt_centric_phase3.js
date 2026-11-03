@@ -105,7 +105,7 @@ async function makePage(browser, viewport, mode) {
       onSpectateEvent: () => () => {},
       listHistory: async () => payload.history,
       listPrompts: async () => ({
-        schema_version: 'history-prompt-index-1.0',
+        schema_version: 'history-prompt-index-1.1',
         session_id: 'synthetic-phase3-session',
         source_file_sha256: 'a'.repeat(64),
         cached: false,

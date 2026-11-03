@@ -86,7 +86,10 @@ def baseline_chapters(
             if record.prompt_id is not None or record.turn_id is not None
             else "deterministic_fixed_group"
         )
-        prompt_key = record.prompt_id or record.turn_id
+        # A prompt record can carry both IDs while the following tool records only
+        # carry turn_id. Prefer the turn identity so one recorded turn never splits
+        # into a text-bearing prompt and a second textless action group.
+        prompt_key = record.turn_id or record.prompt_id
         same_turn = (
             source == "deterministic_prompt_turn"
             and current_source == source

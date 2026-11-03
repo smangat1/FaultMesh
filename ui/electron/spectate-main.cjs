@@ -7,6 +7,8 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawn: spawnProcess } = require('child_process');
 
+const HISTORY_IMPORT_TIMEOUT_MS = 120000;
+
 const CHANNELS = Object.freeze({
   choose: 'faultmesh:spectate:choose-project',
   start: 'faultmesh:spectate:start',
@@ -886,7 +888,7 @@ function attachSpectateBridge({
             return reject(new Error('invalid replay-history-prompts payload structure'));
           }
           resolve({
-            schema_version: 'history-prompt-index-1.0',
+            schema_version: 'history-prompt-index-1.1',
             session_id: String(parsed.session_id || ''),
             source_file_sha256: String(parsed.source_file_sha256 || ''),
             cached: Boolean(parsed.cached),
@@ -1041,8 +1043,8 @@ function attachSpectateBridge({
           proc.kill('SIGTERM');
         } catch (_) {}
         cleanupTemp();
-        reject(new Error('replay-history-import timed out'));
-      }, 30000);
+        reject(new Error('replay-history-import timed out after 120 seconds'));
+      }, HISTORY_IMPORT_TIMEOUT_MS);
       timer.unref?.();
 
       proc.stderr.on('data', (chunk) => {
@@ -1493,6 +1495,7 @@ function attachSpectateBridge({
 
 module.exports = {
   CHANNELS,
+  HISTORY_IMPORT_TIMEOUT_MS,
   SpectateStreamParser,
   attachSpectateBridge,
   validateSpectateRecord,
