@@ -157,7 +157,12 @@ describe('Phase 7: live prompt surfacing', () => {
     expect((await screen.findByTestId('replay-new-prompt-toast')).textContent).toContain(
       'New prompt recorded'
     );
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Prompt 2 of 5');
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Action 1 of 2');
+    const promptButtons = screen.getAllByTestId(/replay-prompt-nav-/);
+    expect(promptButtons).toHaveLength(5);
+    const newPrompt = promptButtons[promptButtons.length - 1];
+    expect(newPrompt.textContent).toContain('Document the negative input behavior.');
+    expect(newPrompt.getAttribute('aria-current')).toBeNull();
     fireEvent.click(screen.getByTestId('replay-toggle-chapters'));
     expect(screen.getByTestId('replay-chapters-rail-container').textContent).toContain(
       'Refactor core logic and verify tests'
@@ -167,11 +172,9 @@ describe('Phase 7: live prompt surfacing', () => {
     );
     fireEvent.click(screen.getByTestId('replay-toggle-chapters'));
 
-    for (let index = 0; index < 3; index += 1) {
-      fireEvent.click(screen.getByTestId('replay-next-btn'));
-    }
-    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Prompt 5 of 5');
-    expect(screen.getByTestId('replay-prompt-card').textContent).toContain(
+    fireEvent.click(newPrompt);
+    expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Action 1 of 1');
+    expect(screen.getByTestId('replay-prompt-no-code-text').textContent).toContain(
       'Document the negative input behavior.'
     );
   });

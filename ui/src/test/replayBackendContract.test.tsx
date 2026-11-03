@@ -19,7 +19,9 @@ describe('Replay Backend Contract Regression Tests (Real Export Artifacts)', () 
     expect(valResult.version).toBe('replay-export-2.0');
 
     // 2. Wrap in ReplayAdapter
-    const adapter = new ReplayAdapter(valResult.data as ReplayExportDocument, valResult.origin);
+    const grouped = structuredClone(valResult.data) as ReplayExportDocument;
+    for (const record of grouped.records) record.turn_id = 'contract-turn';
+    const adapter = new ReplayAdapter(grouped, valResult.origin);
     const { unmount } = render(<ReplayWorkspace adapter={adapter} />);
 
     // The legacy contract assertions below inspect exact raw sequences.

@@ -110,7 +110,8 @@ describe('Phase 5: cross-session history search', () => {
     fireEvent.click(screen.getByTestId('history-search-prompt-codex-sess-title-5'));
     await waitFor(() => {
       expect(bridge.importSession).toHaveBeenCalledWith('codex-sess-title', 'codex');
-      expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Prompt 4 of 4');
+      expect(screen.getByTestId('replay-current-seq-badge').textContent).toContain('Action 1 of 3');
+      expect(screen.getByTestId('replay-prompt-nav-3').getAttribute('aria-current')).toBe('true');
     });
   });
 

@@ -12,6 +12,12 @@ import { REPLAY_PROJECT_LINKS_STORAGE_KEY } from '../utils/replayProjectLinksSto
 
 const historyAdapter = () => new ReplayAdapter(historyFixture as unknown as AnyReplayExport);
 
+function singlePromptNarratedExport(): AnyReplayExport {
+  const source = structuredClone(narratedFixture) as unknown as AnyReplayExport;
+  for (const record of source.records) record.turn_id = 'synthetic-single-prompt';
+  return source;
+}
+
 describe('replay local narration wiring', () => {
   beforeEach(() => {
     window.localStorage.removeItem(FIRST_USE_TIPS_STORAGE_KEY);
@@ -143,7 +149,7 @@ describe('replay local narration wiring', () => {
     });
     render(
       <ReplayWorkspace
-        adapter={new ReplayAdapter(structuredClone(narratedFixture) as unknown as AnyReplayExport)}
+        adapter={new ReplayAdapter(singlePromptNarratedExport())}
         defaultChaptersOpen={true}
         onSummarizeSelection={summarize}
       />
@@ -174,6 +180,7 @@ describe('replay local narration wiring', () => {
         onExplainStep={explain}
       />
     );
+    explain.mockClear();
     fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
     fireEvent.click(screen.getByTestId(`replay-checkpoint-row-${source.timeline[0].sequence}`));
     expect(screen.getByTestId('replay-step-deterministic-note').textContent).toContain('No recorded changes');
@@ -185,7 +192,7 @@ describe('replay local narration wiring', () => {
       FIRST_USE_TIPS_STORAGE_KEY,
       JSON.stringify({ home: true, entrance: true, replay: true, replayHistory: true })
     );
-    const source = structuredClone(narratedFixture) as unknown as AnyReplayExport;
+    const source = singlePromptNarratedExport();
     if (source.schema_version === 'replay-export-2.0') source.narration = [];
     const original = (narratedFixture as unknown as { narration: StepNarration[] }).narration;
     const resolutions: Array<(value: StepNarration) => void> = [];

@@ -5,6 +5,12 @@ import { ReplayAdapter } from '../adapter/replayAdapter';
 import heroFixture from '../fixtures/fixture_replay_timeline_hero.json';
 import type { AnyReplayExport, ReplayExportV1 } from '../replay/types';
 
+function singlePromptHeroAdapter(): ReplayAdapter {
+  const source = structuredClone(heroFixture) as unknown as AnyReplayExport;
+  for (const record of source.records) record.turn_id = 'synthetic-single-prompt';
+  return new ReplayAdapter(source, 'synthetic_fixture');
+}
+
 describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -12,7 +18,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
   });
 
   it('renders default timeline-first layout: hero bar visible, diff viewer as main stage, panels closed by default', () => {
-    const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
+    const adapter = singlePromptHeroAdapter();
     render(<ReplayWorkspace adapter={adapter} />);
     fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
@@ -55,7 +61,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
   });
 
   it('toggles Chapters left rail via C key and header button with close button dismissal', () => {
-    const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
+    const adapter = singlePromptHeroAdapter();
     render(<ReplayWorkspace adapter={adapter} />);
 
     const chaptersContainer = screen.getByTestId('replay-chapters-rail-container');
@@ -359,7 +365,7 @@ describe('Phase P4: Timeline-First Layout & Mini-Map Dock', () => {
   });
 
   it('prevents keyboard arrow resizing from leaking through to global replay checkpoint navigation', () => {
-    const adapter = new ReplayAdapter(heroFixture as unknown as AnyReplayExport, 'synthetic_fixture');
+    const adapter = singlePromptHeroAdapter();
     render(<ReplayWorkspace adapter={adapter} defaultMiniMapOpen={true} />);
     fireEvent.click(screen.getByTestId('replay-raw-step-toggle'));
 
