@@ -17,7 +17,6 @@ import type { ProjectChoice, RevertPlan } from '../../spectate/types';
 import type {
   SelectionSummary,
   StepNarration,
-  StructuredTestEvidence,
   TypedClaim,
 } from '../../replay/types';
 import {
@@ -65,15 +64,6 @@ function promptClaimLabel(claim: TypedClaim): string {
     return `Command exited with code ${assertion.exit_code}`;
   }
   return `Tests: ${assertion.passed} passed, ${assertion.failed} failed, ${assertion.errors} errors`;
-}
-
-function promptTestAssociationLabel(tests: StructuredTestEvidence[]): string {
-  if (tests.length === 0) return 'not observed';
-  const associations = new Set(tests.map((test) => test.association));
-  if (associations.has('nearby_in_time_state_unverified')) return 'nearby, state unverified';
-  if (associations.has('none')) return 'association unknown';
-  if (associations.has('controlled_no_write')) return 'controlled no-write';
-  return 'content identity';
 }
 
 function usePrefersReducedMotion(): boolean {
@@ -185,6 +175,12 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
   const prefersReducedMotion = usePrefersReducedMotion();
   const [currentSeq, setCurrentSeq] = useState<number>(() => adapter.getCurrentSequence());
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(() => {
+    const initialSequence = adapter.getCurrentSequence();
+    return promptGroups.find(
+      (prompt) => initialSequence >= prompt.startSequence && initialSequence <= prompt.endSequence,
+    )?.id || promptGroups[0]?.id || null;
+  });
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [isNarrationOn, setIsNarrationOn] = useState<boolean>(true);
@@ -234,34 +230,38 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const sessionSummary = adapter.getSessionSummary();
   const activePromptIndex = Math.max(
     0,
-    promptGroups.findIndex(
-      (prompt) => currentSeq >= prompt.startSequence && currentSeq <= prompt.endSequence
-    )
+    promptGroups.findIndex((prompt) => prompt.id === selectedPromptId),
   );
   const activePrompt = promptGroups[activePromptIndex] || null;
-  const promptStopSequences = useMemo(() => {
-    const stops = promptGroups.flatMap((prompt) => (
-      prompt.fileChangingSequences.length > 0
-        ? prompt.fileChangingSequences
-        : [prompt.startSequence]
+  const promptRangeTimeline = useMemo(() => {
+    if (!activePrompt) return [];
+    return timeline.filter((entry) => (
+      entry.sequence >= activePrompt.startSequence
+      && entry.sequence <= activePrompt.endSequence
     ));
-    return new Set(stops);
-  }, [promptGroups]);
-  const navigationTimeline = useMemo(
-    () => rawStepMode ? timeline : timeline.filter((entry) => promptStopSequences.has(entry.sequence)),
-    [promptStopSequences, rawStepMode, timeline]
-  );
-  const foldedSequences = useMemo(
-    () => rawStepMode
-      ? []
-      : timeline.filter((entry) => !promptStopSequences.has(entry.sequence)).map((entry) => entry.sequence),
-    [promptStopSequences, rawStepMode, timeline]
-  );
+  }, [activePrompt, timeline]);
+  const promptActionTimeline = useMemo(() => {
+    const actions = promptRangeTimeline.filter((entry) => {
+      const record = adapter.getRecordForSequence(entry.sequence);
+      const isPromptOnly = Boolean(
+        record?.prompt_text
+        && !record.tool_name
+        && !record.edit_patch
+        && !record.edit_command
+        && record.tool_input === null
+        && record.tool_response === null
+        && entry.changed_files.length === 0
+        && entry.test_evidence.length === 0
+      );
+      return !isPromptOnly;
+    });
+    return actions.length > 0 ? actions : promptRangeTimeline;
+  }, [activePrompt, adapter, promptRangeTimeline]);
+  const navigationTimeline = rawStepMode ? promptRangeTimeline : promptActionTimeline;
+  const foldedSequences = useMemo(() => [], []);
   const promptEntrySequences = useMemo(
-    () => new Set(promptGroups.map((prompt) => (
-      prompt.fileChangingSequences[0] ?? prompt.startSequence
-    ))),
-    [promptGroups]
+    () => new Set(promptActionTimeline[0] ? [promptActionTimeline[0].sequence] : []),
+    [promptActionTimeline]
   );
   const currentIndex = navigationTimeline.findIndex((entry) => entry.sequence === currentSeq);
   const activePromptDiff = useMemo(() => {
@@ -432,23 +432,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     return adapter.getAllTests ? adapter.getAllTests() : [];
   }, [adapter]);
 
-  const foldedRecordsForCurrent = useMemo(() => {
-    if (rawStepMode || !activePrompt || activePrompt.fileChangingSequences.length === 0) return [];
-    return timeline
-      .filter((entry) => (
-        entry.sequence >= activePrompt.startSequence
-        && entry.sequence <= activePrompt.endSequence
-        && !promptStopSequences.has(entry.sequence)
-      ))
-      .filter((entry) => {
-        const nearest = activePrompt.fileChangingSequences.reduce((best, sequence) => (
-          Math.abs(sequence - entry.sequence) < Math.abs(best - entry.sequence) ? sequence : best
-        ));
-        return nearest === currentSeq;
-      })
-      .map((entry) => adapter.getRecordForSequence(entry.sequence))
-      .filter((record): record is NonNullable<typeof record> => record !== null);
-  }, [activePrompt, adapter, currentSeq, promptStopSequences, rawStepMode, timeline]);
+  const foldedRecordsForCurrent = useMemo(() => [], []);
 
   // Set sequence and update adapter
   const isTrivialStep = useCallback((seq: number) => {
@@ -548,6 +532,30 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
     handleSelectSequence(seq);
   }, [handleSelectSequence, pausePlayback]);
 
+  const handleSelectPrompt = useCallback((promptId: string) => {
+    const prompt = promptGroups.find((item) => item.id === promptId);
+    if (!prompt) return;
+    pausePlayback();
+    setSelectedPromptId(promptId);
+    const entries = timeline.filter((entry) => (
+      entry.sequence >= prompt.startSequence && entry.sequence <= prompt.endSequence
+    ));
+    const firstAction = entries.find((entry) => {
+      const record = adapter.getRecordForSequence(entry.sequence);
+      return !(
+        record?.prompt_text
+        && !record.tool_name
+        && !record.edit_patch
+        && !record.edit_command
+        && record.tool_input === null
+        && record.tool_response === null
+        && entry.changed_files.length === 0
+        && entry.test_evidence.length === 0
+      );
+    }) || entries[0];
+    if (firstAction) handleSelectSequence(firstAction.sequence);
+  }, [adapter, handleSelectSequence, pausePlayback, promptGroups, timeline]);
+
   useEffect(() => {
     if (!isPlaying) return undefined;
     if (currentIndex < 0 || currentIndex >= navigationTimeline.length - 1) {
@@ -592,13 +600,18 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   }, [pausePlayback]);
 
   useEffect(() => {
-    if (rawStepMode || promptStopSequences.has(currentSeq)) return;
+    if (selectedPromptId && promptGroups.some((prompt) => prompt.id === selectedPromptId)) return;
     const prompt = promptGroups.find(
-      (item) => currentSeq >= item.startSequence && currentSeq <= item.endSequence
-    );
-    const target = prompt?.fileChangingSequences[0] ?? prompt?.startSequence;
-    if (target !== undefined) handleSelectSequence(target);
-  }, [currentSeq, handleSelectSequence, promptGroups, promptStopSequences, rawStepMode]);
+      (item) => currentSeq >= item.startSequence && currentSeq <= item.endSequence,
+    ) || promptGroups[0];
+    setSelectedPromptId(prompt?.id || null);
+  }, [currentSeq, promptGroups, selectedPromptId]);
+
+  useEffect(() => {
+    if (navigationTimeline.length === 0) return;
+    if (navigationTimeline.some((entry) => entry.sequence === currentSeq)) return;
+    handleSelectSequence(navigationTimeline[0].sequence);
+  }, [currentSeq, handleSelectSequence, navigationTimeline]);
 
   const handleRangeSelect = useCallback((seq: number, extend: boolean) => {
     pausePlayback();
@@ -787,8 +800,8 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             onClick={handlePrevCheckpoint}
             disabled={currentIndex <= 0}
             className="replay-toolbar-icon"
-            title={rawStepMode ? 'Previous raw step · Left arrow or J' : 'Previous prompt change · Left arrow or J'}
-            aria-label={rawStepMode ? 'Previous raw step' : 'Previous prompt change'}
+            title={rawStepMode ? 'Previous raw step · Left arrow or J' : 'Previous action · Left arrow or J'}
+            aria-label={rawStepMode ? 'Previous raw step' : 'Previous action'}
             data-testid="replay-prev-btn"
           >
             <ChevronLeft size={16} />
@@ -799,15 +812,15 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             data-testid="replay-current-seq-badge"
           >
             {rawStepMode
-              ? `Step ${currentSeq} of ${timeline.length}`
-              : `Prompt ${activePromptIndex + 1} of ${promptGroups.length}`}
+              ? `Step ${Math.max(1, currentIndex + 1)} of ${navigationTimeline.length}`
+              : `Action ${Math.max(1, currentIndex + 1)} of ${navigationTimeline.length}`}
           </span>
           <button
             onClick={handleNextCheckpoint}
             disabled={currentIndex >= navigationTimeline.length - 1}
             className="replay-toolbar-icon"
-            title={rawStepMode ? 'Next raw step · Right arrow or K' : 'Next prompt change · Right arrow or K'}
-            aria-label={rawStepMode ? 'Next raw step' : 'Next prompt change'}
+            title={rawStepMode ? 'Next raw step · Right arrow or K' : 'Next action · Right arrow or K'}
+            aria-label={rawStepMode ? 'Next raw step' : 'Next action'}
             data-testid="replay-next-btn"
           >
             <ChevronRight size={16} />
@@ -991,6 +1004,155 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
         </div>
       )}
 
+      {!rawStepMode && activePrompt && (
+        <section className="replay-prompt-navigation" data-testid="replay-prompt-navigation">
+          <nav className="replay-prompt-rail" aria-label="Prompts" data-testid="replay-prompt-rail">
+            {promptGroups.map((prompt, index) => (
+              <button
+                type="button"
+                key={prompt.id}
+                className={prompt.id === activePrompt.id ? 'active' : ''}
+                aria-current={prompt.id === activePrompt.id ? 'true' : undefined}
+                onClick={() => handleSelectPrompt(prompt.id)}
+                data-testid={`replay-prompt-nav-${index}`}
+                title={prompt.promptText || `Prompt recorded at step ${prompt.startSequence}`}
+              >
+                <span>{index + 1}</span>
+                <strong>
+                  {prompt.promptText?.split(/\r?\n/)[0]
+                    || `Prompt recorded at step ${prompt.startSequence}`}
+                </strong>
+              </button>
+            ))}
+          </nav>
+          <details className="replay-prompt-context" data-testid="replay-prompt-context">
+            <summary>
+              <span>Prompt {activePromptIndex + 1}</span>
+              <strong>
+                {activePrompt.promptText?.split(/\r?\n/)[0]
+                  || `Prompt recorded at step ${activePrompt.startSequence}`}
+              </strong>
+              <span className="replay-prompt-test-status" data-state={
+                activePrompt.testEvidence.some((test) => test.state === 'fail' || test.state === 'error')
+                  ? 'fail'
+                  : activePrompt.testEvidence.some((test) => test.state === 'pass')
+                  ? 'pass'
+                  : 'not-observed'
+              }>
+                {activePrompt.testEvidence.some((test) => test.state === 'fail' || test.state === 'error')
+                  ? 'Tests failed'
+                  : activePrompt.testEvidence.some((test) => test.state === 'pass')
+                  ? 'Tests passed'
+                  : 'Tests not observed'}
+              </span>
+            </summary>
+            <div className="replay-prompt-context-body">
+              {activePrompt.promptText && activePrompt.promptText.includes('\n') && (
+                <pre>{activePrompt.promptText}</pre>
+              )}
+              {promptInterpretation && (
+                <div className="replay-prompt-interpretation" data-testid="replay-prompt-interpretation">
+                  <span>Model interpretation</span>
+                  <p>{promptInterpretation.text}</p>
+                </div>
+              )}
+              <div className="replay-prompt-risks" data-testid="replay-prompt-risks">
+                {promptRiskFlags.length > 0 ? promptRiskFlags.map((flag) => (
+                  <span
+                    key={`${flag.kind}:${flag.files.join('|')}`}
+                    className="replay-risk-chip"
+                    title={`${flag.source}: ${flag.files.join(', ')}`}
+                    data-risk-kind={flag.kind}
+                  >
+                    {flag.label}: {flag.files.slice(0, 2).join(', ')}
+                    {flag.files.length > 2 ? ` +${flag.files.length - 2}` : ''}
+                  </span>
+                )) : (
+                  <span className="replay-risk-clean">No rule-based risk flags</span>
+                )}
+              </div>
+              {promptClaimCheck && (
+                <div className="replay-prompt-claims" data-testid="replay-prompt-claims">
+                  <div className="replay-prompt-claims-label">{promptClaimCheck.label}</div>
+                  {checkedPromptClaims.length > 0 ? checkedPromptClaims.map(({ claim, verdict }) => (
+                    <div className="replay-checked-claim" key={claim.id}>
+                      <span
+                        className="replay-verdict-chip"
+                        data-verdict={verdict?.verdict || 'unsupported_or_unknown'}
+                      >
+                        {verdict?.verdict === 'supported'
+                          ? 'Supported'
+                          : verdict?.verdict === 'contradicted'
+                          ? 'Contradicted'
+                          : 'Unknown'}
+                      </span>
+                      <span>{promptClaimLabel(claim)}</span>
+                      <code title={verdict?.reason || 'No checker reason recorded'}>
+                        {(verdict?.evidence_refs || claim.evidence_refs).join(', ')}
+                      </code>
+                    </div>
+                  )) : (
+                    <span className="replay-risk-clean">No checkable atomic claims were returned.</span>
+                  )}
+                </div>
+              )}
+              <div className="replay-prompt-card-meta">
+                <span>{activePrompt.changedFiles.length} {activePrompt.changedFiles.length === 1 ? 'file' : 'files'} changed</span>
+                <span>
+                  {activePrompt.grouping === 'prompt_turn'
+                    ? 'Grouped from recorded prompt evidence'
+                    : 'Grouped from recorded events (prompt link unavailable)'}
+                </span>
+              </div>
+              <div className="replay-prompt-actions" data-testid="replay-prompt-actions">
+                <button
+                  type="button"
+                  onClick={handleCopyPromptDiff}
+                  disabled={!activePromptDiff}
+                  title={activePromptDiff ? 'Copy the combined recorded diff' : 'No recorded diff to copy'}
+                  data-testid="replay-copy-prompt-diff"
+                >
+                  <Copy size={13} />
+                  Copy diff
+                </button>
+                {hasSpectateBridge && importedSessionId && (
+                  <button
+                    type="button"
+                    onClick={handleOpenPromptFile}
+                    disabled={!projectLinked || !activePromptFile || !onOpenSessionFile}
+                    title={projectLinked
+                      ? 'Open the selected changed file in your editor'
+                      : 'Link the project folder to open files'}
+                    data-testid="replay-open-prompt-file"
+                  >
+                    <ExternalLink size={13} />
+                    Open in editor
+                  </button>
+                )}
+                {hasSpectateBridge && importedSessionId && (
+                  <button
+                    type="button"
+                    onClick={handleRevertPlan}
+                    disabled={!onRequestRevertPlan}
+                    title="Generate a read-only plan; no files will be changed"
+                    data-testid="replay-generate-revert-plan"
+                  >
+                    <Undo2 size={13} />
+                    Revert plan
+                  </button>
+                )}
+                {actionNotice && (
+                  <span className="replay-prompt-action-notice" role="status">
+                    <Check size={12} />
+                    {actionNotice}
+                  </span>
+                )}
+              </div>
+            </div>
+          </details>
+        </section>
+      )}
+
       {/* 2. Hero Timeline Bar (Spanning Full Workspace Width) */}
       <div
         className="replay-scrubber-shell"
@@ -1115,139 +1277,6 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
             className="replay-stop-content"
             data-testid="replay-stop-content"
           >
-          {!rawStepMode && activePrompt && (
-            <section
-              className={`replay-prompt-card ${isPlaying ? 'is-playing' : ''}`}
-              data-testid="replay-prompt-card"
-            >
-              <div className="replay-prompt-card-heading">
-                <div>
-                  <span className="replay-prompt-kicker">Prompt {activePromptIndex + 1}</span>
-                  <h2>{activePrompt.promptText?.split(/\r?\n/)[0] || `Prompt recorded at step ${activePrompt.startSequence}`}</h2>
-                </div>
-                <span className="replay-prompt-test-status" data-state={
-                  activePrompt.testEvidence.some((test) => test.state === 'fail' || test.state === 'error')
-                    ? 'fail'
-                    : activePrompt.testEvidence.some((test) => test.state === 'pass')
-                    ? 'pass'
-                    : 'not-observed'
-                }>
-                  {activePrompt.testEvidence.some((test) => test.state === 'fail' || test.state === 'error')
-                    ? 'Tests failed'
-                    : activePrompt.testEvidence.some((test) => test.state === 'pass')
-                    ? 'Tests passed'
-                    : 'Tests not observed'}
-                  {activePrompt.testEvidence.length > 0
-                    ? ` · ${promptTestAssociationLabel(activePrompt.testEvidence)}`
-                    : ''}
-                </span>
-              </div>
-              {activePrompt.promptText && activePrompt.promptText.includes('\n') && (
-                <details>
-                  <summary>Full prompt</summary>
-                  <pre>{activePrompt.promptText}</pre>
-                </details>
-              )}
-              {promptInterpretation && (
-                <div className="replay-prompt-interpretation" data-testid="replay-prompt-interpretation">
-                  <span>Model interpretation</span>
-                  <p>{promptInterpretation.text}</p>
-                </div>
-              )}
-              <div className="replay-prompt-risks" data-testid="replay-prompt-risks">
-                {promptRiskFlags.length > 0 ? promptRiskFlags.map((flag) => (
-                  <span
-                    key={`${flag.kind}:${flag.files.join('|')}`}
-                    className="replay-risk-chip"
-                    title={`${flag.source}: ${flag.files.join(', ')}`}
-                    data-risk-kind={flag.kind}
-                  >
-                    {flag.label}: {flag.files.slice(0, 2).join(', ')}
-                    {flag.files.length > 2 ? ` +${flag.files.length - 2}` : ''}
-                  </span>
-                )) : (
-                  <span className="replay-risk-clean">No rule-based risk flags</span>
-                )}
-              </div>
-              {promptClaimCheck && (
-                <div className="replay-prompt-claims" data-testid="replay-prompt-claims">
-                  <div className="replay-prompt-claims-label">{promptClaimCheck.label}</div>
-                  {checkedPromptClaims.length > 0 ? checkedPromptClaims.map(({ claim, verdict }) => (
-                    <div className="replay-checked-claim" key={claim.id}>
-                      <span
-                        className="replay-verdict-chip"
-                        data-verdict={verdict?.verdict || 'unsupported_or_unknown'}
-                      >
-                        {verdict?.verdict === 'supported'
-                          ? 'Supported'
-                          : verdict?.verdict === 'contradicted'
-                          ? 'Contradicted'
-                          : 'Unknown'}
-                      </span>
-                      <span>{promptClaimLabel(claim)}</span>
-                      <code title={verdict?.reason || 'No checker reason recorded'}>
-                        {(verdict?.evidence_refs || claim.evidence_refs).join(', ')}
-                      </code>
-                    </div>
-                  )) : (
-                    <span className="replay-risk-clean">No checkable atomic claims were returned.</span>
-                  )}
-                </div>
-              )}
-              <div className="replay-prompt-card-meta">
-                <span>{activePrompt.changedFiles.length} {activePrompt.changedFiles.length === 1 ? 'file' : 'files'} changed</span>
-                <span>
-                  {activePrompt.grouping === 'prompt_turn'
-                    ? 'Grouped from recorded prompt evidence'
-                    : 'Grouped from recorded events (prompt link unavailable)'}
-                </span>
-              </div>
-              <div className="replay-prompt-actions" data-testid="replay-prompt-actions">
-                <button
-                  type="button"
-                  onClick={handleCopyPromptDiff}
-                  disabled={!activePromptDiff}
-                  title={activePromptDiff ? 'Copy the combined recorded diff' : 'No recorded diff to copy'}
-                  data-testid="replay-copy-prompt-diff"
-                >
-                  <Copy size={13} />
-                  Copy diff
-                </button>
-                {hasSpectateBridge && importedSessionId && (
-                  <button
-                    type="button"
-                    onClick={handleOpenPromptFile}
-                    disabled={!projectLinked || !activePromptFile || !onOpenSessionFile}
-                    title={projectLinked
-                      ? 'Open the selected changed file in your editor'
-                      : 'Link the project folder to open files'}
-                    data-testid="replay-open-prompt-file"
-                  >
-                    <ExternalLink size={13} />
-                    Open in editor
-                  </button>
-                )}
-                {hasSpectateBridge && importedSessionId && (
-                  <button
-                    type="button"
-                    onClick={handleRevertPlan}
-                    disabled={!onRequestRevertPlan}
-                    title="Generate a read-only plan; no files will be changed"
-                    data-testid="replay-generate-revert-plan"
-                  >
-                    <Undo2 size={13} />
-                    Revert plan
-                  </button>
-                )}
-                {actionNotice && (
-                  <span className="replay-prompt-action-notice" role="status">
-                    <Check size={12} />
-                    {actionNotice}
-                  </span>
-                )}
-              </div>
-            </section>
-          )}
           {!rawStepMode && activePrompt && activePrompt.changedFiles.length === 0 ? (
             <div className="replay-prompt-no-files" data-testid="replay-prompt-no-files">
               <strong>No recorded file changes for this prompt</strong>

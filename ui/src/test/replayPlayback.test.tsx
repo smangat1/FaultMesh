@@ -7,18 +7,29 @@ import type { ReplayExportV2 } from '../replay/types';
 
 function playbackExport(): ReplayExportV2 {
   const exported = structuredClone(fixture) as ReplayExportV2;
-  const firstPrompt = exported.records.find((record) => record.sequence === 2)!;
+  const firstPrompt = exported.records.find((record) => record.sequence === 1)!;
   firstPrompt.prompt_id = 'prompt-one';
+  firstPrompt.turn_id = 'turn-one';
   firstPrompt.prompt_text = 'Update the calculator safely';
-  exported.records.find((record) => record.sequence === 3)!.prompt_id = 'prompt-one';
+  for (const sequence of [2, 3, 4]) {
+    const action = exported.records.find((record) => record.sequence === sequence)!;
+    action.prompt_id = 'prompt-one';
+    action.turn_id = 'turn-one';
+    action.prompt_text = null;
+  }
   exported.timeline.find((entry) => entry.sequence === 2)!.changed_files = structuredClone(
     exported.timeline.find((entry) => entry.sequence === 3)!.changed_files
   );
   const secondPrompt = exported.records.find((record) => record.sequence === 5)!;
   secondPrompt.prompt_id = 'prompt-two';
+  secondPrompt.turn_id = 'turn-two';
   secondPrompt.prompt_text = 'Run the test suite';
-  exported.records.find((record) => record.sequence === 6)!.prompt_id = 'prompt-two';
-  exported.records.find((record) => record.sequence === 7)!.prompt_id = 'prompt-two';
+  for (const sequence of [6, 7]) {
+    const action = exported.records.find((record) => record.sequence === sequence)!;
+    action.prompt_id = 'prompt-two';
+    action.turn_id = 'turn-two';
+    action.prompt_text = null;
+  }
   return exported;
 }
 
@@ -48,26 +59,19 @@ describe('prompt-centric replay playback', () => {
     vi.useRealTimers();
   });
 
-  it('holds prompt entries longer than file steps and stops at the end', () => {
+  it('plays only the selected prompt actions and stops at its end', () => {
     const adapter = new ReplayAdapter(playbackExport(), 'synthetic_fixture');
     render(<ReplayWorkspace adapter={adapter} onDemandModelReady={false} />);
 
     fireEvent.click(screen.getByTestId('replay-play-toggle'));
     expect(screen.getByTestId('replay-play-toggle').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByTestId('replay-prompt-card').classList.contains('is-playing')).toBe(true);
-
     act(() => vi.advanceTimersByTime(2399));
-    expect(adapter.getCurrentSequence()).toBe(1);
-    act(() => vi.advanceTimersByTime(1));
     expect(adapter.getCurrentSequence()).toBe(2);
-
-    act(() => vi.advanceTimersByTime(2400));
+    act(() => vi.advanceTimersByTime(1));
     expect(adapter.getCurrentSequence()).toBe(3);
+
     act(() => vi.advanceTimersByTime(1200));
     expect(adapter.getCurrentSequence()).toBe(4);
-
-    act(() => vi.advanceTimersByTime(2400));
-    expect(adapter.getCurrentSequence()).toBe(5);
     expect(screen.getByTestId('replay-play-toggle').getAttribute('aria-pressed')).toBe('false');
   });
 
@@ -81,9 +85,9 @@ describe('prompt-centric replay playback', () => {
     expect(screen.getByTestId('replay-play-toggle').getAttribute('aria-pressed')).toBe('true');
 
     act(() => vi.advanceTimersByTime(599));
-    expect(adapter.getCurrentSequence()).toBe(1);
-    act(() => vi.advanceTimersByTime(1));
     expect(adapter.getCurrentSequence()).toBe(2);
+    act(() => vi.advanceTimersByTime(1));
+    expect(adapter.getCurrentSequence()).toBe(3);
 
     expect(fireEvent.keyDown(window, { key: ' ', code: 'Space' })).toBe(false);
     expect(screen.getByTestId('replay-play-toggle').getAttribute('aria-pressed')).toBe('false');
@@ -117,6 +121,6 @@ describe('prompt-centric replay playback', () => {
     expect(screen.getByTestId('replay-workspace').getAttribute('data-motion')).toBe('reduced');
     fireEvent.click(screen.getByTestId('replay-play-toggle'));
     act(() => vi.advanceTimersByTime(2400));
-    expect(adapter.getCurrentSequence()).toBe(2);
+    expect(adapter.getCurrentSequence()).toBe(3);
   });
 });
