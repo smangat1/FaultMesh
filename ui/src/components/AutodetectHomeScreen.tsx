@@ -825,7 +825,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                         )}
                       >
                         <span className="history-search-prompt-copy">
-                          <strong>{prompt.first_line || 'Prompt preview unavailable'}</strong>
+                          <strong>{prompt.first_line || `Prompt recorded at step ${prompt.start_sequence}`}</strong>
                           <span>
                             {matchedPaths.length > 0
                               ? matchedPaths.slice(0, 3).join(' · ')
@@ -1268,7 +1268,7 @@ export const AutodetectHomeScreen: React.FC<AutodetectHomeScreenProps> = ({
                                                 >
                                                   <span className="history-prompt-index">{promptIndex + 1}</span>
                                                   <span className="history-prompt-copy">
-                                                    <span>{prompt.first_line || 'Prompt preview unavailable'}</span>
+                                                    <span>{prompt.first_line || `Prompt recorded at step ${prompt.start_sequence}`}</span>
                                                     <span>
                                                       {prompt.changed_file_count === 0
                                                         ? 'No recorded file changes'

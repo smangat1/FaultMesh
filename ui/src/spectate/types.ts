@@ -138,7 +138,7 @@ export interface HistoryPromptSummary {
 }
 
 export interface HistoryPromptIndex {
-  schema_version: 'history-prompt-index-1.0';
+  schema_version: 'history-prompt-index-1.1';
   session_id: string;
   source_file_sha256: string;
   prompts: HistoryPromptSummary[];

@@ -1123,7 +1123,7 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
               <div className="replay-prompt-card-heading">
                 <div>
                   <span className="replay-prompt-kicker">Prompt {activePromptIndex + 1}</span>
-                  <h2>{activePrompt.promptText?.split(/\r?\n/)[0] || 'Prompt text unavailable'}</h2>
+                  <h2>{activePrompt.promptText?.split(/\r?\n/)[0] || `Prompt recorded at step ${activePrompt.startSequence}`}</h2>
                 </div>
                 <span className="replay-prompt-test-status" data-state={
                   activePrompt.testEvidence.some((test) => test.state === 'fail' || test.state === 'error')

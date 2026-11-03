@@ -469,7 +469,7 @@ test('listPrompts validates input and lazily spawns the fixed aggregate command'
   assert.equal(value.spawns.at(-1)[2].shell, false);
   const child = value.children.at(-1);
   child.stdout.emit('data', Buffer.from(JSON.stringify({
-    schema_version: 'history-prompt-index-1.0',
+    schema_version: 'history-prompt-index-1.1',
     session_id: 'session-one',
     source_file_sha256: 'a'.repeat(64),
     cached: false,

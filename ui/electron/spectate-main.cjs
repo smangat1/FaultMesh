@@ -886,7 +886,7 @@ function attachSpectateBridge({
             return reject(new Error('invalid replay-history-prompts payload structure'));
           }
           resolve({
-            schema_version: 'history-prompt-index-1.0',
+            schema_version: 'history-prompt-index-1.1',
             session_id: String(parsed.session_id || ''),
             source_file_sha256: String(parsed.source_file_sha256 || ''),
             cached: Boolean(parsed.cached),

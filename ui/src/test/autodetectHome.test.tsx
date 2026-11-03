@@ -18,7 +18,7 @@ function installHistoryBridge(customPayload?: Partial<HistoryListPayload>) {
   const listPrompts = vi.fn().mockImplementation((sessionId: string) => {
     const session = payload.sessions.find((item) => item.session_id === sessionId);
     return Promise.resolve({
-      schema_version: 'history-prompt-index-1.0' as const,
+      schema_version: 'history-prompt-index-1.1' as const,
       session_id: sessionId,
       source_file_sha256: session?.source_file_sha256 || 'a'.repeat(64),
       cached: false,
@@ -360,7 +360,7 @@ describe('Phase 1: Autodetect Home Screen & Tool Widgets', () => {
     const harness = installHistoryBridge();
     const session = harness.payload.sessions.find((item) => item.session_id === 'codex-sess-1')!;
     harness.listPrompts.mockResolvedValueOnce({
-      schema_version: 'history-prompt-index-1.0',
+      schema_version: 'history-prompt-index-1.1',
       session_id: session.session_id,
       source_file_sha256: session.source_file_sha256,
       cached: false,

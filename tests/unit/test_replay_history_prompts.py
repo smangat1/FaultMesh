@@ -7,7 +7,12 @@ import pytest
 from typer.testing import CliRunner
 
 from faultmesh.cli.app import app
-from faultmesh.replay.history_prompts import HistoryPromptIndex, list_history_prompts
+from faultmesh.replay.history_import import import_history_session
+from faultmesh.replay.history_prompts import (
+    HistoryPromptIndex,
+    build_history_prompt_index,
+    list_history_prompts,
+)
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "fixtures" / "replay"
 
@@ -81,3 +86,46 @@ def test_prompt_listing_cli_emits_only_the_typed_index(
     assert result.exit_code == 0
     parsed = HistoryPromptIndex.model_validate_json(result.stdout)
     assert parsed == payload
+
+
+def test_prompt_listing_keeps_mixed_prompt_and_turn_ids_in_one_text_bearing_group(
+    tmp_path: Path,
+) -> None:
+    codex_root, claude_root = _roots(tmp_path)
+    exported = import_history_session(
+        "synthetic-session-normal",
+        tool="codex",
+        codex_root=codex_root,
+        claude_root=claude_root,
+        reconstruct_file_state=False,
+    )
+    first, second, third = exported.records[:3]
+    records = [
+        first.model_copy(
+            update={
+                "prompt_id": "prompt-one",
+                "turn_id": "turn-one",
+                "prompt_text": "Explain the recorded command without changing code.",
+            }
+        ),
+        second.model_copy(
+            update={"prompt_id": None, "turn_id": "turn-one", "prompt_text": None}
+        ),
+        third.model_copy(
+            update={"prompt_id": None, "turn_id": "turn-one", "prompt_text": None}
+        ),
+    ]
+    subset = exported.model_copy(
+        update={
+            "records": records,
+            "timeline": exported.timeline[:3],
+        }
+    )
+
+    index = build_history_prompt_index("mixed-ids", "a" * 64, subset)
+
+    assert len(index.prompts) == 1
+    assert index.prompts[0].prompt_id == "prompt-one"
+    assert index.prompts[0].first_line == (
+        "Explain the recorded command without changing code."
+    )

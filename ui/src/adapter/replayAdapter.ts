@@ -257,7 +257,9 @@ export class ReplayAdapter implements FaultMeshAdapter {
     let currentKey: string | null = null;
     let currentGrouping: ReplayPromptGroup['grouping'] = 'recorded_events';
     for (const record of records) {
-      const key = record.prompt_id || record.turn_id || null;
+      // The first record can carry both IDs while later actions carry only the
+      // turn ID. Turn identity keeps the full action stream with its prompt text.
+      const key = record.turn_id || record.prompt_id || null;
       const grouping: ReplayPromptGroup['grouping'] = key ? 'prompt_turn' : 'recorded_events';
       const samePrompt = grouping === 'prompt_turn' && currentGrouping === grouping && currentKey === key;
       const sameFallback = grouping === 'recorded_events'

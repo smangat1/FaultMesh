@@ -56,7 +56,7 @@ const history = {
 };
 
 const promptIndex = {
-  schema_version: 'history-prompt-index-1.0',
+  schema_version: 'history-prompt-index-1.1',
   session_id: 'synthetic-ui-session',
   source_file_sha256: 'a'.repeat(64),
   cached: false,

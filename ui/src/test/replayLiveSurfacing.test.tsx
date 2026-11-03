@@ -116,7 +116,7 @@ describe('Phase 7: live prompt surfacing', () => {
         text: JSON.stringify(updated),
       });
     const listPrompts = vi.fn().mockResolvedValue({
-      schema_version: 'history-prompt-index-1.0' as const,
+      schema_version: 'history-prompt-index-1.1' as const,
       session_id: SESSION_ID,
       source_file_sha256: 'b'.repeat(64),
       cached: false,

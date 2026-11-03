@@ -39,6 +39,31 @@ function promptExport(): ReplayExportV2 {
 }
 
 describe('prompt-centric replay navigation', () => {
+  it('resolves prompt text across mixed prompt and turn identifiers', () => {
+    const exported = promptExport();
+    const first = exported.records.find((record) => record.sequence === 2)!;
+    first.turn_id = 'turn-one';
+    first.prompt_id = 'prompt-one';
+    exported.records.find((record) => record.sequence === 3)!.prompt_id = null;
+    exported.records.find((record) => record.sequence === 3)!.turn_id = 'turn-one';
+    const adapter = new ReplayAdapter(exported, 'synthetic_fixture');
+
+    const group = adapter.getPromptGroups().find((item) => item.id === 'prompt-one');
+
+    expect(group?.promptText).toContain('Update the calculator safely');
+    expect(group?.endSequence).toBe(3);
+  });
+
+  it('names a truly textless group after its recorded step', () => {
+    const exported = promptExport();
+    exported.records.forEach((record) => {
+      record.prompt_text = null;
+    });
+    render(<ReplayWorkspace adapter={new ReplayAdapter(exported, 'synthetic_fixture')} />);
+
+    expect(screen.getByRole('heading', { name: 'Prompt recorded at step 1' })).toBeDefined();
+  });
+
   it('uses prompt stops, folds no-file evidence, and keeps raw steps available', () => {
     const adapter = new ReplayAdapter(promptExport(), 'synthetic_fixture');
     render(<ReplayWorkspace adapter={adapter} onDemandModelReady={false} />);
