@@ -107,13 +107,30 @@ describe('prompt-centric replay navigation', () => {
   });
 
   it('shows an honest prompt-level state when a prompt changed no files', () => {
-    const adapter = new ReplayAdapter(promptExport(), 'synthetic_fixture');
+    const exported = promptExport();
+    for (const entry of exported.timeline.filter((item) => item.sequence >= 5)) {
+      entry.changed_files = [];
+      entry.changed_symbols = [];
+    }
+    const command = exported.records.find((record) => record.sequence === 6)!;
+    command.tool_name = 'Command';
+    command.tool_input = { command: 'python -m pytest tests/unit/test_chat.py -q' };
+    command.tool_response = { aggregatedOutput: '4 tests passed' };
+    const adapter = new ReplayAdapter(exported, 'synthetic_fixture');
     render(<ReplayWorkspace adapter={adapter} />);
+    fireEvent.click(screen.getByTestId('replay-prompt-nav-1'));
 
     expect(screen.getByTestId('replay-prompt-no-files').textContent).toContain(
-      'No recorded file changes for this prompt'
+      'No code to review'
     );
+    expect(screen.getByTestId('replay-prompt-no-code-text').textContent).toContain(
+      'Run the test suite',
+    );
+    const evidence = screen.getByTestId('replay-prompt-no-code-evidence');
+    expect(evidence.hasAttribute('open')).toBe(false);
+    expect(evidence.textContent).toContain('4 tests passed');
     expect(screen.queryByText('No files changed in this step')).toBeNull();
+    expect(screen.queryByTestId('replay-file-workbench')).toBeNull();
   });
 
   it('streams labeled model lines onto prompt cards and keeps baseline facts underneath', () => {

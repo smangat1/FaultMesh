@@ -278,6 +278,38 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
   const activePromptFile = activePrompt?.changedFiles.includes(selectedFile || '')
     ? selectedFile
     : activePrompt?.changedFiles[0] || null;
+  const noCodeReviewEvidence = useMemo(() => {
+    if (!activePrompt || activePrompt.changedFiles.length > 0) return [];
+    const lines: string[] = [];
+    const add = (label: string, value: unknown) => {
+      if (value === null || value === undefined || value === '') return;
+      const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      if (!text) return;
+      lines.push(`${label}\n${text.length > 3000 ? `${text.slice(0, 3000)}\n… [truncated in viewer]` : text}`);
+    };
+    for (const entry of promptRangeTimeline) {
+      const record = adapter.getRecordForSequence(entry.sequence);
+      const input = record?.tool_input;
+      const command = record?.edit_command || (
+        input && typeof input === 'object'
+          ? (input as Record<string, unknown>).command
+          : null
+      );
+      add(record?.tool_name ? `${record.tool_name} command` : 'Command', command);
+      add(record?.tool_name ? `${record.tool_name} output` : 'Recorded output', record?.tool_response);
+      for (const test of entry.test_evidence) {
+        const counts = test.counts;
+        const countParts = counts ? [
+          counts.passed === null ? null : `${counts.passed} passed`,
+          counts.failed === null ? null : `${counts.failed} failed`,
+          counts.errors === null ? null : `${counts.errors} errors`,
+          counts.skipped === null ? null : `${counts.skipped} skipped`,
+        ].filter((part): part is string => part !== null) : [];
+        add('Recorded test result', countParts.length > 0 ? countParts.join(', ') : test.state);
+      }
+    }
+    return Array.from(new Set(lines));
+  }, [activePrompt, adapter, promptRangeTimeline]);
 
   const pausePlayback = useCallback(() => setIsPlaying(false), []);
 
@@ -1279,8 +1311,17 @@ export const ReplayWorkspace: React.FC<ReplayWorkspaceProps> = ({
           >
           {!rawStepMode && activePrompt && activePrompt.changedFiles.length === 0 ? (
             <div className="replay-prompt-no-files" data-testid="replay-prompt-no-files">
-              <strong>No recorded file changes for this prompt</strong>
-              <span>Commands and other recorded evidence remain available in the Evidence panel.</span>
+              <span className="replay-prompt-no-code-kicker">Prompt {activePromptIndex + 1}</span>
+              <strong>No code to review</strong>
+              <p data-testid="replay-prompt-no-code-text">
+                {activePrompt.promptText || `Prompt recorded at step ${activePrompt.startSequence}`}
+              </p>
+              {noCodeReviewEvidence.length > 0 && (
+                <details data-testid="replay-prompt-no-code-evidence">
+                  <summary>Recorded command and test output</summary>
+                  <pre>{noCodeReviewEvidence.join('\n\n')}</pre>
+                </details>
+              )}
             </div>
           ) : (
             <ReplayDiffViewer

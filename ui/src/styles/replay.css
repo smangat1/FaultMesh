@@ -1040,6 +1040,51 @@
 
 .replay-prompt-no-files strong {
   color: var(--replay-text-primary);
+  font-size: var(--type-lg);
+}
+
+.replay-prompt-no-code-kicker {
+  color: var(--replay-accent);
+  font-size: var(--type-xs);
+  font-weight: 600;
+}
+
+.replay-prompt-no-files p {
+  max-width: 640px;
+  margin: 0;
+  color: var(--replay-text-secondary);
+  font-size: var(--type-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.replay-prompt-no-files details {
+  width: min(640px, 100%);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--replay-border-subtle);
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.replay-prompt-no-files details summary {
+  color: var(--replay-text-muted);
+  cursor: pointer;
+  font-size: var(--type-xs);
+}
+
+.replay-prompt-no-files details pre {
+  max-height: 220px;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--replay-text-secondary);
+  background: var(--replay-bg-canvas);
+  border: 1px solid var(--replay-border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
 }
 
 .replay-timeline-folded-tick {
